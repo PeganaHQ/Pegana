@@ -37,7 +37,7 @@ jobs:
       CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/chromium-results.json
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate deployment inputs
         working-directory: .
@@ -78,7 +78,7 @@ jobs:
         with:
           bun-version: 1.3.14
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload Chromium Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report-chromium-${{ inputs.candidate_sha }}
           path: web/playwright-report/
@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload Chromium test results
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-chromium-${{ inputs.candidate_sha }}
           path: web/test-results/
@@ -123,7 +123,7 @@ jobs:
       PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/webkit-iphone-results.json
       IOS_E2E: "1"
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate deployment inputs
         working-directory: .
@@ -164,7 +164,7 @@ jobs:
         with:
           bun-version: 1.3.14
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -186,7 +186,7 @@ jobs:
 
       - name: Upload WebKit Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report-webkit-iphone-${{ inputs.candidate_sha }}
           path: web/playwright-report/
@@ -195,7 +195,7 @@ jobs:
 
       - name: Upload WebKit test results
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-webkit-iphone-${{ inputs.candidate_sha }}
           path: web/test-results/
