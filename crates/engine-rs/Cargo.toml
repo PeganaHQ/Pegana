@@ -45,4 +45,4 @@ solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-sdk = { workspace = true }
 solana-transaction-error = "2"
-spl-memo = "5"
+spl-memo = "6"
