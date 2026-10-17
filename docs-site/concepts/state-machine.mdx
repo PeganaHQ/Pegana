@@ -1,0 +1,122 @@
+---
+title: "The state machine"
+description: "Pegana's five peg states — PEGGED, DRIFT, DEPEG, CRITICAL, BLACK_SWAN — and what each transition means. UNKNOWN is a non-alerting status, not a severity band."
+---
+
+Pegana turns a continuous spread signal into discrete states because **alerts need
+to be sticky**. You can't act on a continuous number that updates 100 times a minute.
+You need a state transition that fires once, holds while the underlying condition
+persists, and clears once when it actually resolves.
+
+## The five states
+
+| State | Meaning | Alert? |
+| --- | --- | --- |
+| `PEGGED` | Spread inside the calm band for this asset | No |
+| `DRIFT` | Spread crossed the per-asset drift threshold; subscribers notified | Yes |
+| `DEPEG` | Spread crossed depeg threshold; urgent framing | Yes |
+| `CRITICAL` | Spread crossed critical threshold; system tags the asset as actively breaking | Yes |
+| `BLACK_SWAN` | Spread beyond `2× critical` (or hyUSD CR < 100%); terminal-grade break | Yes, terminal-grade |
+
+`BLACK_SWAN` is reachable from **both** the spread path (a discount beyond `2× critical`
+by default, per-asset overridable via `black_swan` / `black_swan_bps`) and the CR path
+(hyUSD, CR < 100%). It flags terminal-grade breaks but **auto-exits via the normal
+hysteresis** like every other band — it is **not** a no-reset terminal state (ADR-0025).
+
+`UNKNOWN` is a separate non-alerting status, not a severity band: the engine publishes it
+at cold-start and as honest-dark when an anchor is detectably broken (a >10% premium on a
+NAV-priced asset → the NAV-sanity gate).
+
+## What each state implies for a consumer
+
+- **PEGGED** — the asset is doing what it promises. Lending protocols can price
+  collateral at par. Insurance has nothing to fire on. Agents can swap freely.
+- **DRIFT** — early warning. The spread crossed the threshold for "this is no longer
+  normal noise." Subscribers get a notification. Most DRIFTs resolve back to PEGGED
+  without ever reaching DEPEG. Lending protocols might tighten LTV by a few points;
+  insurance preps payout logic; agents pause discretionary swaps.
+- **DEPEG** — the spread crossed the threshold for "this is materially broken right
+  now." Liquidation engines should already have pulled back. Insurance is firing.
+  Agents should hard-pause any action that depends on this asset's peg.
+- **CRITICAL** — the spread is large enough that recovery is not assumed. Treat the
+  asset as a different (riskier) asset. Wind down exposure.
+- **BLACK_SWAN** — the most extreme band (spread beyond `2× critical`, or hyUSD CR < 100%):
+  a terminal-grade break. Auto-exits via the normal hysteresis if the spread genuinely
+  recovers — it is not a no-reset terminal state (ADR-0025).
+- **UNKNOWN** — a non-alerting status. On routine stale/low-confidence/decoder-drift the
+  engine **skips the recompute and holds the last published state** rather than flipping to
+  UNKNOWN (unreliable sources are flagged `monitoring_only` (beta) — their alerts are live
+  but provisional). It *does*
+  publish honest-dark `UNKNOWN` when an anchor is detectably broken — a >10% premium on a
+  NAV-priced asset, via the NAV-sanity gate (ADR-0025).
+
+## The transitions
+
+```
+   ┌───────────┐
+   │  PEGGED   │←──┐
+   └────┬──────┘   │
+        │ 30s @    │ 120s @
+        │ ≥ drift  │ < drift-exit
+        ▼          │
+   ┌───────────┐   │
+   │  DRIFT    │───┘
+   └────┬──────┘
+        │ 30s @
+        │ ≥ depeg
+        ▼
+   ┌───────────┐
+   │  DEPEG    │
+   └────┬──────┘
+        │ 30s @
+        │ ≥ critical
+        ▼
+   ┌───────────┐
+   │  CRITICAL │
+   └───────────┘
+```
+
+Each transition is **dwell-gated**: the smoothed spread must hold the crossed
+threshold for the specified time. This filters out single-tick spikes. Entry dwell
+is 30s; exit dwell is 120s — see [hysteresis FSM](/concepts/hysteresis-fsm) for why.
+
+## What gets emitted
+
+Every transition produces:
+
+```json
+{
+  "alert_id": "9c8e7f3a-...",
+  "asset": "USDC",
+  "from_state": "PEGGED",
+  "to_state": "DRIFT",
+  "detected_at": "2026-05-26T14:32:11.482Z",
+  "spread_at_trigger": -0.0034,
+  "intrinsic_usd": 1.0000,
+  "market_usd": 0.9966
+}
+```
+
+This payload is what `/v1/alerts` returns, what `/v1/me/webhooks` POSTs, and what
+the Telegram bot formats into a human-readable message.
+
+## What does NOT get emitted
+
+- Sub-state noise. A spread oscillating between 25 and 32 bps with threshold at
+  30 bps stays in DRIFT — no alert flood.
+- Recovery within the entry dwell window. If the spread crosses 30 bps for 5
+  seconds and falls back, no transition fires.
+- Counts of "ticks since last alert" or similar accumulator state. Each transition
+  is independent; we don't publish "USDC has spent 47 minutes in DRIFT today."
+
+For accumulator metrics, use `/v1/me/alerts` (per-user delivery history) or
+`/v1/alerts` (global feed).
+
+## Next
+
+<Card title="Confidence score" icon="gauge" href="/concepts/confidence-score">
+  When the signal is sketchy — depth, staleness, decoder drift.
+</Card>
+<Card title="Hysteresis explained" icon="wave-square" href="/concepts/hysteresis-fsm">
+  Why entry and exit thresholds differ.
+</Card>

@@ -1,0 +1,220 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
+  "name": "Pegana",
+  "description": "The peg-risk oracle for Solana. Real-time monitoring of LSTs, stablecoins, yield-bearing assets and synthetics. Read via REST, WebSocket, MCP, Webhook, Telegram.",
+  "colors": {
+    "primary": "#ff8a5b",
+    "light": "#fb6fae",
+    "dark": "#df91f7"
+  },
+  "background": {
+    "color": {
+      "light": "#fafafa",
+      "dark": "#0a0a0b"
+    },
+    "decoration": "gradient"
+  },
+  "favicon": "/images/favicon.ico",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg",
+    "href": "https://www.pegana.xyz"
+  },
+  "appearance": {
+    "default": "dark",
+    "strict": false
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs",
+    "codeblocks": {
+      "theme": "github-dark"
+    }
+  },
+  "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "Dashboard",
+      "href": "https://www.pegana.xyz/dashboard"
+    },
+    "links": [
+      { "label": "Status", "href": "https://www.pegana.xyz/status" },
+      { "label": "Changelog", "href": "/changelog" }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/PeganaHQ",
+      "x": "https://x.com/PeganaHQ",
+      "telegram": "https://t.me/PeganaWatchBot"
+    },
+    "links": [
+      {
+        "header": "Product",
+        "items": [
+          { "label": "Dashboard", "href": "https://www.pegana.xyz/dashboard" },
+          { "label": "Embed widget", "href": "https://www.pegana.xyz/embed" },
+          { "label": "Status", "href": "https://www.pegana.xyz/status" }
+        ]
+      },
+      {
+        "header": "Developers",
+        "items": [
+          { "label": "REST API", "href": "/guides/rest-api" },
+          { "label": "WebSocket", "href": "/guides/websocket" },
+          { "label": "MCP", "href": "/guides/mcp" },
+          { "label": "Webhooks", "href": "/guides/webhooks" }
+        ]
+      },
+      {
+        "header": "Resources",
+        "items": [
+          { "label": "Pricing", "href": "/pricing" },
+          { "label": "FAQ", "href": "/faq" },
+          { "label": "GitHub", "href": "https://github.com/PeganaHQ" }
+        ]
+      },
+      {
+        "header": "Legal",
+        "items": [
+          { "label": "Privacy", "href": "https://www.pegana.xyz/privacy" },
+          { "label": "Terms", "href": "https://www.pegana.xyz/terms" },
+          { "label": "License (MIT)", "href": "https://github.com/PeganaHQ/ReplayCLI/blob/main/LICENSE" }
+        ]
+      }
+    ]
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication",
+              "pricing"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "concepts/peg-risk-101",
+              "concepts/data-model",
+              "concepts/intrinsic-vs-market",
+              "concepts/vs-price-monitors",
+              "concepts/state-machine",
+              "concepts/confidence-score",
+              "concepts/lst-peg-drift",
+              "concepts/yield-bearing-nav-oracles",
+              "concepts/hylo-cdp-cr-signal",
+              "concepts/hysteresis-fsm"
+            ]
+          },
+          {
+            "group": "Methodology",
+            "pages": [
+              "methodology/overview",
+              "methodology/intrinsic-value",
+              "methodology/market-value",
+              "methodology/spread",
+              "methodology/honesty"
+            ]
+          },
+          {
+            "group": "Integration Guides",
+            "pages": [
+              "guides/rest-api",
+              "guides/recipes",
+              "guides/websocket",
+              {
+                "group": "API essentials",
+                "pages": [
+                  "guides/errors",
+                  "guides/rate-limits",
+                  "guides/pagination",
+                  "guides/versioning"
+                ]
+              },
+              {
+                "group": "MCP for AI Agents",
+                "pages": [
+                  "guides/mcp",
+                  "guides/mcp-free-tools",
+                  "guides/mcp-paid-tools-x402",
+                  "guides/mcp-setup-claude"
+                ]
+              },
+              {
+                "group": "Webhooks",
+                "pages": [
+                  "guides/webhooks",
+                  "guides/webhooks-signing",
+                  "guides/webhooks-retry-policy",
+                  "guides/webhooks-examples-typescript",
+                  "guides/webhooks-examples-rust",
+                  "guides/webhooks-examples-python"
+                ]
+              },
+              "guides/embed-widget",
+              "guides/telegram-bot"
+            ]
+          },
+          {
+            "group": "Case Studies",
+            "pages": [
+              "case-studies/overview",
+              "case-studies/usdc-svb-march-2023",
+              "case-studies/ust-collapse-may-2022",
+              "case-studies/msol-pyth-may-2022",
+              "case-studies/dai-contagion-march-2023",
+              "case-studies/gho-launch-2023"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "faq",
+              "changelog"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "openapi": "https://api.pegana.xyz/openapi.json"
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "Dashboard",
+          "icon": "chart-line",
+          "href": "https://www.pegana.xyz/dashboard"
+        },
+        {
+          "anchor": "Telegram bot",
+          "icon": "telegram",
+          "href": "https://t.me/PeganaWatchBot"
+        },
+        {
+          "anchor": "GitHub",
+          "icon": "github",
+          "href": "https://github.com/PeganaHQ"
+        }
+      ]
+    }
+  },
+  "contextual": {
+    "options": ["copy", "view", "chatgpt", "claude", "cursor"]
+  },
+  "seo": {
+    "metatags": {
+      "og:image": "/images/og.png",
+      "twitter:site": "@PeganaHQ",
+      "twitter:card": "summary_large_image"
+    }
+  }
+}

@@ -1,0 +1,316 @@
+---
+title: "REST API"
+description: "JSON over HTTPS. No API key. Soft rate limit. The canonical read path for Pegana state."
+---
+
+The REST API is the default integration path. Public, no auth, soft per-IP rate limit
+(~300 req/min in production; repo default is 60/min). Every dashboard, embed widget,
+and the Telegram bot read through it.
+
+**Base URL:** `https://api.pegana.xyz`
+
+## Endpoints at a glance
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/v1/assets` | List all tracked assets with latest snapshot |
+| GET | `/v1/assets/{symbol}` | One asset's detail card (24h series included) |
+| GET | `/v1/assets/{symbol}/state` | Current peg state for one asset |
+| GET | `/v1/assets/{symbol}/history` | Discount history (raw or 1-minute aggregate) |
+| GET | `/v1/assets/{symbol}/loop-exposure` | Cross-protocol leverage exposure + depeg cascade (advisory) |
+| GET | `/v1/assets/{symbol}/simulate-depeg` | Liquidation-cascade estimate at a preset shock (advisory) |
+| GET | `/v1/alerts` | Global feed of state transitions |
+| GET | `/v1/stats` | Aggregate counters + delivery health |
+| GET | `/v1/peg/feed` | Batch peg signal — `data` array, each signal keyed by its `mint` (partner/embed feed) |
+| GET | `/healthz` | Liveness probe |
+| GET | `/readyz` | Readiness probe (db/redis/snapshot age) |
+
+The full schema lives in the [API Reference](/api-reference/introduction).
+
+## Stability contract
+
+The `v1` read surface is a **stable, versioned contract** you can wire a risk engine
+against. Going forward we make only **additive** changes within `v1` — new fields (such as
+[`risk_score`](#risk-score-one-number-to-branch-on)) and new endpoints — never a
+breaking rename or removal; any future breaking change would ship under a new prefix (`v2`)
+with `v1` left working.
+
+<Note>
+**One-time reshape (2026-07-24).** Before the first external integration, `v1` had a single
+coordinated cleanup to the shapes documented here — lists gained the `{ ok, generated_at,
+count, data }` envelope, the peg feed became a `data` array, and a few fields were renamed
+(`as_of`→`updated_at`, `model_note`/`note`→`advisory_note`, `positions_affected`→`positions`).
+See the [changelog](/changelog) for the migration. The additive-only promise above holds from
+that point on.
+</Note>
+
+Poll `/v1/assets/{symbol}/state` as often as your logic needs (soft
+~300 req/min per IP); it is the **same object** the dashboard, embed widget and bot read,
+so it never disagrees with what a human sees on the site.
+
+<Note>
+Pegana is **purely observational** — it classifies and proves, and never touches your
+contracts or parameters. Reading Pegana adds no actuation and no new attack surface to
+your protocol; you keep full control of any response.
+</Note>
+
+## Response format
+
+Two wire conventions hold across every endpoint. They are part of the stability contract —
+values never change form in a breaking way.
+
+- **Monetary & ratio values are exact decimal strings.** `discount`, `intrinsic_usd`,
+  `market_usd`, `market_cap`, `loop_exposure_usd`, `sol_per_lst`, `worst_abs_24h`,
+  `jitter_bps_24h` and friends are JSON **strings** (e.g. `"3.58235002"`, `"-0.007405"`), not
+  floats — parse them with a decimal/BigNumber library so you never lose precision. Trailing
+  zeros are trimmed, so the value is exact but compact.
+- **USD aggregates are cent-rounded; signal fields keep full precision.** Large USD totals
+  (`market_cap`, `loop_exposure_usd`, `liquidatable_usd`, `collateral_usd`,
+  `collateral_lev_usd`, `debt_usd`) are rounded to two decimals — sub-cent noise on a
+  hundreds-of-millions figure is meaningless. Price and discount fields (`discount`,
+  `intrinsic_usd`, `market_usd`, …) are **not** rounded — they carry the full peg signal.
+- **Timestamps are RFC3339 UTC, millisecond precision, `Z` suffix** — e.g.
+  `2026-07-24T15:33:14.545Z`. Every `*_at` / `ts` / `generated_at` field uses this
+  single form; parse with any RFC3339/`Date` parser. Resource freshness is always
+  `updated_at`; the response's own build time is `generated_at`.
+- **Lists are enveloped; single resources are bare.** Every endpoint that returns a
+  collection (`/v1/assets`, `/v1/alerts`, `/v1/calibration`, `/v1/assets/{s}/history`,
+  `/v1/peg/feed`) wraps its rows in a uniform envelope so you always branch on the same
+  shape and new top-level fields never break you:
+
+  ```json
+  { "ok": true, "generated_at": "2026-07-24T15:33:14.545Z", "count": 68, "data": [ /* rows */ ] }
+  ```
+
+  Read the rows from `data`. Single-resource endpoints (`/v1/assets/{s}`,
+  `/v1/assets/{s}/state`, `/v1/assets/{s}/loop-exposure`, …) return the resource object
+  itself (the Stripe/GitHub convention); errors always use the `{error, message}` envelope.
+
+<Note>
+Do **not** compare decimals or timestamps as exact byte strings — compare the parsed numeric
+value or instant. Two representations that differ only in trailing zeros or sub-millisecond
+precision are the same value.
+</Note>
+
+## Read one asset's state
+
+```bash
+curl https://api.pegana.xyz/v1/assets/USDC/state
+```
+
+```json
+{
+  "asset": "USDC",
+  "state": "PEGGED",
+  "since": "2026-05-26T14:32:11Z",
+  "discount": "-0.0002",
+  "risk_score": 2,
+  "intrinsic_usd": "1.0000",
+  "market_usd": "0.9998"
+}
+```
+
+This is the single most-used endpoint. It returns the **current** peg state with the
+two underlying values. Use it for dashboards, pre-flight checks, automation gates.
+
+### `risk_score` — one number to branch on
+
+`risk_score` is a derived **0–100** integer for integrators who want a single
+sortable / thresholdable value — `if risk_score >= 75 { gate_market() }` — **alongside**
+(never replacing) the authoritative `state`. It is **anchored to the committed `state`**,
+so it can never disagree with the classification:
+
+| `state` | `risk_score` band |
+|---|---|
+| `PEGGED` | 0 – 24 |
+| `DRIFT` | 25 – 49 |
+| `DEPEG` | 50 – 74 |
+| `CRITICAL` | 75 – 94 |
+| `BLACK_SWAN` | 95 – 100 |
+| `UNKNOWN` | `null` |
+
+Within each band the score interpolates by the effective, direction-sensitive discount
+magnitude (a benign premium on an LST / yield token scores ~0). It is **`null`** whenever
+the state is `UNKNOWN`/absent, there is no fresh discount, or the asset uses
+collateral-ratio thresholds (hyUSD) — Pegana never fabricates a number it does not have.
+The score is a pure, deterministic function of the other published fields, so you can
+recompute it yourself; it is a projection of the verifiable classification, **not** a
+separate input and **not** part of any receipt hash.
+
+## List all assets
+
+```bash
+curl 'https://api.pegana.xyz/v1/assets?class=stable_fiat'
+```
+
+Returns the list envelope `{ ok, generated_at, count, data }` where `data` is an
+array of `AssetCard` objects with optional `series_24h` (hourly avg discount).
+Filter by `class` or `peg` query params. `class` is a case-sensitive exact match —
+valid values are `lst`, `stable_fiat`, `stable_dn`, `stable_cdp`, `stable_yield`,
+`stable_fx`, and `synth_lev`. An unknown value (e.g. `stablecoin`) returns an empty
+`data` array with HTTP 200.
+
+## Asset history
+
+```bash
+curl 'https://api.pegana.xyz/v1/assets/USDC/history?bucket=1m&limit=120'
+```
+
+- `bucket=raw` — discount snapshots as recorded by the engine
+- `bucket=1m` — 1-minute aggregate (use for charts; smaller payload)
+- `from`, `to` — ISO 8601 timestamps; default last 24h
+- `limit` — clamped 1–5000, default 500
+
+## Systemic impact (Loop Intelligence)
+
+A depeg rarely breaks in isolation — it breaks the leverage stacked on top of it.
+These endpoints answer *"how much leveraged collateral rides on this asset across
+Solana lending, and how much of it would be liquidated if the asset depegs?"* — a
+cross-protocol view no single lending dashboard shows.
+
+<Note>
+Everything here is an **advisory model estimate — not a verifiable receipt.** It is
+namespaced away from the peg fields and carries its own `advisory_note`. It is **anonymous by
+construction**: only k-anonymised distributions are computed (a band with fewer than 5
+positions, or one dominated by a single position, is suppressed), and **no wallet, owner
+or authority is ever read**. Coverage today spans **Kamino + Jupiter Lend** — read the
+numbers as an honest floor, not a ceiling.
+</Note>
+
+### Exposure + cascade — `/v1/assets/{symbol}/loop-exposure`
+
+```bash
+curl https://api.pegana.xyz/v1/assets/JupSOL/loop-exposure
+```
+
+```json
+{
+  "asset": "JupSOL",
+  "loop_exposure_usd": "224648067",
+  "debt_usd": "0",
+  "coverage": "partial",
+  "by_protocol": [
+    { "protocol": "jupiter_lend", "collateral_lev_usd": "211093663", "debt_usd": "0" },
+    { "protocol": "kamino", "collateral_lev_usd": "13554403", "debt_usd": "0" }
+  ],
+  "cascade": [
+    { "shock_bps": 100,  "liquidatable_usd": "0",        "positions": "<5" },
+    { "shock_bps": 250,  "liquidatable_usd": "0",        "positions": "<5" },
+    { "shock_bps": 500,  "liquidatable_usd": "0",        "positions": "<5" },
+    { "shock_bps": 1000, "liquidatable_usd": "4746255",  "positions": ">50" },
+    { "shock_bps": 2000, "liquidatable_usd": "11329387", "positions": ">50" }
+  ],
+  "advisory_note": "advisory model estimate — not a verifiable receipt"
+}
+```
+
+`cascade` carries the whole depeg ladder in one call — `liquidatable_usd` is the
+leveraged collateral crossing a liquidation threshold at each preset shock (in bps).
+`positions` is a **k-floored range**, never a raw count. The array is empty (or
+the object omitted) when the asset carries no tracked leverage.
+
+### Single shock — `/v1/assets/{symbol}/simulate-depeg`
+
+```bash
+curl 'https://api.pegana.xyz/v1/assets/JupSOL/simulate-depeg?shock_bps=1000'
+```
+
+`shock_bps` must be one of `{100, 250, 500, 1000, 2000}` (a fixed grid — continuous
+sweeps are refused so the anonymised distribution can't be differenced). Returns the
+same estimate as one `cascade` rung, plus a `by_protocol` breakdown. `coverage` is
+`partial` whenever risky bands were privacy-suppressed (the honest default).
+
+### Partner feed — `/v1/peg/feed`
+
+The batch feed carries the full peg signal for every active asset as a `data` **array**
+(each signal carries its own `mint`), including an optional **`systemic`** block — the same
+exposure + cascade, packaged for a token page. The global `methodology` version is stamped
+once on the envelope, not on every signal:
+
+```json
+{
+  "ok": true,
+  "methodology": "0.7.0",
+  "generated_at": "2026-07-24T11:30:31.402Z",
+  "count": 68,
+  "data": [
+    {
+      "mint": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+      "symbol": "jitoSOL",
+      "state": "PEGGED",
+      "risk_score": 3,
+      "market_cap": "1400000000",
+      "updated_at": "2026-07-24T11:30:27.118Z",
+      "systemic": {
+        "loop_exposure_usd": "31142713",
+        "protocols": ["kamino", "jupiter_lend"],
+        "cascade": [ { "shock_bps": 2000, "liquidatable_usd": "...", "positions": ">50" } ],
+        "coverage": "partial",
+        "updated_at": "2026-07-24T11:30:27Z",
+        "advisory_note": "advisory model estimate — not a verifiable receipt"
+      }
+    }
+  ]
+}
+```
+
+Index `data[]` by each signal's `mint`. `systemic` is **omitted (not null)** when the token
+carries no tracked leverage, and it never mixes into the verifiable peg fields (`state`,
+`discount`, `receipt_url`). The feed supports conditional GETs (`ETag` / `If-None-Match` →
+`304`), so high-volume pollers stay cheap.
+
+## Pagination
+
+We do not paginate `/v1/assets` (a few dozen rows). For `/v1/alerts` and `/history`, use the
+`since` / `from` + `limit` parameters and walk forward by adjusting the lower bound.
+
+## Errors
+
+We return standard HTTP status codes:
+
+| Code | Meaning |
+| --- | --- |
+| `200` | Success |
+| `400` | Bad request (invalid query param) |
+| `404` | Asset not found, or no snapshots yet |
+| `429` | Rate-limited (per-IP; ~300 req/min in production, repo default 60/min) |
+| `500` | Server error — open a Sentry-style report |
+| `503` | Not ready (readiness probe only) |
+
+Error bodies are `{"error": "...", "message": "..."}` (plus an optional `asset`) — short, machine-readable. Branch on `error`, never on `message`.
+
+## CORS
+
+`https://pegana.xyz`, `https://www.pegana.xyz`, and `http://localhost:3000` are
+allowed by default. Add more origins via the `CORS_EXTRA_ORIGINS` env var on
+self-hosted instances.
+
+## Rate limit
+
+Soft per-IP sliding-window: **~300 req/min in production** (the repo default is
+**60 req/min** — the production host raises it). The limit resets on a 60-second
+sliding window. `/v1/audit.csv` is stricter at **10 req/min**. `/healthz` and
+`/readyz` are exempt.
+
+The `429` response includes a `Retry-After: 60` header (the sliding-window upper
+bound) so clients know when to retry, but the API does **not** emit `X-RateLimit-*`
+headers — your remaining budget is not client-discoverable, so handle `429`
+defensively and back off. If you hit `429`, slow down or contact
+`rafael@pegana.xyz` for a higher limit.
+
+## What about authenticated routes?
+
+The `/v1/me/*`, `/v1/auth/*`, and webhook management endpoints require a JWT — see
+[authentication](/authentication). These are user-scoped routes (your subscriptions,
+your delivery history, your webhook configuration).
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="WebSocket stream" icon="bolt" href="/guides/websocket">
+    Sub-second push for state changes — better than polling.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/introduction">
+    Full OpenAPI spec with try-it-now.
+  </Card>
+</CardGroup>

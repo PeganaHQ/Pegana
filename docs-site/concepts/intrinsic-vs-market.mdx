@@ -1,0 +1,96 @@
+---
+title: "Intrinsic vs market"
+description: "Every Pegana signal is the gap between two numbers — what the asset's mechanism says it's worth, and what the market actually pays for it."
+---
+
+The framing that makes peg monitoring tractable is **two numbers, side by side**:
+
+- **Intrinsic** — what the asset *should* be worth, per its own mechanism
+- **Market** — what you'd actually receive swapping it
+
+Every other concept in Pegana — discount, state, threshold, alert — is derived from
+the gap between these two.
+
+## Why both, not one
+
+A monitor that reads only **market** misses the case where the market is the broken
+side. The [mSOL/Pyth incident](/case-studies/msol-pyth-may-2022) is the canonical
+example: Marinade's on-chain redemption (intrinsic) stayed at 1.18 SOL while a thin
+Mango pool printed 0.85 SOL for four minutes. A market-only oracle would have said
+"mSOL just crashed." The right answer was "the market lied for 4 minutes; intrinsic
+held."
+
+A monitor that reads only **intrinsic** misses the [USDC/SVB case](/case-studies/usdc-svb-march-2023):
+Circle's redemption claim was always $1, but the secondary market priced doubt at
+$0.87 for 36 hours. An intrinsic-only oracle would have said "USDC is fine." The
+right answer was "intrinsic still claims $1, but the market won't pay it until the
+backstop arrives."
+
+Holding both numbers in the same signal — and publishing both — lets the consumer
+decide which side to act on for their use case.
+
+## How each side is sourced
+
+**Intrinsic** comes from the asset's own mechanism. Each class has its own canonical
+source — Sanctum for LSTs, Pyth Redemption Rate for yield-bearing, on-chain decode
+for CDPs, Pyth FX for fiat-pegged. See [intrinsic value](/methodology/intrinsic-value)
+for the full table.
+
+**Market** comes from Jupiter's routed quote, converted to USD via Pyth. We always
+swap *to* USDC and reprice USDC → USD via Pyth, so the numeraire is consistent across
+every asset and a USDC depeg doesn't contaminate other assets' spreads. See
+[market value](/methodology/market-value).
+
+## The two-numbers payload
+
+Every Pegana API response includes both numbers explicitly:
+
+```json
+{
+  "asset": "jitoSOL",
+  "state": "PEGGED",
+  "discount": -0.0034,
+  "intrinsic_usd": 213.42,
+  "market_usd": 212.69,
+  "intrinsic_sol": 1.180,
+  "market_sol": 1.176,
+  "since": "2026-05-26T14:32:11Z",
+  "confidence": "high"
+}
+```
+
+You receive the spread (`discount`) for fast checks and the underlying numbers for
+your own logic. For LSTs we also expose the SOL-denominated values — many integrators
+care about the SOL spread, not the USD spread.
+
+## Sign convention
+
+```
+discount = 1 − market_usd / intrinsic_usd
+```
+
+- `discount > 0` → market trades **below** intrinsic (most common stress case)
+- `discount < 0` → market trades **above** intrinsic (less common; often the LST
+  case where MEV-driven yield outpaces the published `sol_value`)
+- `|discount| < threshold` → `PEGGED`
+
+A common confusion: the dashboard shows `+1.20%` as "1.20% discount below intrinsic,"
+*not* "market is 1.20% above intrinsic." Our positive sign convention matches the
+trading-floor convention where "discount" means "the market is offering this asset
+at a discount to its book value."
+
+## When intrinsic and market converge by construction
+
+For a `PEGGED` fiat stable, intrinsic = $1 and market ≈ $1, so the spread hovers
+inside ±10 bps. That's the calm regime — and it's the regime where the two-numbers
+framing looks redundant. ("Just publish market — what could intrinsic add?")
+
+The framing pays off precisely when they diverge. Holding both numbers in the same
+schema means the divergence is **structural**, not an afterthought. Your downstream
+consumer never has to wonder which number to act on — both are there.
+
+## Next
+
+<Card title="State machine" icon="diagram-project" href="/concepts/state-machine">
+  How the spread gets turned into a state, with hysteresis and dwell timers.
+</Card>

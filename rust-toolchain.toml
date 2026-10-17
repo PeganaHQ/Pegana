@@ -1,0 +1,6 @@
+[toolchain]
+# 1.85 stabilized edition2024 (needed by sqlx-cli and many modern crates).
+# Pinning to 1.90 — well-tested LTS-style stable.
+channel = "1.90"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

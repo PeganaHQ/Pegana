@@ -1,0 +1,36 @@
+{
+  "bodyFont": "UncutSansWeb, fallback, system-ui, -apple-system, sans-serif",
+  "bodyBg": "rgba(0, 0, 0, 0)",
+  "bodyColor": "rgb(2, 2, 3)",
+  "headings": [
+    {
+      "t": "UNCUT.wtf",
+      "ff": "UncutSansWeb, fallback, system-ui, -apple-system, sans-serif",
+      "fs": "24.48px",
+      "fw": "400",
+      "ls": "normal"
+    },
+    {
+      "t": "SANS SERIF",
+      "ff": "UncutSansWeb, fallback, system-ui, -apple-system, sans-serif",
+      "fs": "61.2px",
+      "fw": "400",
+      "ls": "-0.918px"
+    },
+    {
+      "t": "SERIF",
+      "ff": "UncutSansWeb, fallback, system-ui, -apple-system, sans-serif",
+      "fs": "61.2px",
+      "fw": "400",
+      "ls": "-0.918px"
+    },
+    {
+      "t": "MONOSPACE",
+      "ff": "UncutSansWeb, fallback, system-ui, -apple-system, sans-serif",
+      "fs": "61.2px",
+      "fw": "400",
+      "ls": "-0.918px"
+    }
+  ],
+  "title": "Welcome to UNCUT.wtf"
+}

@@ -1,0 +1,77 @@
+---
+title: "Recipes"
+description: "Copy-paste solutions for the common jobs: is it pegged, watch the universe, chart it, verify it."
+---
+
+Task-first snippets. All are public (no key), rate-limited per IP, and return the
+[Response format](/guides/rest-api#response-format) conventions (decimal strings, RFC3339
+timestamps). A runnable reference adapter (TypeScript + Python) lives in the repo at
+`docs/examples/asset-consumer/`.
+
+## Is this asset pegged right now?
+
+Read the class-aware verdict — don't re-threshold `discount` yourself.
+
+```bash
+curl -s https://api.pegana.xyz/v1/assets/USDC/state
+# { "asset":"USDC","state":"PEGGED","discount":"-0.0001","updated_at":"…Z","stale":false }
+```
+
+<Warning>
+Always gate on `stale` (and `updated_at` freshness). A `stale:true` or `UNKNOWN` reading means
+"no trustworthy signal", **not** "healthy" — fail safe.
+</Warning>
+
+## Watch the whole universe in one call
+
+```bash
+curl -s https://api.pegana.xyz/v1/assets | jq '.data[] | {symbol, state, risk_score, discount}'
+```
+
+List endpoints return the envelope `{ ok, generated_at, count, data }` — read the rows from
+`.data`. Prefer `risk_score` (0–100) for a single sortable number, or branch on `state`. To
+join by Solana mint, use `GET /v1/peg/feed` (also a `data` array; each signal carries `mint`).
+
+## Only surface what's off-peg
+
+```bash
+curl -s https://api.pegana.xyz/v1/assets \
+  | jq '[ .data[] | select(.state != "PEGGED" and .state != "UNKNOWN") ]'
+```
+
+## Chart the discount history
+
+```bash
+curl -s "https://api.pegana.xyz/v1/assets/jitoSOL/history?from=2026-07-23T00:00:00Z&bucket=1m" \
+  | jq '.data[] | {ts, discount, state}'
+```
+
+`bucket=raw` for per-sample, `1m` for 1-minute aggregates. Newest-first; window with
+`from`/`to` (see [Pagination & limits](/guides/pagination)).
+
+## Verify a state transition on your own machine
+
+Every alert emits a public receipt with frozen inputs and an on-chain commit.
+
+```bash
+curl -s https://api.pegana.xyz/v1/audit/<alert_id>
+# re-derive it byte-exact with the CLI (add --json for a CI-friendly verdict line):
+cargo install pegana-replay && pegana-replay --alert-id <alert_id>
+```
+
+## Gauge systemic (leverage) exposure
+
+```bash
+curl -s https://api.pegana.xyz/v1/assets/JLP/loop-exposure \
+  | jq '{loop_exposure_usd, coverage, cascade}'
+```
+
+Advisory, anonymous-by-construction — see the [Systemic impact](/guides/rest-api#systemic-impact-loop-intelligence)
+section for the full model.
+
+<CardGroup cols={2}>
+  <Card title="WebSocket" href="/guides/websocket">Sub-second push instead of polling.</Card>
+  <Card title="Webhooks" href="/guides/webhooks">Signed POST on every state transition.</Card>
+  <Card title="MCP for agents" href="/guides/mcp">Point an LLM agent straight at the oracle.</Card>
+  <Card title="Errors" href="/guides/errors">Codes + the `x-request-id` header.</Card>
+</CardGroup>

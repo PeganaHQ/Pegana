@@ -1,0 +1,72 @@
+---
+title: "API Reference"
+description: "Pegana's live OpenAPI reference covers the annotated HTTP surface, including webhook operations, health checks, and metadata endpoints."
+---
+
+The endpoints listed in this tab are generated from the live OpenAPI spec at
+[api.pegana.xyz/openapi.json](https://api.pegana.xyz/openapi.json).
+Use the **try-it-now** panel on each endpoint to send a real request.
+
+<Note>
+  The OpenAPI spec is assembled from utoipa annotations on the axum handlers and
+  covers the full `/v1` surface (39 paths, enforced in CI). It's the source of
+  truth the first-party TypeScript and Python SDKs are generated from.
+</Note>
+
+## Base URL
+
+```
+https://api.pegana.xyz
+```
+
+## Authentication
+
+Most endpoints are **public** — no `Authorization` header required. The user-scoped
+routes (anything under `/v1/me/*`, plus `/v1/auth/logout`) require a JWT obtained via
+Telegram Login. See [authentication](/authentication).
+
+## Rate limit
+
+Soft sliding window: **300 req/min per IP** on REST. WebSocket allows **5 concurrent
+connections per IP**. Liveness / readiness probes are exempt.
+
+Hit the limit? Email `rafael@pegana.xyz`.
+
+## Cross-origin
+
+CORS allowed from `pegana.xyz`, `www.pegana.xyz`, `localhost:3000` by default.
+Self-hosted instances can extend via `CORS_EXTRA_ORIGINS`.
+
+## Errors
+
+Standard HTTP codes. Error bodies are `{"error": "...", "message": "..."}` — short,
+machine-readable.
+
+## SDKs
+
+First-party typed clients — **TypeScript** (`@peganahq/sdk-ts`) and **Python**
+(`pegana-sdk`) — are generated from the OpenAPI spec above and cover every `/v1`
+endpoint, plus a hand-written live-feed WebSocket helper (`PegFeed` / `peg_feed`).
+
+```sh
+npm install @peganahq/sdk-ts     # published
+pip install -e sdk/python/       # Python: not on PyPI yet — install from source
+```
+
+Reads need no API key.
+
+Until then, generating your own typed client from
+[openapi.json](https://api.pegana.xyz/openapi.json) is a first-class path — it's
+exactly how the first-party SDKs are built (`openapi-typescript` + `openapi-fetch`
+for TypeScript, `openapi-python-client` for Python; orval also works).
+
+## Quick links
+
+<CardGroup cols={2}>
+  <Card title="Read one state" icon="code" href="/guides/rest-api">
+    `GET /v1/assets/:asset/state` — the canonical read.
+  </Card>
+  <Card title="Stream live" icon="bolt" href="/guides/websocket">
+    `wss://api.pegana.xyz/v1/ws` — sub-second push.
+  </Card>
+</CardGroup>

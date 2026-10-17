@@ -1,0 +1,1091 @@
+/*
+ * Pegana V2 landing — design tokens + keyframes only (DESIGN.md §1, §4).
+ * Everything else is Tailwind utility classes on the V2 organisms, matching
+ * the rest of the repo's component styling convention. Scoped under
+ * `.pegana-v2` so nothing here leaks into the product app (brand.md still
+ * governs there) or other marketing pages.
+ */
+
+/* Canvas #0a0a0b (DESIGN.md §1). App globals paint body pure #000, so repaint
+ * it here scoped to pages that render .pegana-v2, leaving other app pages on
+ * the default black canvas. */
+html:has(.pegana-v2),
+body:has(.pegana-v2) {
+  background-color: #0a0a0b;
+}
+
+.pegana-v2 {
+  --v2-bg: #0a0a0b;
+  --v2-bg2: #0d0d0f;
+  --v2-panel: #121214;
+  --v2-panel2: #17171a;
+  --v2-line: rgba(255, 255, 255, 0.08);
+  --v2-line2: rgba(255, 255, 255, 0.16);
+  --v2-text: #f5f5f6;
+  --v2-body: #b4b4bc;
+  --v2-muted: #a3a3ad;
+  --v2-dim: #80808a;
+  --v2-peg: #5fd3a0;
+  --v2-drift: #e2a651;
+  --v2-depeg: #e87089;
+  --v2-crit: #e0574e;
+  --v2-unk: #8f8aa3;
+  --v2-btn-dark: #141118;
+  --v2-iri: linear-gradient(
+    100deg,
+    #ff8a5b 0%,
+    #ff7a3d 26%,
+    #fb6fae 55%,
+    #e878d8 78%,
+    #df91f7 100%
+  );
+  --v2-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --v2-ease-phys: cubic-bezier(0.32, 0.72, 0, 1);
+  --v2-sans:
+    var(--font-sans-v2), "Switzer", system-ui, -apple-system, sans-serif;
+  --v2-mono:
+    var(--font-mono-v2), "Geist Mono", ui-monospace, "SF Mono", monospace;
+
+  /* Rebind Tailwind's font-sans/font-mono utilities inside the V2 tree only.
+     Custom properties cascade, so every `font-mono` class under .pegana-v2
+     resolves to Geist Mono while the product app (outside this scope) keeps
+     Geist + Geist Mono from the root layout. */
+  --font-sans: var(--v2-sans);
+  --font-mono: var(--v2-mono);
+
+  position: relative;
+  isolation: isolate;
+  background: var(--v2-bg);
+  color: var(--v2-text);
+  font-family: var(--v2-sans);
+}
+
+/* The repo's global base sets `p, li { color: var(--color-text-body) }` —
+   inside V2 each element's classes own their color. Reset to inherit so a V2
+   paragraph without an explicit text class doesn't pick up the app hue. */
+.pegana-v2 p,
+.pegana-v2 li {
+  color: inherit;
+}
+
+.pegana-v2 ::selection {
+  background: var(--v2-iri, rgba(232, 120, 216, 0.3));
+}
+
+.pegana-v2 :focus-visible {
+  outline: 2px solid var(--v2-iri, #e878d8);
+  outline-offset: 3px;
+  border-radius: 10px;
+}
+
+/* Faint grain — matches the approved artifact's body::before. Static, no
+   motion, so it is unaffected by the reduced-motion matrix. */
+.pegana-v2::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@keyframes v2-arcbreathe {
+  0%,
+  100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes v2-boardfloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes v2-lmarq {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Belt-and-suspenders: even if a class was applied before hydration settled
+   the JS reduced-motion check, these never animate under the OS setting. */
+@media (prefers-reduced-motion: reduce) {
+  .pegana-v2 .v2-anim-arc,
+  .pegana-v2 .v2-anim-board,
+  .pegana-v2 .v2-anim-marquee {
+    animation: none !important;
+  }
+}
+
+/* V1 heritage (2026-07-02, Rafael): iridescent headline accent + warm hero glow */
+.v2-iri-text {
+  background: var(--v2-iri);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+/* chroma lockup: animated SMIL svg; static fallback under reduced motion */
+.v2-chroma-static {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-chroma {
+    display: none;
+  }
+  .v2-chroma-static {
+    display: inline-flex;
+  }
+}
+
+/* Composite shadows in plain CSS: Tailwind v4 arbitrary shadow values with
+   multiple layers computed to transparent in the production build. */
+.v2-shadow-board {
+  box-shadow:
+    0 50px 140px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.v2-shadow-receipt {
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* CloseV2 mobile chroma (r4, Rafael 2026-07-02): "momento 4" of the
+   iridescent gradient in mobile form, sitting behind the close CTA. Tailwind
+   arbitrary composites die in the production build (see .v2-shadow-board
+   above), so this stays plain CSS. Hidden at >=760px, where the desktop wave
+   layers already carry the moment. */
+.v2-close-mchroma {
+  display: none;
+}
+@media (max-width: 759px) {
+  .v2-close-mchroma {
+    display: block;
+    position: absolute;
+    left: 50%;
+    bottom: 90px;
+    transform: translateX(-50%);
+    width: 520px;
+    height: 360px;
+    border-radius: 50%;
+    filter: blur(70px);
+    opacity: 0.38;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(
+      closest-side,
+      rgba(255, 132, 91, 0.55),
+      rgba(251, 111, 174, 0.38) 45%,
+      rgba(223, 145, 247, 0.24) 68%,
+      transparent 80%
+    );
+  }
+}
+
+/* HeroV2 board header (v5 mobile-first, r5/r6 port): the pill-tab strip
+   scrolls horizontally with a hidden scrollbar and is promoted to its own
+   row under 760px. Tailwind v4 has no bare scrollbar-hide utility. */
+.v2-board-tabs {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.v2-board-tabs::-webkit-scrollbar {
+  display: none;
+}
+@media (max-width: 760px) {
+  .v2-board-tabs {
+    order: 3;
+    width: 100%;
+  }
+}
+
+/* ProductTabsV2 (v5 S3): sliding white thumb underneath the active pill tab.
+   Composed multi-property transition dies as a Tailwind arbitrary value in
+   the production build (see .v2-shadow-board above), so it's plain CSS.
+   Width/transform are set inline from JS on every tab change (offsetLeft /
+   offsetWidth of the active tab) — never mixed with a translate-* utility on
+   the same element (that would double-apply the transform in Tailwind v4). */
+.v2-tab-thumb {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  width: 0;
+  background: #fff;
+  border-radius: 9999px;
+  transition:
+    transform 0.38s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-tab-thumb {
+    transition: none;
+  }
+  .v2-ptab[aria-selected="true"] {
+    background: #fff;
+  }
+}
+
+/* ProductTabsV2 pane entrance (v5 S3): the pane that becomes active fades +
+   slides in every time a tab is switched. */
+@keyframes v2-pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.v2-pane-enter {
+  animation: v2-pane-in 0.32s var(--v2-ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-pane-enter {
+    animation: none;
+  }
+}
+
+/* The NavV2 hamburger + drawer CSS lived here. Both are gone: the marketing
+   nav now renders the same hardened <dialog> sheet as the app shell
+   (components/molecules/mobile-menu.tsx), which brings a focus trap, body
+   scroll lock, Escape and backdrop dismiss from the platform rather than from
+   four hand-rolled handlers this drawer never had.
+
+   The one finding from that drawer that still stands, and is preserved in the
+   sheet: menus and drawers here are OPAQUE. `backdrop-filter: blur()` computed
+   to `none` at this position (lost to the Tailwind v4 cascade; iOS Safari also
+   drops it under a fixed+rounded stacking context), and with a dead blur ANY
+   translucency composited the un-blurred hero through the links at near-full
+   strength. Even 0.97 alpha read as muddy. The border and shadow carry the
+   depth instead. */
+
+/* Error surfaces (404 / error.tsx / global-error / audit-not-found), W1
+   2026-07-03 — port of the approved pegana-v5-errors.html artifact via
+   components/organisms/v2/error-surface-v2.tsx. The drift-line draw-in and
+   the eyebrow/h1/sub/ctas/statepill rises are keyframe animations, which
+   can't be expressed as Tailwind utilities at all (not even the "arbitrary
+   composite value" cases elsewhere in this file — these need real
+   `@keyframes` + a `prefers-reduced-motion` gate), so they live here.
+   Per DESIGN.md's motion contract: the DEFAULT (no-JS-flag-needed) state is
+   the animation's END state — fully visible, line fully drawn. Only under
+   `prefers-reduced-motion: no-preference` do we flip to the hidden start
+   state and animate in. That way a reduced-motion visitor (or one whose CSS
+   hasn't finished loading) always sees the finished, static composition. */
+.v2-err-drift {
+  stroke-dasharray: 520;
+  stroke-dashoffset: 0;
+}
+.v2-err-statepill,
+.v2-err-eyebrow,
+.v2-err-h1,
+.v2-err-sub,
+.v2-err-ctas {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .v2-err-drift {
+    stroke-dashoffset: 520;
+    animation: v2-err-draw 0.95s var(--v2-ease) 0.15s forwards;
+  }
+  .v2-err-statepill,
+  .v2-err-eyebrow,
+  .v2-err-h1,
+  .v2-err-sub,
+  .v2-err-ctas {
+    opacity: 0;
+    translate: 0 10px;
+    animation: v2-err-rise 0.6s var(--v2-ease) forwards;
+  }
+  .v2-err-statepill {
+    animation-delay: 0.75s;
+  }
+  .v2-err-eyebrow {
+    animation-delay: 0.2s;
+  }
+  .v2-err-h1 {
+    animation-delay: 0.28s;
+  }
+  .v2-err-sub {
+    animation-delay: 0.36s;
+  }
+  .v2-err-ctas {
+    animation-delay: 0.44s;
+  }
+}
+@keyframes v2-err-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes v2-err-rise {
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* Radar ping — concentric rings expanding outward from the 404 endpoint. */
+@keyframes v2-err-ping {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.6);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-err-ring {
+    animation: none !important;
+  }
+}
+
+/* Grain overlay for standalone error surfaces (404 / error.tsx) — same
+   feTurbulence data-uri as the artifact's body::before, ported to a
+   reusable class since these pages don't route through the .pegana-v2::before
+   grain (that one is opacity .025 / mix-blend overlay for normal pages; the
+   artifact's error surfaces use a slightly stronger .05 flat opacity). */
+.v2-err-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+}
+
+@media (max-width: 520px) {
+  .v2-err-motif svg {
+    width: 340px;
+    height: 140px;
+  }
+  .v2-err-statepill {
+    right: 0;
+    bottom: -20px;
+  }
+  .v2-err-ctas {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Mobile-first board (m1): rows become 2-line cards below 860px.
+   Line 1 = icon+symbol | state pill; line 2 = full-width sparkline | spread.
+   nth-child order: 1 sym, 2 state, 5 spread, 7 spark (others stay hidden). */
+@media (max-width: 859px) {
+  .pegana-v2 .v2-brow {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "sym state" "spark spread";
+    row-gap: 9px;
+    padding: 14px 16px;
+  }
+  .pegana-v2 .v2-brow > *:nth-child(1) {
+    grid-area: sym;
+  }
+  .pegana-v2 .v2-brow > *:nth-child(2) {
+    grid-area: state;
+    justify-self: end;
+    align-self: center;
+  }
+  .pegana-v2 .v2-brow > *:nth-child(5) {
+    grid-area: spread;
+    justify-self: end;
+    align-self: center;
+    font-size: 13px;
+  }
+  .pegana-v2 .v2-brow > *:nth-child(7) {
+    display: flex;
+    grid-area: spark;
+    align-self: center;
+    min-width: 0;
+  }
+  .pegana-v2 .v2-brow > *:nth-child(7) canvas {
+    height: 22px;
+  }
+}
+
+/* ==========================================================================
+ * W2 (2026-07-03): inner-page article system — methodology / audit /
+ * audit/[id] / status / changelog / about / agents. Ported near-verbatim
+ * from the approved pegana-w2-pages.html artifact (w2_css.py), renamed to a
+ * `.v2-in-*` prefix so it can't collide with the landing/error-surface v2-*
+ * classes above. Tokens reuse the existing --v2-* custom properties (the
+ * artifact was built against this exact palette) — only --v2-body is new
+ * (added to the :root block above), everything else already existed.
+ * Multi-layer shadows / pseudo-element composites live here rather than as
+ * Tailwind arbitrary values, per the same Tailwind v4 production-build
+ * caveat documented at .v2-shadow-board above.
+ * ========================================================================== */
+
+/* TOC rail + two-column article grid (methodology). Desktop-only rail,
+   hidden under 900px where the grid collapses to a single column. */
+.v2-in-artgrid {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 64px;
+}
+.v2-in-toc {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+  padding-top: 8px;
+}
+.v2-in-toc a {
+  display: block;
+  padding: 7px 0 7px 14px;
+  border-left: 1px solid var(--v2-line);
+  font-family: var(--v2-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--v2-dim);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.v2-in-toc a:hover {
+  color: var(--v2-text);
+}
+.v2-in-toc a.v2-in-on {
+  color: var(--v2-text);
+  border-left-color: #fff;
+}
+.v2-in-art {
+  max-width: 720px;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .v2-in-artgrid {
+    grid-template-columns: 1fr;
+  }
+  .v2-in-toc {
+    display: none;
+  }
+}
+
+/* Article prose scale — distinct from any `prose` typography-plugin class;
+   this project doesn't use @tailwindcss/typography, but the prefix keeps it
+   unambiguous. */
+.v2-in-prose {
+  font-size: 16.5px;
+  line-height: 1.75;
+  color: var(--v2-body);
+}
+.v2-in-prose p {
+  margin: 0 0 20px;
+}
+.v2-in-prose h2 {
+  margin: 72px 0 18px;
+  font-size: 26px;
+  font-weight: 500;
+  /* Declared, not inherited. This rule and the `text-[26px] font-medium
+     tracking-[-0.02em]` utility stack elsewhere describe the SAME heading and
+     neither used to set a line-height, so each took whatever its container
+     gave: 1.75 from the prose wrapper here, 1.5 from body on /status. Measured
+     live, the identical heading rendered at 45.5px on /methodology and 39px on
+     /status. 1.15 is display leading, in the same family as the h1s' 1.1. */
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--v2-text);
+  scroll-margin-top: 110px;
+}
+.v2-in-prose h2:first-child {
+  margin-top: 0;
+}
+.v2-in-prose h3 {
+  margin: 40px 0 12px;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--v2-text);
+}
+.v2-in-prose a {
+  color: var(--v2-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--v2-line2);
+}
+.v2-in-prose a:hover {
+  text-decoration-color: #fff;
+}
+.v2-in-prose code {
+  font-family: var(--v2-mono);
+  font-size: 0.82em;
+  background: var(--v2-panel);
+  border: 1px solid var(--v2-line);
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: var(--v2-text);
+}
+.v2-in-prose b {
+  color: var(--v2-text);
+  font-weight: 500;
+}
+.v2-in-hr {
+  border: 0;
+  border-top: 1px solid var(--v2-line);
+  margin: 56px 0;
+}
+
+/* Math object (methodology "The formula") — iridescent underline bar is a
+   real absolutely-positioned child, not a ::after, so the React component
+   never has to reach into pseudo-element content from JSX. */
+.v2-in-math {
+  margin: 36px 0;
+  padding: 44px 32px;
+  border: 1px solid var(--v2-line);
+  border-radius: 20px;
+  background: var(--v2-panel);
+  text-align: center;
+}
+.v2-in-math .v2-in-expr {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  font-size: clamp(22px, 3.4vw, 34px);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--v2-text);
+}
+.v2-in-math .v2-in-frac {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: middle;
+}
+.v2-in-mathbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--v2-iri);
+}
+.v2-in-math .v2-in-op {
+  color: var(--v2-dim);
+}
+.v2-in-math .v2-in-cap {
+  margin-top: 22px;
+  font-family: var(--v2-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--v2-dim);
+}
+.v2-in-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 0;
+  justify-content: center;
+}
+.v2-in-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--v2-line);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-family: var(--v2-mono);
+  font-size: 11.5px;
+  color: var(--v2-muted);
+  background: var(--v2-bg);
+}
+.v2-in-chip b {
+  color: var(--v2-text);
+  font-weight: 500;
+}
+
+/* Code block v5 (verify/agents snippets) */
+.v2-in-codeblk {
+  margin: 26px 0;
+  border: 1px solid var(--v2-line);
+  border-radius: 16px;
+  background: var(--v2-panel);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.v2-in-codeblk-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--v2-line);
+}
+.v2-in-codeblk-head span {
+  font-family: var(--v2-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--v2-dim);
+}
+.v2-in-codeblk-head button {
+  font-family: var(--v2-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--v2-muted);
+  background: none;
+  border: 1px solid var(--v2-line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+}
+.v2-in-codeblk-head button:hover {
+  color: var(--v2-text);
+  border-color: var(--v2-line2);
+}
+.v2-in-codeblk pre {
+  margin: 0;
+  padding: 18px 20px;
+  overflow-x: auto;
+  font-family: var(--v2-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--v2-text);
+}
+.v2-in-codeblk .v2-in-c {
+  color: var(--v2-dim);
+}
+.v2-in-codeblk .v2-in-g {
+  color: var(--v2-peg);
+}
+
+/* List rows — the workhorse pattern (canon table, ledger, uptime, commits).
+   Real 2026-07-14: rows/head render on actual <table>/<tr>/<th>/<td> now
+   (list-rows-v2.tsx), not <div>s — but the visual layout stays exactly the
+   CSS-grid system below (`display: grid` overrides each <tr>'s default
+   `table-row` box), so nothing here needed to change. The two new rules
+   just neutralise the browser-default table/th/td box model (padding,
+   centered+bold <th> text, table width) so real table tags render
+   pixel-identical to the old plain divs/spans. */
+.v2-in-lrows {
+  margin: 26px 0;
+  border-top: 1px solid var(--v2-line);
+}
+.v2-in-ltable {
+  width: 100%;
+  border: 0;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+.v2-in-lrhead th,
+.v2-in-lrow td {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font-weight: inherit;
+  text-align: inherit;
+  vertical-align: middle;
+}
+.v2-in-lrow {
+  display: grid;
+  align-items: center;
+  gap: 18px;
+  padding: 13px 6px;
+  border-bottom: 1px solid var(--v2-line);
+  font-size: 14px;
+  transition: background 0.2s;
+}
+.v2-in-lrow:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.v2-in-lrhead {
+  display: grid;
+  gap: 18px;
+  /* Header-panel treatment matching the /dashboard board's <thead> across every
+     editorial table (/lst, /audit, /status, /methodology, …): a subtle raised
+     background + hairline underline + tighter 0.08em tracking (was bare with
+     0.14em and no divider). Horizontal padding stays 6px so the header columns
+     stay grid-aligned with .v2-in-lrow. QA audit 2026-07-23. */
+  padding: 9px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--v2-line);
+  font-family: var(--v2-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--v2-dim);
+}
+.v2-in-num {
+  font-family: var(--v2-mono);
+  font-variant-numeric: tabular-nums;
+}
+.v2-in-tokico {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2a2a30, #1a1a1f);
+  border: 1px solid var(--v2-line2);
+  display: inline-grid;
+  place-items: center;
+  font-family: var(--v2-mono);
+  font-size: 8.5px;
+  color: var(--v2-muted);
+  flex: none;
+}
+.v2-in-tokenicon {
+  background: var(--v2-bg2);
+}
+@media (max-width: 700px) {
+  .v2-in-lrows.v2-in-wide {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Hero "Live peg board" — real <table> laid out with the same grid-as-table
+   technique as .v2-in-ltable: each <tr> keeps its Tailwind grid-cols template
+   (the GRID_* classes) and renders as display:grid, so it stays pixel-identical
+   to the old div/span grid while AT finally gets real table semantics. These
+   two rules only neutralise the UA table/th/td box model; cell text-align stays
+   on each cell's own class (th defaults are overridden per-cell). */
+.v2-hero-btable {
+  width: 100%;
+  border: 0;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+.v2-hero-btable th,
+.v2-hero-btable td {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font-weight: inherit;
+  vertical-align: middle;
+}
+
+/* Timeline (methodology changelog, /changelog releases) */
+.v2-in-tl {
+  position: relative;
+  margin: 34px 0;
+  padding-left: 30px;
+}
+.v2-in-tl::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--v2-line);
+}
+.v2-in-tlitem {
+  position: relative;
+  padding: 0 0 44px;
+}
+.v2-in-tlitem::before {
+  content: "";
+  position: absolute;
+  left: -30px;
+  top: 7px;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--v2-bg);
+  border: 1px solid var(--v2-line2);
+}
+.v2-in-tlitem.v2-in-hot::before {
+  background: var(--v2-peg);
+  border-color: var(--v2-peg);
+}
+.v2-in-tlmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-family: var(--v2-mono);
+  font-size: 11px;
+  color: var(--v2-dim);
+}
+.v2-in-typepill {
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 2.5px 9px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.v2-in-tlitem h3 {
+  margin: 0 0 8px;
+  font-size: 17.5px;
+  font-weight: 500;
+  color: var(--v2-text);
+}
+.v2-in-tlitem .v2-in-prose {
+  font-size: 15px;
+}
+.v2-in-tlitem ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.v2-in-tlitem li {
+  margin: 5px 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--v2-body);
+}
+
+/* Stat strip — auto-fit so a page that can only honestly bind 2-3 real
+   numbers (not the artifact's fixed 4) still lays out cleanly. */
+.v2-in-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  margin: 40px 0;
+  border: 1px solid var(--v2-line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--v2-panel);
+}
+.v2-in-stat {
+  padding: 22px 24px;
+  border-left: 1px solid var(--v2-line);
+}
+.v2-in-stat:first-child {
+  border-left: 0;
+}
+.v2-in-stat b {
+  display: block;
+  font-family: var(--v2-mono);
+  font-size: 26px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text);
+}
+.v2-in-stat span {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--v2-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--v2-dim);
+}
+
+/* Incident card (/status) */
+.v2-in-inc {
+  margin: 26px 0;
+  padding: 26px 28px;
+  border: 1px solid var(--v2-line);
+  border-radius: 16px;
+  background: var(--v2-panel);
+}
+.v2-in-inc .v2-in-tlmeta {
+  margin-bottom: 10px;
+}
+.v2-in-inc h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--v2-text);
+}
+.v2-in-inc .v2-in-prose {
+  font-size: 15px;
+}
+.v2-in-inc .v2-in-prose p {
+  margin-bottom: 12px;
+}
+.v2-in-hashchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--v2-line);
+  border-radius: 8px;
+  padding: 3px 9px;
+  font-family: var(--v2-mono);
+  font-size: 11px;
+  color: var(--v2-muted);
+  background: var(--v2-bg);
+}
+
+/* Receipt object (/audit/[id]) — pair with the existing .v2-shadow-receipt
+   composite box-shadow class above for the multi-layer shadow. */
+.v2-in-receipt {
+  margin: 30px 0;
+  border: 1px solid var(--v2-line2);
+  border-radius: 20px;
+  background: var(--v2-panel);
+  overflow: hidden;
+}
+.v2-in-rhead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border-bottom: 1px dashed var(--v2-line2);
+}
+.v2-in-rwho {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+  color: var(--v2-text);
+}
+.v2-in-rbody {
+  padding: 20px 22px;
+}
+.v2-in-rrow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--v2-line);
+  font-family: var(--v2-mono);
+  font-size: 12.5px;
+}
+.v2-in-rrow:last-child {
+  border-bottom: 0;
+}
+.v2-in-rk {
+  color: var(--v2-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 10.5px;
+  padding-top: 2px;
+}
+.v2-in-rv {
+  color: var(--v2-text);
+}
+.v2-in-rfoot {
+  padding: 14px 22px;
+  border-top: 1px dashed var(--v2-line2);
+  background: var(--v2-bg2);
+  font-family: var(--v2-mono);
+  font-size: 12px;
+  color: var(--v2-muted);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.v2-in-rfoot b {
+  color: var(--v2-peg);
+  font-weight: 500;
+}
+
+/* Candor strikes ("What this is not") */
+.v2-in-candor {
+  margin: 40px 0;
+}
+.v2-in-candor-row {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--v2-line);
+}
+.v2-in-candor-no {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--v2-dim);
+  text-decoration: line-through;
+  text-decoration-color: var(--v2-depeg);
+  text-decoration-thickness: 2px;
+}
+.v2-in-candor-yes {
+  display: block;
+  margin-top: 6px;
+  font-size: 14.5px;
+  color: var(--v2-body);
+  line-height: 1.6;
+}
+
+/* Two-col facts grid (/about) */
+.v2-in-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 26px 0;
+}
+.v2-in-fact {
+  border: 1px solid var(--v2-line);
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: var(--v2-panel);
+}
+.v2-in-fact b {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 500;
+  margin-bottom: 5px;
+  color: var(--v2-text);
+}
+.v2-in-fact span {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--v2-muted);
+}
+@media (max-width: 900px) {
+  .v2-in-facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Pill tabs (/agents code panes, filter pills) */
+.v2-in-ptabs {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border: 1px solid var(--v2-line);
+  border-radius: 999px;
+  padding: 4px;
+  margin: 26px 0 0;
+}
+.v2-in-ptab {
+  border: 0;
+  background: none;
+  color: var(--v2-muted);
+  font-family: var(--v2-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.v2-in-ptab.v2-in-on {
+  background: #fff;
+  color: var(--v2-btn-dark);
+}
+.v2-in-pane {
+  display: none;
+}
+.v2-in-pane.v2-in-on {
+  display: block;
+}
+/* On mobile a `.v2-in-ptabs` row with 3+ pills WRAPS to multiple lines, and the
+   999px pill radius then ovals the whole block + clips the corner pills (the
+   /embed asset picker, the /agents code tabs, the /audit state-filter pills — QA
+   audit 2026-07-23). A single-row 2-3-option toggle is ~36-40px tall, so 18px
+   still reads as a pill there; cap the radius on narrow screens so wrapped rows
+   become clean rounded boxes without changing the toggles. */
+@media (max-width: 640px) {
+  .v2-in-ptabs {
+    border-radius: 16px;
+  }
+}

@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Channel cards — Direction B · Channel Stack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --canvas: #000000;
+    --surface-1: #0a0a0a;
+    --surface-2: #141414;
+    --hairline: #1a1a1a;
+    --outline: #2a2a2a;
+    --text: #fffdf9;
+    --text-body: #e8e8e8;
+    --text-muted: #9aa9b8;
+    --text-caption: #787878;
+    --coral: #ff8a5b;
+    --magenta: #e878d8;
+    --st-pegged: #6bd697;
+    --st-unknown: #9aa9b8;
+    --gradient-iridescent: linear-gradient(90deg, #feed7a 0%, #ff8400 50%, #df91f7 100%);
+    --ease-default: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-out-strong: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--canvas);
+    color: var(--text);
+    font-family: 'Geist', -apple-system, system-ui, sans-serif;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  .page { max-width: 1280px; margin: 0 auto; padding: 80px 20px; }
+  .frame-kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-caption);
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 10px;
+    margin-bottom: 32px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .frame-kicker .right { color: var(--text-muted); }
+
+  .heading-row {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 64px;
+    align-items: baseline;
+    margin-bottom: 48px;
+  }
+  .heading-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .heading-h2 {
+    font-size: 40px;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    font-weight: 600;
+    max-width: 820px;
+    margin: 0;
+  }
+  .heading-h2 .muted { color: var(--text-muted); font-weight: 400; }
+
+  /* === DIRECTION B — CHANNEL STACK ===========================
+     5 cards in a 2-up + 2-up + 1-up rhythm (or 3+2).
+     Each card is a vertical block — bigger reading area,
+     more individual identity per channel.
+     Hairline frames each card, faint left-edge stripe
+     reserved for the FEATURED card only (REST).
+     ============================================================ */
+  .channels-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 10px;
+    margin-bottom: 0;
+    margin-left: 144px;
+  }
+  .channels-meta .left,
+  .channels-meta .right {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-caption);
+  }
+
+  .channels {
+    margin-left: 144px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0;
+  }
+  /* Featured (REST) takes 3 cols. Other "live" take 2 cols each
+     in the same row. Preview row of 2 takes 3 cols each below. */
+  .channel {
+    position: relative;
+    padding: 28px 24px 24px;
+    border-right: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    transition: background-color 200ms var(--ease-default);
+    text-decoration: none;
+    color: inherit;
+    min-height: 240px;
+  }
+  .channel:hover { background: var(--surface-1); }
+  .channel:hover .docs-arrow { transform: translateX(4px); }
+
+  /* row 1 = 3 live channels */
+  .ch-rest      { grid-column: span 2; }
+  .ch-ws        { grid-column: span 2; }
+  .ch-telegram  { grid-column: span 2; }
+  /* row 2 = 2 preview channels */
+  .ch-mcp       { grid-column: span 3; }
+  .ch-webhook   { grid-column: span 3; }
+
+  .ch-rest, .ch-telegram { border-left: 1px solid var(--hairline); }
+  .ch-mcp { border-left: 1px solid var(--hairline); }
+
+  /* FEATURED accent — single iridescent left rail on REST only.
+     This is the "ammunition": one channel signals primary CTA. */
+  .ch-rest::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 1px;
+    background: var(--gradient-iridescent);
+    opacity: 0.7;
+  }
+
+  .ch-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .ch-kicker { color: var(--text-caption); }
+  .ch-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+  }
+  .ch-pip {
+    width: 6px;
+    height: 6px;
+    background: var(--st-unknown);
+    display: inline-block;
+  }
+  .ch-pip.live {
+    background: var(--st-pegged);
+    animation: pip-blink 2.4s infinite var(--ease-default);
+  }
+  @keyframes pip-blink {
+    0%, 60%, 100% { opacity: 1; }
+    80% { opacity: 0.4; }
+  }
+  .ch-status.live { color: var(--text); }
+
+  .ch-row {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 14px;
+    align-items: baseline;
+  }
+  .glyph {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: var(--text);
+  }
+  .ch-name {
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .ch-endpoint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    word-break: break-all;
+    background: var(--surface-2);
+    border-left: 1px solid var(--hairline);
+    padding: 8px 10px;
+  }
+  .ch-desc {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--text-body);
+  }
+
+  .ch-bottom {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--hairline);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .docs-link {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 200ms var(--ease-default);
+    text-decoration: none;
+  }
+  .channel:hover .docs-link { color: var(--text); }
+  .docs-arrow {
+    display: inline-block;
+    transition: transform 300ms var(--ease-default);
+  }
+  .ch-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-caption);
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 1100px) {
+    .channels-meta { margin-left: 0; }
+    .channels { margin-left: 0; }
+    .ch-rest, .ch-ws, .ch-telegram { grid-column: span 3; }
+    .ch-mcp, .ch-webhook { grid-column: span 3; }
+  }
+  @media (max-width: 720px) {
+    .channels { grid-template-columns: 1fr; }
+    .channel,
+    .ch-rest, .ch-ws, .ch-telegram,
+    .ch-mcp, .ch-webhook { grid-column: span 1; border-left: 1px solid var(--hairline); }
+    .heading-row { grid-template-columns: 1fr; gap: 12px; }
+    .heading-h2 { font-size: 28px; }
+  }
+
+  .tag {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-caption);
+    border: 1px solid var(--hairline);
+    padding: 6px 10px;
+    background: var(--canvas);
+    z-index: 10;
+  }
+  .tag .arrow { color: var(--coral); }
+</style>
+</head>
+<body>
+<div class="tag">Direction B <span class="arrow">→</span> Channel Stack</div>
+
+<div class="page">
+  <div class="frame-kicker">
+    <span>(01) overview · 5 channels</span>
+    <span class="right">14 assets · 4 states · 5 transports</span>
+  </div>
+
+  <div class="heading-row">
+    <div class="heading-num mono">(02)</div>
+    <h2 class="heading-h2">
+      Five channels.
+      <span class="muted">REST and WebSocket today, MCP and Webhook next, Telegram for humans.</span>
+    </h2>
+  </div>
+
+  <div class="channels-meta">
+    <span class="left">Distribution</span>
+    <span class="right">3 live · 2 preview</span>
+  </div>
+
+  <div class="channels" role="list">
+    <!-- REST — featured -->
+    <a class="channel ch-rest" href="#" role="listitem" aria-label="REST channel">
+      <div class="ch-top">
+        <span class="ch-kicker">01 · primary</span>
+        <span class="ch-status live"><span class="ch-pip live"></span>Live</span>
+      </div>
+      <div class="ch-row">
+        <div class="glyph">{}</div>
+        <div class="ch-name">REST</div>
+      </div>
+      <div class="ch-endpoint">GET&nbsp;api.pegana.xyz/v1/state/:asset</div>
+      <div class="ch-desc">JSON over HTTPS. No key, no rate-limit gate.</div>
+      <div class="ch-bottom">
+        <span class="docs-link">Read docs <span class="docs-arrow">→</span></span>
+        <span class="ch-meta">edge-cached</span>
+      </div>
+    </a>
+
+    <!-- WebSocket -->
+    <a class="channel ch-ws" href="#" role="listitem" aria-label="WebSocket channel">
+      <div class="ch-top">
+        <span class="ch-kicker">02</span>
+        <span class="ch-status live"><span class="ch-pip live"></span>Live</span>
+      </div>
+      <div class="ch-row">
+        <div class="glyph">&lt;&gt;</div>
+        <div class="ch-name">WebSocket</div>
+      </div>
+      <div class="ch-endpoint">wss://api.pegana.xyz/v1/stream</div>
+      <div class="ch-desc">Sub-second peg-state stream — drift, depeg, recovery, all pushed.</div>
+      <div class="ch-bottom">
+        <span class="docs-link">Read docs <span class="docs-arrow">→</span></span>
+        <span class="ch-meta">&lt; 800ms</span>
+      </div>
+    </a>
+
+    <!-- Telegram -->
+    <a class="channel ch-telegram" href="#" role="listitem" aria-label="Telegram channel">
+      <div class="ch-top">
+        <span class="ch-kicker">03</span>
+        <span class="ch-status live"><span class="ch-pip live"></span>Live</span>
+      </div>
+      <div class="ch-row">
+        <div class="glyph">@</div>
+        <div class="ch-name">Telegram</div>
+      </div>
+      <div class="ch-endpoint">t.me/PeganaWatchBot</div>
+      <div class="ch-desc">Threshold alerts straight to chat. Per-asset, per-state.</div>
+      <div class="ch-bottom">
+        <span class="docs-link">Read docs <span class="docs-arrow">→</span></span>
+        <span class="ch-meta">free</span>
+      </div>
+    </a>
+
+    <!-- MCP -->
+    <a class="channel ch-mcp" href="#" role="listitem" aria-label="MCP channel">
+      <div class="ch-top">
+        <span class="ch-kicker">04 · phase 2</span>
+        <span class="ch-status"><span class="ch-pip"></span>Preview</span>
+      </div>
+      <div class="ch-row">
+        <div class="glyph">[ ]</div>
+        <div class="ch-name">MCP</div>
+      </div>
+      <div class="ch-endpoint">mcp.pegana.xyz</div>
+      <div class="ch-desc">Model Context Protocol — peg-state as a tool every LLM agent can call. So your trading agent stops trusting stale CEX quotes.</div>
+      <div class="ch-bottom">
+        <span class="docs-link">Read docs <span class="docs-arrow">→</span></span>
+        <span class="ch-meta">agent-native</span>
+      </div>
+    </a>
+
+    <!-- Webhook -->
+    <a class="channel ch-webhook" href="#" role="listitem" aria-label="Webhook channel">
+      <div class="ch-top">
+        <span class="ch-kicker">05 · phase 2</span>
+        <span class="ch-status"><span class="ch-pip"></span>Preview</span>
+      </div>
+      <div class="ch-row">
+        <div class="glyph">↗</div>
+        <div class="ch-name">Webhook</div>
+      </div>
+      <div class="ch-endpoint">POST {your-url} · ed25519</div>
+      <div class="ch-desc">We sign and POST your endpoint on every state transition. Verify the signature, forward to your stack.</div>
+      <div class="ch-bottom">
+        <span class="docs-link">Read docs <span class="docs-arrow">→</span></span>
+        <span class="ch-meta">signed</span>
+      </div>
+    </a>
+  </div>
+</div>
+</body>
+</html>

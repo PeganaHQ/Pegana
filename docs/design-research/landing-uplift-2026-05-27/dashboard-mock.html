@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pegana — dashboard mock (saaspo-research direction)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@1,9..144,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --canvas:#000;
+  --surface-1:#0a0a0a;
+  --surface-2:#141414;
+  --text:#fffdf9;
+  --text-body:#e8e8e8;
+  --text-muted:#9aa9b8;
+  --text-caption:#646464;
+  --hairline:rgba(255,253,249,0.08);
+  --outline:rgba(255,253,249,0.18);
+  --coral:#ff8a5b;
+  --magenta:#e878d8;
+  --st-pegged:#6bd697;
+  --st-drift:#c08a55;
+  --st-depeg:#a55a5a;
+  --st-critical:#b73838;
+  --grad:linear-gradient(90deg,#feed7a 0%,#ff8400 50%,#df91f7 100%);
+  --ease:cubic-bezier(0.22,1,0.36,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--canvas);color:var(--text);font-family:'Geist',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+body{overflow:hidden;height:100vh}
+.mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;}
+.serif-i{font-family:'Fraunces',serif;font-style:italic;}
+a{color:inherit;text-decoration:none}
+button{font:inherit;background:none;border:0;color:inherit;cursor:pointer}
+
+/* ── DOTTED GRID BACKGROUND (ConductorAI inspiration) ── */
+.dot-bg{
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(rgba(255,253,249,0.05) 1px,transparent 1px);
+  background-size:24px 24px;
+  mask-image:radial-gradient(ellipse 80% 60% at center,black 30%,transparent 90%);
+}
+
+/* ── TOP BAR ── */
+.topbar{
+  position:relative;z-index:10;
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;gap:32px;
+  padding:14px 24px;
+  border-bottom:1px solid var(--hairline);
+  background:rgba(0,0,0,0.6);
+  backdrop-filter:blur(12px);
+}
+.brand{display:inline-flex;align-items:baseline;gap:4px;font-family:'JetBrains Mono',monospace;font-size:14px;}
+.brand .b1{color:var(--coral)}
+.brand .b2{color:var(--magenta)}
+.nav{display:flex;align-items:center;gap:28px;margin-left:32px}
+.nav-item{
+  position:relative;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--text-muted);
+  transition:color .25s var(--ease);
+  display:inline-flex;align-items:baseline;gap:8px;
+  padding-bottom:4px;
+}
+.nav-item:hover{color:var(--text)}
+.nav-item.active{color:var(--text)}
+.nav-item.active::after{
+  content:'';position:absolute;left:0;right:0;bottom:-15px;height:1px;background:var(--grad);
+}
+.nav-item .num{color:var(--text-caption);font-size:10px;}
+.nav-item.active .num{color:var(--coral)}
+
+/* engine flow strip — the heartbeat */
+.flow-strip{
+  display:flex;align-items:center;gap:16px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+  letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--text-muted);
+}
+.flow-strip .label{color:var(--text-caption)}
+.flow-strip .pulse{display:inline-flex;align-items:center;gap:8px}
+.flow-strip .pulse-dot{
+  width:6px;height:6px;border-radius:50%;background:var(--st-pegged);
+  box-shadow:0 0 8px var(--st-pegged);
+  animation:flow-pulse 1.2s ease-in-out infinite;
+}
+@keyframes flow-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.flow-strip .bar{
+  display:inline-block;width:140px;height:6px;
+  background:rgba(255,253,249,0.06);
+  position:relative;overflow:hidden;
+}
+.flow-strip .bar::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,var(--st-pegged),transparent);
+  width:40px;
+  animation:flow-bar 1.2s linear infinite;
+}
+@keyframes flow-bar{from{transform:translateX(-40px)}to{transform:translateX(140px)}}
+
+.cta-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--text);color:var(--canvas);
+  padding:8px 14px;border-radius:999px;
+  font-size:12px;font-weight:500;
+  transition:background .25s var(--ease);
+}
+.cta-pill:hover{background:rgba(255,253,249,0.85)}
+
+/* ── 3-PANE SHELL ── */
+.shell{
+  position:relative;z-index:1;
+  display:grid;
+  grid-template-columns:240px 1fr 360px;
+  height:calc(100vh - 51px); /* topbar = 50px + 1px border */
+  overflow:hidden;
+}
+
+/* ── SIDEBAR ── */
+.sidebar{
+  border-right:1px solid var(--hairline);
+  padding:24px 0;
+  overflow-y:auto;
+}
+.side-label{
+  padding:0 20px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:10px;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--text-caption);
+  margin-bottom:10px;
+}
+.side-item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 20px;
+  font-size:13px;color:var(--text-muted);
+  transition:background .2s var(--ease), color .2s var(--ease);
+  cursor:pointer;
+  border-left:2px solid transparent;
+  margin-bottom:1px;
+}
+.side-item:hover{background:rgba(255,253,249,0.025);color:var(--text)}
+.side-item.active{
+  color:var(--text);
+  background:rgba(255,253,249,0.04);
+  border-left-color:var(--coral);
+}
+.side-item .count{
+  font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-caption);
+}
+.side-divider{margin:20px 0;border-top:1px solid var(--hairline)}
+
+/* ── ASSET LIST (Bloomberg density) ── */
+.list-pane{
+  overflow-y:auto;
+  position:relative;
+}
+.list-header{
+  position:sticky;top:0;z-index:2;
+  background:rgba(0,0,0,0.85);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--hairline);
+  padding:18px 24px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.list-title{font-family:'Fraunces',serif;font-style:italic;font-size:24px;font-weight:400;color:var(--text);}
+.list-title .stat{
+  margin-left:14px;font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-caption);font-style:normal;letter-spacing:0.08em;text-transform:uppercase;
+}
+.list-pills{display:flex;gap:6px}
+.list-pill{
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;
+  padding:6px 12px;border:1px solid var(--outline);border-radius:999px;color:var(--text-muted);
+  transition:all .25s var(--ease);
+}
+.list-pill:hover{border-color:var(--text);color:var(--text)}
+.list-pill.active{background:var(--text);color:var(--canvas);border-color:var(--text)}
+
+/* asset row */
+.row-grid{
+  display:grid;
+  grid-template-columns:32px 60px 1.6fr 110px 110px 140px 24px;
+  align-items:center;gap:14px;
+  padding:13px 24px;
+  border-bottom:1px solid var(--hairline);
+  font-size:13px;
+  transition:background .15s var(--ease);
+  cursor:pointer;
+  position:relative;
+}
+.row-grid:hover{background:rgba(255,253,249,0.025)}
+.row-grid.selected{background:rgba(255,138,91,0.06)}
+.row-grid.selected::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--coral);
+}
+.col-pip{display:flex;align-items:center;justify-content:center}
+.pip{width:8px;height:8px;border-radius:50%}
+.pip.pegged{background:var(--st-pegged);box-shadow:0 0 6px var(--st-pegged)}
+.pip.drift{background:var(--st-drift);box-shadow:0 0 6px var(--st-drift)}
+.pip.depeg{background:var(--st-depeg);box-shadow:0 0 6px var(--st-depeg);animation:pip-pulse 1.4s ease-in-out infinite}
+.pip.critical{background:var(--st-critical);box-shadow:0 0 8px var(--st-critical);animation:pip-pulse 1s ease-in-out infinite}
+@keyframes pip-pulse{50%{opacity:.4}}
+.col-sym{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--text)}
+.col-name{color:var(--text-muted);font-size:13px}
+.col-state{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase}
+.col-state.pegged{color:var(--st-pegged)}
+.col-state.drift{color:var(--st-drift)}
+.col-state.depeg{color:var(--st-depeg)}
+.col-state.critical{color:var(--st-critical)}
+.col-spread{font-family:'JetBrains Mono',monospace;font-size:14px;text-align:right;font-weight:500}
+.col-spread.pegged{color:var(--text)}
+.col-spread.drift{color:var(--st-drift)}
+.col-spread.depeg{color:var(--st-depeg)}
+.col-spread.critical{color:var(--st-critical)}
+.col-spark{display:flex;align-items:center;justify-content:center;height:32px}
+.col-spark svg{display:block}
+.col-arrow{color:var(--text-caption);text-align:right;opacity:0;transition:opacity .2s var(--ease)}
+.row-grid:hover .col-arrow{opacity:1}
+
+/* list header sub — column labels */
+.list-cols{
+  display:grid;
+  grid-template-columns:32px 60px 1.6fr 110px 110px 140px 24px;
+  gap:14px;
+  padding:9px 24px;
+  font-family:'JetBrains Mono',monospace;font-size:9px;
+  letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--text-caption);
+  border-bottom:1px solid var(--hairline);
+}
+.list-cols .right{text-align:right}
+.list-cols .center{text-align:center}
+
+/* ── PEEK PANE ── */
+.peek{
+  border-left:1px solid var(--hairline);
+  padding:0;
+  overflow-y:auto;
+  background:linear-gradient(180deg,rgba(255,138,91,0.02) 0%,transparent 200px);
+  position:relative;
+}
+/* dashed-corner annotation marks — Cloudflare/Conductor instrumentation aesthetic */
+.peek::before, .peek::after{
+  content:'';position:absolute;width:14px;height:14px;pointer-events:none;
+  border-color:var(--outline);
+  border-style:dashed;border-width:0;
+}
+.peek::before{top:14px;left:14px;border-left-width:1px;border-top-width:1px;border-color:var(--coral);opacity:.6}
+.peek::after{bottom:14px;right:14px;border-right-width:1px;border-bottom-width:1px;border-color:var(--coral);opacity:.6}
+
+.peek-head{padding:32px 28px 20px;border-bottom:1px solid var(--hairline)}
+.peek-eyebrow{
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--text-caption);margin-bottom:14px;display:flex;align-items:center;gap:8px;
+}
+.peek-eyebrow .pip{width:6px;height:6px}
+.peek-sym{
+  font-size:48px;font-weight:500;letter-spacing:-0.03em;line-height:1;color:var(--text);
+  display:flex;align-items:baseline;gap:14px;
+}
+.peek-name{font-size:14px;color:var(--text-muted);margin-top:6px}
+
+.peek-spread{
+  margin-top:20px;display:flex;align-items:baseline;gap:18px;
+}
+.peek-spread-val{
+  font-family:'JetBrains Mono',monospace;font-size:36px;line-height:1;font-weight:500;
+}
+.peek-spread-meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-caption);letter-spacing:0.04em}
+.peek-spread.pegged .peek-spread-val{color:var(--text)}
+.peek-spread.drift .peek-spread-val{color:var(--st-drift)}
+.peek-spread.depeg .peek-spread-val{color:var(--st-depeg)}
+
+.peek-section{padding:24px 28px;border-bottom:1px solid var(--hairline)}
+.peek-section h4{
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.12em;
+  text-transform:uppercase;color:var(--text-caption);margin-bottom:14px;font-weight:400;
+}
+
+/* mini chart */
+.peek-chart{
+  height:120px;width:100%;background:rgba(255,253,249,0.015);
+  border:1px solid var(--hairline);
+  position:relative;overflow:hidden;
+}
+.peek-chart svg{position:absolute;inset:0;width:100%;height:100%}
+.peek-chart .band-drift{position:absolute;left:0;right:0;background:rgba(192,138,85,0.05);}
+.peek-chart .band-depeg{position:absolute;left:0;right:0;background:rgba(165,90,90,0.06);}
+
+/* events list */
+.event{
+  display:grid;grid-template-columns:auto 1fr auto;gap:14px;
+  padding:11px 0;
+  border-bottom:1px solid var(--hairline);
+  font-size:12px;
+}
+.event:last-child{border-bottom:0}
+.event-time{font-family:'JetBrains Mono',monospace;color:var(--text-caption);font-size:11px}
+.event-desc{color:var(--text-body)}
+.event-state{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.08em;text-transform:uppercase}
+.event-state.depeg{color:var(--st-depeg)}
+.event-state.drift{color:var(--st-drift)}
+.event-state.recover{color:var(--st-pegged)}
+
+/* peek actions */
+.peek-actions{padding:24px 28px;display:flex;flex-direction:column;gap:10px}
+.btn-alert{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  background:var(--text);color:var(--canvas);
+  padding:13px 18px;border-radius:999px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  letter-spacing:0.08em;text-transform:uppercase;font-weight:500;
+  transition:background .25s var(--ease);
+}
+.btn-alert:hover{background:rgba(255,253,249,0.9)}
+.btn-ghost{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  background:transparent;color:var(--text);
+  border:1px solid var(--outline);
+  padding:12px 18px;border-radius:999px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  letter-spacing:0.08em;text-transform:uppercase;
+  transition:all .25s var(--ease);
+}
+.btn-ghost:hover{border-color:var(--text);background:rgba(255,253,249,0.04)}
+
+/* scrollbar */
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:rgba(255,253,249,0.06)}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,253,249,0.12)}
+</style>
+</head>
+<body>
+
+<div class="dot-bg"></div>
+
+<!-- ════════════ TOP BAR ════════════ -->
+<header class="topbar">
+  <div class="brand"><span class="b1">[</span><span>pegana</span><span class="b2">]</span></div>
+
+  <nav class="nav">
+    <a class="nav-item active" href="#"><span class="num">01</span> Dashboard</a>
+    <a class="nav-item" href="#"><span class="num">02</span> Events</a>
+    <a class="nav-item" href="#"><span class="num">03</span> Compare</a>
+    <a class="nav-item" href="#"><span class="num">04</span> Account</a>
+
+    <div class="flow-strip" style="margin-left:auto">
+      <span class="label">Engine</span>
+      <span class="pulse">
+        <span class="pulse-dot"></span>
+        <span>Ingesting 23 assets</span>
+      </span>
+      <span class="bar"></span>
+      <span>Tick 1.2s</span>
+    </div>
+  </nav>
+
+  <a class="cta-pill" href="#">Open @PeganaWatchBot <span>↗</span></a>
+</header>
+
+<!-- ════════════ 3-PANE SHELL ════════════ -->
+<div class="shell">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="side-label">Classes</div>
+    <div class="side-item active"><span>All</span><span class="count">23</span></div>
+    <div class="side-item"><span>LSTs</span><span class="count">8</span></div>
+    <div class="side-item"><span>Stables fiat</span><span class="count">5</span></div>
+    <div class="side-item"><span>Stables CDP</span><span class="count">2</span></div>
+    <div class="side-item"><span>Stables yield</span><span class="count">3</span></div>
+    <div class="side-item"><span>Stables FX</span><span class="count">1</span></div>
+    <div class="side-item"><span>Synthetic</span><span class="count">2</span></div>
+    <div class="side-item"><span>Delta-neutral</span><span class="count">2</span></div>
+
+    <div class="side-divider"></div>
+
+    <div class="side-label">Views</div>
+    <div class="side-item"><span>Watchlist</span><span class="count">4</span></div>
+    <div class="side-item"><span>Drifting</span><span class="count">3</span></div>
+    <div class="side-item"><span>Depegged</span><span class="count">1</span></div>
+    <div class="side-item"><span>Recovered 24h</span><span class="count">2</span></div>
+
+    <div class="side-divider"></div>
+
+    <div class="side-label">Pinned events</div>
+    <div class="side-item" style="font-family:'JetBrains Mono',monospace;font-size:11px"><span>BRZ depeg 2h ago</span></div>
+    <div class="side-item" style="font-family:'JetBrains Mono',monospace;font-size:11px"><span>hyUSD recover 9h ago</span></div>
+  </aside>
+
+  <!-- ── ASSET LIST (Bloomberg density) ── -->
+  <section class="list-pane">
+    <div class="list-header">
+      <h1 class="list-title">
+        <span class="serif-i">All</span> assets
+        <span class="stat">23 tracked · 21 pegged · 1 depeg</span>
+      </h1>
+      <div class="list-pills">
+        <button class="list-pill active">All</button>
+        <button class="list-pill">+ Drift</button>
+        <button class="list-pill">+ Depeg</button>
+        <button class="list-pill">+ Critical</button>
+      </div>
+    </div>
+
+    <div class="list-cols">
+      <span class="center">●</span>
+      <span>Sym</span>
+      <span>Asset</span>
+      <span class="right">Spread</span>
+      <span class="right">24h Δ</span>
+      <span class="center">24h trend</span>
+      <span></span>
+    </div>
+
+    <!-- ROWS -->
+    <div class="row-grid"  onclick="selectRow(this,'jitoSOL','PEGGED','-0.04','Jito Staked SOL')">
+      <div class="col-pip"><span class="pip pegged"></span></div>
+      <div class="col-sym">jitoSOL</div>
+      <div class="col-name">Jito Staked SOL</div>
+      <div class="col-spread pegged">−0.04%</div>
+      <div class="col-spread" style="color:var(--text-muted)">+0.02</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,16 14,15 28,14 42,13 56,12 70,11 84,12 100,11"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'mSOL','PEGGED','-0.02','Marinade')">
+      <div class="col-pip"><span class="pip pegged"></span></div>
+      <div class="col-sym">mSOL</div>
+      <div class="col-name">Marinade</div>
+      <div class="col-spread pegged">−0.02%</div>
+      <div class="col-spread" style="color:var(--text-muted)">+0.01</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,14 14,14 28,13 42,13 56,12 70,12 84,12 100,11"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid selected" onclick="selectRow(this,'BRZ','DEPEG','-3.66','Brazilian Real')">
+      <div class="col-pip"><span class="pip depeg"></span></div>
+      <div class="col-sym">BRZ</div>
+      <div class="col-name">Brazilian Real <span style="opacity:.5">· stable FX</span></div>
+      <div class="col-spread depeg">−3.66%</div>
+      <div class="col-spread" style="color:var(--st-depeg)">−362 bps</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-depeg)" stroke-width="1.4" points="0,12 14,13 28,15 42,18 56,22 70,25 84,26 100,24"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'INF','DRIFT','-0.31','Infinity LST')">
+      <div class="col-pip"><span class="pip drift"></span></div>
+      <div class="col-sym">INF</div>
+      <div class="col-name">Infinity LST</div>
+      <div class="col-spread drift">−0.31%</div>
+      <div class="col-spread" style="color:var(--st-drift)">−26 bps</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-drift)" stroke-width="1.2" points="0,14 14,15 28,16 42,17 56,18 70,19 84,20 100,21"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'bSOL','PEGGED','-0.05','BlazeStake')">
+      <div class="col-pip"><span class="pip pegged"></span></div>
+      <div class="col-sym">bSOL</div>
+      <div class="col-name">BlazeStake</div>
+      <div class="col-spread pegged">−0.05%</div>
+      <div class="col-spread" style="color:var(--text-muted)">−0.01</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,15 14,15 28,14 42,14 56,13 70,13 84,13 100,12"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'hyUSD','DRIFT','-0.18','Hylo CDP stable')">
+      <div class="col-pip"><span class="pip drift"></span></div>
+      <div class="col-sym">hyUSD</div>
+      <div class="col-name">Hylo CDP stable</div>
+      <div class="col-spread drift">−0.18%</div>
+      <div class="col-spread" style="color:var(--text-muted)">+0.14 ↑</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-drift)" stroke-width="1.2" points="0,18 14,17 28,16 42,15 56,14 70,13 84,13 100,12"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'USDC','PEGGED','+0.01','Circle USD')">
+      <div class="col-pip"><span class="pip pegged"></span></div>
+      <div class="col-sym">USDC</div>
+      <div class="col-name">Circle USD</div>
+      <div class="col-spread pegged">+0.01%</div>
+      <div class="col-spread" style="color:var(--text-muted)">±0</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,13 14,13 28,13 42,13 56,13 70,13 84,13 100,13"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'USDT','PEGGED','-0.02','Tether USD')">
+      <div class="col-pip"><span class="pip pegged"></span></div>
+      <div class="col-sym">USDT</div>
+      <div class="col-name">Tether USD</div>
+      <div class="col-spread pegged">−0.02%</div>
+      <div class="col-spread" style="color:var(--text-muted)">±0</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,13 14,13 28,13 42,13 56,13 70,13 84,13 100,13"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'PYUSD','PEGGED','+0.03','PayPal USD')">
+      <div class="col-pip"><span class="pip pegged"></span></div>
+      <div class="col-sym">PYUSD</div>
+      <div class="col-name">PayPal USD</div>
+      <div class="col-spread pegged">+0.03%</div>
+      <div class="col-spread" style="color:var(--text-muted)">+0.01</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,13 14,13 28,13 42,12 56,12 70,12 84,12 100,12"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'JupSOL','PEGGED','-0.05','Jupiter LST')">
+      <div class="col-pip"><span class="pip pegged"></span></div>
+      <div class="col-sym">JupSOL</div>
+      <div class="col-name">Jupiter LST</div>
+      <div class="col-spread pegged">−0.05%</div>
+      <div class="col-spread" style="color:var(--text-muted)">−0.01</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,14 14,14 28,14 42,13 56,13 70,13 84,13 100,12"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'USDe','PEGGED','-0.06','Ethena Synthetic')">
+      <div class="col-pip"><span class="pip pegged"></span></div>
+      <div class="col-sym">USDe</div>
+      <div class="col-name">Ethena Synthetic</div>
+      <div class="col-spread pegged">−0.06%</div>
+      <div class="col-spread" style="color:var(--text-muted)">+0.02</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,15 14,15 28,14 42,14 56,13 70,13 84,13 100,12"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+    <div class="row-grid" onclick="selectRow(this,'bbSOL','DRIFT','-0.24','Bybit LST')">
+      <div class="col-pip"><span class="pip drift"></span></div>
+      <div class="col-sym">bbSOL</div>
+      <div class="col-name">Bybit LST</div>
+      <div class="col-spread drift">−0.24%</div>
+      <div class="col-spread" style="color:var(--st-drift)">−18 bps</div>
+      <div class="col-spark"><svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--st-drift)" stroke-width="1.2" points="0,14 14,15 28,16 42,17 56,18 70,19 84,20 100,21"/></svg></div>
+      <div class="col-arrow">→</div>
+    </div>
+
+  </section>
+
+  <!-- ── PEEK PANE ── -->
+  <aside class="peek" id="peek">
+    <div class="peek-head">
+      <div class="peek-eyebrow"><span class="pip depeg"></span> DEPEG · 2h ago</div>
+      <div class="peek-sym">
+        <span id="peekSym">BRZ</span>
+      </div>
+      <div class="peek-name" id="peekName">Brazilian Real · stable FX</div>
+
+      <div class="peek-spread depeg" id="peekSpreadWrap">
+        <div class="peek-spread-val" id="peekSpread">−3.66<span style="font-size:22px;color:var(--text-caption)">%</span></div>
+        <div>
+          <div class="peek-spread-meta">spread now</div>
+          <div class="peek-spread-meta" style="margin-top:3px;color:var(--text-muted)">from −0.04% · 2h ago</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="peek-section">
+      <h4>Live spread · 24h</h4>
+      <div class="peek-chart">
+        <div class="band-drift" style="top:60%;height:8%"></div>
+        <div class="band-depeg" style="top:30%;height:30%"></div>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polyline fill="none" stroke="var(--st-depeg)" stroke-width="1.4" points="0,75 5,74 10,76 15,75 20,74 25,73 30,71 35,68 40,62 45,55 50,50 55,48 60,46 65,45 70,46 75,47 80,46 85,45 90,44 95,43 100,42" />
+        </svg>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-caption);letter-spacing:0.06em">
+        <span>−4.20%</span>
+        <span class="serif-i" style="color:var(--st-depeg)">peak −3.66%</span>
+        <span>+0.20%</span>
+      </div>
+    </div>
+
+    <div class="peek-section">
+      <h4>Transitions · this week</h4>
+      <div class="event">
+        <span class="event-time">14:21 UTC</span>
+        <span class="event-desc">Crossed −300 bps into DEPEG band</span>
+        <span class="event-state depeg">DEPEG</span>
+      </div>
+      <div class="event">
+        <span class="event-time">12:08 UTC</span>
+        <span class="event-desc">Exited PEGGED, entering DRIFT</span>
+        <span class="event-state drift">DRIFT</span>
+      </div>
+      <div class="event">
+        <span class="event-time">May 26</span>
+        <span class="event-desc">Brief DRIFT-back episode (~3 min)</span>
+        <span class="event-state recover">RECOVER</span>
+      </div>
+    </div>
+
+    <div class="peek-section">
+      <h4>What we read</h4>
+      <div style="font-size:12px;line-height:1.6;color:var(--text-muted)">
+        Intrinsic: <span class="mono" style="color:var(--text)">1.0000 USD</span> from <span style="color:var(--text-body)">Pyth FX feed</span><br>
+        Market: <span class="mono" style="color:var(--text)">0.9634 USD</span> from <span style="color:var(--text-body)">DexScreener · Jupiter</span><br>
+        Threshold: <span class="mono" style="color:var(--st-depeg)">−50 bps</span> · drift trigger
+      </div>
+    </div>
+
+    <div class="peek-actions">
+      <a href="#" class="btn-alert">Alert me on recovery <span>→</span></a>
+      <a href="#" class="btn-ghost">Open asset page <span>↗</span></a>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+function selectRow(el, sym, state, spreadVal, name) {
+  document.querySelectorAll('.row-grid').forEach(r => r.classList.remove('selected'));
+  el.classList.add('selected');
+
+  // Update peek
+  document.getElementById('peekSym').textContent = sym;
+  document.getElementById('peekName').textContent = name;
+  document.getElementById('peekSpread').innerHTML = spreadVal + '<span style="font-size:22px;color:var(--text-caption)">%</span>';
+
+  const wrap = document.getElementById('peekSpreadWrap');
+  wrap.classList.remove('pegged','drift','depeg','critical');
+  wrap.classList.add(state.toLowerCase());
+
+  const eyebrow = document.querySelector('.peek-eyebrow');
+  eyebrow.innerHTML = '<span class="pip ' + state.toLowerCase() + '"></span> ' + state + ' · just now';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+---
+title: "Versioning & stability"
+description: "The v1 read surface is a stable, additive-only contract. Breaking changes ship under a new prefix."
+---
+
+The `v1` read surface is a **stable, versioned contract** you can wire a risk engine against.
+
+## The additive-only promise
+
+Going forward we make only **additive** changes within `v1` — new fields and new endpoints —
+**never a breaking rename or removal**. A breaking change would ship under a new prefix (`v2`)
+with `v1` left working. Concretely, you can rely on:
+
+- Existing field names and their JSON types never change.
+- New fields may appear at any time — tolerate unknown keys (don't use strict/`deny_unknown`
+  parsing).
+- Values are formatted per the [Response format](/guides/rest-api#response-format) conventions
+  (decimal strings, RFC3339 millisecond-`Z` timestamps) — a representation refinement is not a
+  breaking change; parse numbers/dates, never compare exact byte strings.
+
+<Note>
+**One-time exception (2026-07-24).** Before the first external integration, `v1` had a single
+coordinated reshape to its final form — list endpoints gained the `{ ok, generated_at, count,
+data }` envelope, the peg feed became a `data` array, and a few fields were renamed. This was a
+pre-integration cleanup, done in place because no external consumer had integrated yet; the
+[changelog](/changelog) has the migration. The additive-only promise holds from that point on.
+</Note>
+
+<Note>
+This is distinct from the **methodology version** (e.g. `0.7.0`), which describes the risk
+model, not the wire contract. Read it at [`GET /v1/methodology/current`](https://api.pegana.xyz/v1/methodology/current);
+every receipt is pinned to the methodology version that produced it.
+</Note>
+
+## Deprecation
+
+If an endpoint is ever slated for retirement, it will advertise it with standard HTTP
+signals — a `Deprecation` header and a `Sunset` date — well ahead of any change, so pollers
+have a window to migrate. None are deprecated today.

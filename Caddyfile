@@ -1,0 +1,99 @@
+{
+	email admin@pegana.xyz
+}
+
+# v1.1 — backend lives at api.pegana.xyz on Hetzner CAX21.
+# The marketing/dashboard frontend (Next.js) is hosted on Vercel and
+# resolves pegana.xyz + www.pegana.xyz directly via Cloudflare DNS,
+# bypassing this Caddy. Keep Caddy single-purpose: terminate TLS for the
+# API + WebSocket, nothing else.
+
+api.pegana.xyz {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# This vhost only serves the JSON/WebSocket API — there is no HTML,
+		# no scripts, no images, no fonts. Defaulting every fetch directive
+		# to 'none' means a browser that lands on api.pegana.xyz (e.g.
+		# following a buggy redirect) cannot load any subresource and
+		# cannot be iframed.
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+		-Server
+	}
+
+	@ws {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	reverse_proxy @ws api:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	reverse_proxy api:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# v0.1.0 — Grafana visual layer for Prometheus. Single-user, admin only.
+# Auth handled by Grafana itself (basic auth on the HTML root). No
+# public dashboards (GF_USERS_ALLOW_SIGN_UP=false in docker-compose env).
+grafana.pegana.xyz {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		# Grafana renders inside its own frames; allow self only.
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Grafana needs WebSocket support for live dashboards.
+	@ws {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	reverse_proxy @ws grafana:3000
+
+	reverse_proxy grafana:3000
+}
+
+# v2 — hosted MCP server with x402 payment per call. Lives on the same
+# Hetzner box as the API; reverse-proxies to the Bun process started by
+# the `mcp-ts` service in docker-compose.yml.
+mcp.pegana.xyz {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# The vhost serves MCP JSON-RPC (POST /), health (GET /health),
+		# metrics (GET /metrics), AND the human landing (GET /). The
+		# landing uses inline styles only — no scripts, no images, no
+		# iframes. `style-src 'unsafe-inline'` permits it while keeping
+		# everything else locked down.
+		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"
+		-Server
+	}
+
+	# NOTE: there is NO per-IP rate limit at this proxy. The stock `caddy:2`
+	# image ships without the `rate_limit` plugin, so any limiting must be
+	# done in-app. The v2 quota model (soft 60 req/min/IP per
+	# mcp-ts/README.md) is enforced inside the mcp-ts Bun process, not here.
+	# TODO: if proxy-level limiting is ever required, rebuild Caddy with the
+	# caddy-ratelimit plugin (xcaddy) and add a `rate_limit` directive here.
+
+	@metrics path /metrics
+	respond @metrics 403
+
+	reverse_proxy mcp-ts:8090
+}

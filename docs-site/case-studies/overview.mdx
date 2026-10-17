@@ -1,0 +1,47 @@
+---
+title: "Case studies"
+description: "Five real depegs across the major asset classes Pegana tracks. What broke, why, and what a peg oracle would have shown."
+---
+
+These are retrospective analyses, not live captures — most predate Pegana. They're
+here because the *shape* of each failure is the shape Pegana is designed to detect.
+
+| Case | Asset | Class | Date | Worst spread | Detected live? |
+| --- | --- | --- | --- | --- | --- |
+| [USDC-SVB](/case-studies/usdc-svb-march-2023) | USDC | Fiat stable | 2023-03-11 | −1300 bps | No (pre-Pegana) |
+| [UST collapse](/case-studies/ust-collapse-may-2022) | UST | Algo synthetic | 2022-05-09 | −7000 bps | No (pre-Pegana) |
+| [mSOL flash crash](/case-studies/msol-pyth-may-2022) | mSOL | LST | 2022-06-19 | −1500 bps | No (pre-Pegana) |
+| [DAI / SVB contagion](/case-studies/dai-contagion-march-2023) | DAI | CDP | 2023-03-11 | −1100 bps | No (pre-Pegana) |
+| [GHO mint-only float](/case-studies/gho-launch-2023) | GHO | CDP | 2023-08-15 | −550 bps | No (pre-Pegana) |
+
+## Themes that recur
+
+**Two-numbers framing matters.** USDC and DAI both had intrinsic ≈ $1 throughout the
+SVB weekend — only the market refused the price. mSOL had market ≈ 0.85 SOL for four
+minutes while Marinade's on-chain intrinsic never moved. A monitor that watches one
+side prints either a false negative (intrinsic-only) or a false positive
+(market-only). See [intrinsic vs market](/concepts/intrinsic-vs-market).
+
+**Thin venues lie.** mSOL's flash crash was a single thin pool dragging an oracle.
+Liquidations cascaded against healthy collateral. The fix is routed quotes (Jupiter)
++ a confidence score that drops when depth disappears. See
+[market value](/methodology/market-value).
+
+**Asymmetric mechanisms fail asymmetrically.** GHO floated below par for 8 months
+because mint was open but burn-to-par was closed. The state machine catches both
+short shocks and sustained drift via dwell timers. See [hysteresis](/concepts/hysteresis-fsm).
+
+**CDP stables inherit collateral tail risk.** DAI rode USDC down because USDC was
+half its reserves. Hylo's hyUSD has SOL tail risk. The signal worth watching is the
+collateral ratio, not the market price. See [Hylo CDP CR signal](/concepts/hylo-cdp-cr-signal).
+
+## What Pegana would have shown
+
+For every case below, we walk the timeline through Pegana's lens — what each state
+transition would have looked like, what subscribers would have received, and where
+the alert would have been actionable vs after-the-fact.
+
+The honest answer for most of these is: **Pegana would have called DRIFT 5–30 minutes
+before the worst print**, with a follow-up DEPEG transition once the threshold
+crossed. That's enough lead time to pause a liquidation engine, freeze a payout
+queue, or skip a swap — but it's not magic. We can't predict; we report.

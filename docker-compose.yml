@@ -1,0 +1,395 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16@sha256:d8336a5c9cc49bdbf1e935234e8c87ab64b6d6d195fd2ecedff7b00185557631
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pegana}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:-pegana}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pegana}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    restart: unless-stopped
+    volumes: [redisdata:/data]
+    # `--requirepass` blocks unauthenticated peers inside the docker network.
+    # Without it, any compromised container (bot, indexer, …) would have full
+    # pub/sub control and could inject false discount updates that the WS
+    # handler forwards verbatim to every connected client.
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --save 60 1 --appendonly yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Compose reads the root .env for interpolation only. Each service receives
+  # an explicit allowlist, with DATABASE_URL / REDIS_URL rewritten to use the
+  # in-network hostnames instead of the host-local development ports.
+
+  indexer:
+    build:
+      context: .
+      dockerfile: crates/indexer-rs/Dockerfile
+    environment:
+      DATABASE_URL: ${INDEXER_DATABASE_URL:-postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pegana}}
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
+      SANCTUM_API_URL: ${SANCTUM_API_URL:-https://extra-api.sanctum.so}
+      JUPITER_API_URL: ${JUPITER_API_URL:-https://api.jup.ag}
+      JUPITER_API_KEY: ${JUPITER_API_KEY:-}
+      JUPITER_MAX_CONCURRENT: ${JUPITER_MAX_CONCURRENT:-4}
+      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      PYTH_HERMES_API_KEY: ${PYTH_HERMES_API_KEY:-}
+      PYTH_ONCHAIN_FALLBACK: ${PYTH_ONCHAIN_FALLBACK:-1}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+      SOLANA_RPC_URL_FALLBACK: ${SOLANA_RPC_URL_FALLBACK:-https://solana-rpc.publicnode.com}
+      ASSETS_FILE: ${ASSETS_FILE:-./assets.toml}
+      POLL_TICK_MS: ${POLL_TICK_MS:-2500}
+      SANCTUM_POLL_MS: ${SANCTUM_POLL_MS:-15000}
+      HYLO_POLL_MS: ${HYLO_POLL_MS:-30000}
+      SOLAYER_POLL_MS: ${SOLAYER_POLL_MS:-60000}
+      PIGGYBANK_POLL_MS: ${PIGGYBANK_POLL_MS:-60000}
+      SPL_STAKE_POOL_POLL_MS: ${SPL_STAKE_POOL_POLL_MS:-60000}
+      PERENA_POLL_MS: ${PERENA_POLL_MS:-60000}
+      TOKEN_SUPPLY_POLL_MS: ${TOKEN_SUPPLY_POLL_MS:-600000}
+      FEATURE_HYLO: ${FEATURE_HYLO:-true}
+      FEATURE_BRZ: ${FEATURE_BRZ:-true}
+      FEATURE_SOLAYER: ${FEATURE_SOLAYER:-true}
+      FEATURE_PIGGYBANK: ${FEATURE_PIGGYBANK:-true}
+      FEATURE_SPL_STAKE_POOL: ${FEATURE_SPL_STAKE_POOL:-true}
+      FEATURE_PERENA: ${FEATURE_PERENA:-true}
+      FEATURE_TOKEN_SUPPLY: ${FEATURE_TOKEN_SUPPLY:-true}
+      DB_MAX_CONNECTIONS: ${INDEXER_DB_MAX_CONNECTIONS:-15}
+      DB_STATEMENT_TIMEOUT_MS: ${INDEXER_DB_STATEMENT_TIMEOUT_MS:-30000}
+      DEXSCREENER_MAX_PREMIUM: ${DEXSCREENER_MAX_PREMIUM:-0.5}
+      DEXSCREENER_MIN_LIQUIDITY_USD: ${DEXSCREENER_MIN_LIQUIDITY_USD:-25000}
+      DEXSCREENER_POLL_MS: ${DEXSCREENER_POLL_MS:-30000}
+      TOKENS_XYZ_API_KEY: ${TOKENS_XYZ_API_KEY:-}
+      TOKENS_XYZ_POLL_MS: ${TOKENS_XYZ_POLL_MS:-60000}
+      TOKENS_XYZ_RISK_POLL_MS: ${TOKENS_XYZ_RISK_POLL_MS:-1800000}
+      PYTH_INTRINSIC_INTERVAL_MS: ${PYTH_INTRINSIC_INTERVAL_MS:-30000}
+      LST_DIRECTORY_POLL_MS: ${LST_DIRECTORY_POLL_MS:-900000}
+      INTRINSIC_DIVERGENCE_TOLERANCE_BPS: ${INTRINSIC_DIVERGENCE_TOLERANCE_BPS:-300}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,pegana=debug}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      METRICS_BIND: ${INDEXER_METRICS_BIND:-0.0.0.0:9090}
+    volumes: [./assets.toml:/app/assets.toml:ro]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9094/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  engine:
+    build:
+      context: .
+      dockerfile: crates/engine-rs/Dockerfile
+    environment:
+      DATABASE_URL: ${ENGINE_DATABASE_URL:-postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pegana}}
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
+      ASSETS_FILE: ${ASSETS_FILE:-./assets.toml}
+      PYTH_STALENESS_SECS: ${PYTH_STALENESS_SECS:-30}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+      SOLANA_RPC_URL_FALLBACK: ${SOLANA_RPC_URL_FALLBACK:-https://solana-rpc.publicnode.com}
+      PEGANA_COMMIT_KEYPAIR: ${PEGANA_COMMIT_KEYPAIR:-/opt/pegana/.secrets/commit-keypair.json}
+      DEPTH_GATE_FLOOR_USD: ${DEPTH_GATE_FLOOR_USD:-}
+      DEPTH_GATE_FRESHNESS_SECS: ${DEPTH_GATE_FRESHNESS_SECS:-}
+      INTRINSIC_LIVENESS_GATE: ${INTRINSIC_LIVENESS_GATE:-}
+      INTRINSIC_LIVENESS_FRESHNESS_SECS: ${INTRINSIC_LIVENESS_FRESHNESS_SECS:-}
+      DB_MAX_CONNECTIONS: ${ENGINE_DB_MAX_CONNECTIONS:-10}
+      DB_STATEMENT_TIMEOUT_MS: ${ENGINE_DB_STATEMENT_TIMEOUT_MS:-30000}
+      AUDIT_BASE_URL: ${AUDIT_BASE_URL:-https://pegana.xyz}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,pegana=debug}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      METRICS_BIND: ${ENGINE_METRICS_BIND:-0.0.0.0:9091}
+    volumes:
+      - ./assets.toml:/app/assets.toml:ro
+      - /opt/pegana/.secrets/commit-keypair.json:/opt/pegana/.secrets/commit-keypair.json:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9095/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  dispatcher:
+    build:
+      context: .
+      dockerfile: crates/dispatcher-rs/Dockerfile
+    environment:
+      DATABASE_URL: ${DISPATCHER_DATABASE_URL:-postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pegana}}
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
+      DB_MAX_CONNECTIONS: ${DISPATCHER_DB_MAX_CONNECTIONS:-20}
+      DB_STATEMENT_TIMEOUT_MS: ${DISPATCHER_DB_STATEMENT_TIMEOUT_MS:-30000}
+      PEGANA_WEBHOOK_SIGNING_KEY: ${PEGANA_WEBHOOK_SIGNING_KEY:-}
+      PEGANA_WEBHOOK_SIGNING_KEY_NEXT: ${PEGANA_WEBHOOK_SIGNING_KEY_NEXT:-}
+      AUDIT_BASE_URL: ${AUDIT_BASE_URL:-https://pegana.xyz}
+      WEBHOOK_SSRF_ALLOW_LOOPBACK: ${WEBHOOK_SSRF_ALLOW_LOOPBACK:-}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,pegana=debug}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      METRICS_BIND: ${DISPATCHER_METRICS_BIND:-0.0.0.0:9093}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9096/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: crates/api-rs/Dockerfile
+    environment:
+      DATABASE_URL: ${API_DATABASE_URL:-postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pegana}}
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
+      API_BIND: ${API_BIND:-0.0.0.0:8080}
+      API_RATE_LIMIT_PER_MIN: ${API_RATE_LIMIT_PER_MIN:-60}
+      FEATURE_PUBLIC_ALERTS: ${FEATURE_PUBLIC_ALERTS:-false}
+      CORS_EXTRA_ORIGINS: ${CORS_EXTRA_ORIGINS:-}
+      PEGANA_WEBHOOK_SIGNING_KEY: ${PEGANA_WEBHOOK_SIGNING_KEY:-}
+      PEGANA_WEBHOOK_SIGNING_KEY_NEXT: ${PEGANA_WEBHOOK_SIGNING_KEY_NEXT:-}
+      PEGANA_WEBHOOK_EGRESS_IPS: ${PEGANA_WEBHOOK_EGRESS_IPS:-}
+      WEBHOOK_SSRF_ALLOW_LOOPBACK: ${WEBHOOK_SSRF_ALLOW_LOOPBACK:-}
+      DB_MAX_CONNECTIONS: ${API_DB_MAX_CONNECTIONS:-25}
+      DB_STATEMENT_TIMEOUT_MS: ${API_DB_STATEMENT_TIMEOUT_MS:-30000}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,pegana=debug}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      METRICS_BIND: ${API_METRICS_BIND:-0.0.0.0:9092}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  protocol-indexer:
+    build: ./protocol-indexer-ts
+    container_name: pegana-protocol-indexer
+    restart: unless-stopped
+    # Compensating controls for bigint-buffer advisory (CVE-2025-3194).
+    # See docs/security/protocol-indexer-bigint-buffer-waiver.md.
+    # 2026-10-16: raised 512m -> 1g on the Hostinger rebuild — bigint native
+    # bindings failed to build in the new image (pure-JS fallback raises RSS);
+    # revisit once `bun rebuild bigint` works in the image build.
+    mem_limit: 1g
+    mem_swappiness: 0
+    pids_limit: 100
+    cpus: "1.0"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      DATABASE_URL: ${PROTOCOL_INDEXER_DATABASE_URL:-postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD:-pegana}@postgres:5432/${POSTGRES_DB:-pegana}}
+      HTTP_PORT: "8091"
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+      SOLANA_RPC_URL_FALLBACK: ${SOLANA_RPC_URL_FALLBACK:-https://solana-rpc.publicnode.com}
+      HELIUS_API_KEY: ${HELIUS_API_KEY:-}
+      KAMINO_API_URL: ${KAMINO_API_URL:-https://api.kamino.finance}
+      KAMINO_MARKETS: ${KAMINO_MARKETS:-}
+      KAMINO_POLL_MS: ${KAMINO_POLL_MS:-300000}
+      KAMINO_HF_POLL_MS: ${KAMINO_HF_POLL_MS:-600000}
+      KAMINO_HF_RESERVE_DELAY_MS: ${KAMINO_HF_RESERVE_DELAY_MS:-1500}
+      JUPITER_LEND_API_URL: ${JUPITER_LEND_API_URL:-https://lite-api.jup.ag}
+      JUPITER_LEND_POLL_MS: ${JUPITER_LEND_POLL_MS:-300000}
+      JUPITER_HF_POLL_MS: ${JUPITER_HF_POLL_MS:-600000}
+      JUPITER_HF_VAULT_DELAY_MS: ${JUPITER_HF_VAULT_DELAY_MS:-1200}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    expose: ["8091"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    # bun:1-slim has no curl — probe the Hono GET /health route via `bun -e
+    # fetch` (same pattern as mcp-ts). Internal DB-writer, no Caddy route.
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:8091/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  mcp-ts:
+    build: ./mcp-ts
+    container_name: pegana-mcp
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
+      DATABASE_URL: ${MCP_DATABASE_URL:-postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD:-pegana}@postgres:5432/${POSTGRES_DB:-pegana}}
+      # Every tool is free: no payment receiver and no facilitator credentials.
+      SOLANA_NETWORK: ${SOLANA_NETWORK:-solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp}
+      PEGANA_API: ${PEGANA_API:-https://api.pegana.xyz}
+      AUDIT_BASE_URL: ${AUDIT_BASE_URL:-https://pegana.xyz}
+      HTTP_PORT: "8090"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      NODE_ENV: ${NODE_ENV:-production}
+    expose: ["8090"]
+    depends_on:
+      redis: { condition: service_started }
+      postgres: { condition: service_healthy }
+    # The bun:1-slim runtime has no curl/wget, so the liveness probe uses
+    # the same `bun -e fetch` pattern baked into mcp-ts/Dockerfile, hitting
+    # the Hono GET /health route (returns "ok"). Mirrors the api service's
+    # intent (HTTP 200 = healthy) with the toolchain this image actually has.
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  caddy:
+    image: caddy:2@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      # Only the upstreams caddy actually proxies (api, mcp-ts) gate on health.
+      # grafana is non-critical observability — do NOT couple the public TLS edge
+      # (api.pegana.xyz / mcp.pegana.xyz) to grafana's health on a bare `up`/reboot.
+      api: { condition: service_healthy }
+      mcp-ts: { condition: service_healthy }
+      grafana: { condition: service_started }
+
+  prometheus:
+    image: prom/prometheus:v2.55.1@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3
+    restart: unless-stopped
+    # No host port mapping — the metrics surface stays on the internal docker
+    # network. Grafana reaches it at http://prometheus:9090 via the docker
+    # network. External access via Grafana only.
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # ⚠️ DIRECTORY mount, deliberately — NOT `./ops/alerts/pegana.yml:...`.
+      # A single-FILE bind mount pins the host inode. `git reset --hard` (what
+      # deploy.sh does) REPLACES the file rather than editing it in place, so
+      # the container keeps serving the old inode forever and every alert-rule
+      # change is silently ignored until the container is recreated.
+      #
+      # Caught live on 2026-08-10: host had inode 273473 / 37178 bytes while
+      # the container was still reading inode 272060 / 30905 bytes from 6 days
+      # earlier, and `promtool check rules` inside the container reported 32
+      # rules against 37 on the host. Mounting the directory makes the file
+      # resolve per-open, so a plain SIGHUP reload now picks changes up.
+      #
+      # `rule_files` still names pegana.yml explicitly (see ops/prometheus/
+      # prometheus.yml) because this directory also holds pegana_test.yml,
+      # which is a promtool UNIT-TEST file and is not loadable as rules.
+      - ./ops/alerts:/etc/prometheus/rules:ro
+      - prometheusdata:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=14d
+      - --web.enable-lifecycle
+    depends_on:
+      api: { condition: service_started }
+
+  # Alertmanager — routes the rules in ops/alerts/pegana.yml to Telegram.
+  # Internal-only (no host port), reachable by Prometheus at
+  # http://alertmanager:9093 over the docker network.
+  #
+  # Alertmanager can't expand ${VAR} and validates strictly at boot (chat_id is
+  # int64), so the entrypoint renders ops/alertmanager/config.yml (a template
+  # with __BOT_TOKEN__ / __CHAT_ID__) via sed from compose-interpolated .env
+  # values. Both Telegram values are required in production; the container exits
+  # immediately when either is missing. The local overlay supplies
+  # explicit inert values so local config/startup testing remains isolated.
+  alertmanager:
+    image: prom/alertmanager:latest@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d
+    restart: unless-stopped
+    volumes:
+      - ./ops/alertmanager/config.yml:/etc/alertmanager/config.tmpl.yml:ro
+      - alertmanagerdata:/alertmanager
+    environment:
+      ALERTMANAGER_TELEGRAM_BOT_TOKEN: ${ALERTMANAGER_TELEGRAM_BOT_TOKEN:-}
+      ALERTMANAGER_TELEGRAM_CHAT_ID: ${ALERTMANAGER_TELEGRAM_CHAT_ID:-}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        : "$${ALERTMANAGER_TELEGRAM_BOT_TOKEN:?ALERTMANAGER_TELEGRAM_BOT_TOKEN required}"
+        : "$${ALERTMANAGER_TELEGRAM_CHAT_ID:?ALERTMANAGER_TELEGRAM_CHAT_ID required}"
+        sed -e "s|__BOT_TOKEN__|$${ALERTMANAGER_TELEGRAM_BOT_TOKEN}|g" \
+            -e "s|__CHAT_ID__|$${ALERTMANAGER_TELEGRAM_CHAT_ID}|g" \
+            /etc/alertmanager/config.tmpl.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
+    depends_on:
+      prometheus: { condition: service_started }
+
+  # Grafana — visual layer for Prometheus metrics. Exposed at
+  # grafana.pegana.xyz via Caddy reverse proxy. Dashboard JSON +
+  # Prometheus datasource provisioned via ./ops/grafana/.
+  # Admin password from .env (GRAFANA_ADMIN_PASSWORD).
+  grafana:
+    image: grafana/grafana-oss:11.3.0@sha256:a0f881232a6fb71a0554a47d0fe2203b6888fe77f4cefb7ea62bed7eb54e13c3
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: https://grafana.pegana.xyz
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboard.json:/var/lib/grafana/dashboards/pegana-overview.json:ro
+    depends_on:
+      prometheus: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  pgdata: {}
+  redisdata: {}
+  caddydata: {}
+  caddyconfig: {}
+  prometheusdata: {}
+  grafanadata: {}
+  alertmanagerdata: {}

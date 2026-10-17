@@ -1,0 +1,172 @@
+# promtool unit tests for ops/alerts/pegana.yml.
+#
+# Run with: promtool test rules ops/alerts/pegana_test.yml
+#
+# Currently covers PeganaAssetMiscalibrated — the api-rs periodic export of
+# the /v1/calibration self-monitor (pegana_calibration_health_code) turned
+# into a paging alert. See the group comment in pegana.yml for the code
+# mapping (ok=0, watch=1, miscalibrated=2, no_data=-1, na=-2, inactive=-3).
+
+rule_files:
+  - pegana.yml
+
+evaluation_interval: 1m
+
+tests:
+  # code=2 (miscalibrated) held for the full `for: 30m` window fires.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_calibration_health_code{asset="hyUSD"}'
+        values: "2x35"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PeganaAssetMiscalibrated
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: api
+              asset: hyUSD
+            exp_annotations:
+              summary: "hyUSD calibration is broken (p95 beyond depeg band)"
+              description: |
+                `pegana_calibration_health_code{asset="hyUSD"} >= 2` for
+                30m — the trailing-8d p95 of hyUSD's effective discount
+                is beyond its own depeg_bps band (see GET /v1/calibration). Either the
+                asset is genuinely depegged (check the live verdict/alerts first) or
+                its thresholds_bps are miscalibrated for its normal trading range.
+                Cross-check pegana_calibration_p95_bps{asset="hyUSD"}
+                against the asset's depeg_bps in assets.toml.
+
+  # code=2 held for only 10m — hasn't cleared `for: 30m` yet, must NOT fire.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_calibration_health_code{asset="hyUSD"}'
+        values: "2x11"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PeganaAssetMiscalibrated
+        exp_alerts: []
+
+  # code=1 (watch) sustained — below the >= 2 threshold, must NOT fire even
+  # well past 30m.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_calibration_health_code{asset="INF"}'
+        values: "1x45"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: PeganaAssetMiscalibrated
+        exp_alerts: []
+
+  # code=0 (ok) sustained — must NOT fire.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_calibration_health_code{asset="USDC"}'
+        values: "0x45"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: PeganaAssetMiscalibrated
+        exp_alerts: []
+
+  # code=-1 (no_data, dark source) sustained — must NOT fire.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_calibration_health_code{asset="USDu"}'
+        values: "-1x45"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: PeganaAssetMiscalibrated
+        exp_alerts: []
+
+  # code=-3 (CALIBRATION_HEALTH_INACTIVE) — an asset that dropped out of the
+  # active set (deactivated); the api-rs task resets its gauge to -3 so a
+  # previously-miscalibrated (=2) retired asset stops paging instead of firing
+  # forever. Below >= 2, must NOT fire.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_calibration_health_code{asset="DEAD"}'
+        values: "-3x45"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: PeganaAssetMiscalibrated
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="pegana-api",instance="api:9092",service="api"}'
+        values: "0x7"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PeganaScrapeTargetDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PeganaScrapeTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: pegana-api
+              instance: api:9092
+              service: api
+            exp_annotations:
+              summary: "Prometheus scrape target down: pegana-api api:9092"
+              description: |
+                `up{job="pegana-api",instance="api:9092"} == 0` for 5m.
+                Prometheus cannot scrape this target; inspect the container,
+                network, and metrics endpoint.
+
+  - interval: 1m
+    input_series:
+      - series: 'pegana_protocol_source_task_up{source="kamino"}'
+        values: "0x7"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PeganaProtocolSourceTaskDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: protocol-indexer
+              source: kamino
+            exp_annotations:
+              summary: "Protocol indexer source task down: kamino"
+              description: |
+                `pegana_protocol_source_task_up{source="kamino"} == 0` for 5m.
+                The source loop exited or failed to start; inspect protocol-indexer logs.
+
+  - interval: 1m
+    input_series:
+      - series: 'pegana_protocol_source_last_publish_timestamp{source="jupiter_lend"}'
+        values: "0x13"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: PeganaProtocolSourceStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: protocol-indexer
+              source: jupiter_lend
+            exp_annotations:
+              summary: "Protocol indexer source stale: jupiter_lend"
+              description: |
+                `time() - pegana_protocol_source_last_publish_timestamp{source="jupiter_lend"} > 300`
+                for 5m. No successful fetch + upsert has completed recently; inspect the
+                source upstream, RPC, database, and protocol-indexer logs.
+
+  - interval: 1m
+    input_series:
+      - series: 'alertmanager_notifications_failed_total{integration="telegram",receiver="telegram-critical"}'
+        values: "0 0 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PeganaAlertmanagerNotificationFailures
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: alertmanager
+              integration: telegram
+              receiver: telegram-critical
+            exp_annotations:
+              summary: "Alertmanager notification delivery failing"
+              description: |
+                `increase(alertmanager_notifications_failed_total[5m]) > 0`.
+                Alertmanager failed to deliver at least one notification; inspect its logs,
+                Telegram credentials, receiver configuration, and network reachability.

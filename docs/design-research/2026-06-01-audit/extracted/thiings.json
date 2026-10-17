@@ -1,0 +1,15 @@
+{
+  "bodyFont": "Geist, \"Geist Fallback\", ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+  "bodyBg": "oklch(1 0 0)",
+  "bodyColor": "oklch(0.145 0 0)",
+  "headings": [
+    {
+      "t": "The Thiings Collection — 10000+ AI-Gener",
+      "ff": "Geist, \"Geist Fallback\", ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "fs": "16px",
+      "fw": "400",
+      "ls": "normal"
+    }
+  ],
+  "title": "The Thiings Collection | Thiings"
+}

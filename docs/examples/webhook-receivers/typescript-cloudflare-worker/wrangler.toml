@@ -1,0 +1,8 @@
+name = "pegana-webhook-receiver"
+main = "worker.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Override the embedded pubkey by running:
+#   wrangler secret put PEGANA_PUB_KEY_B64
+# (paste the current value from https://pegana.xyz/developers#webhook)

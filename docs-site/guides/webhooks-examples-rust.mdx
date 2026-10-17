@@ -1,0 +1,195 @@
+---
+title: "Webhook receiver — Rust / axum"
+description: "Production-ready reference using ed25519-dalek strict mode. Verbatim from the repo."
+---
+
+For backends that need minimal allocations + RFC-8032 strict-mode verification.
+
+**Full source (verbatim):** `docs/examples/webhook-receivers/rust-axum/src/main.rs`
+
+## Cargo.toml
+
+```toml
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+ed25519-dalek = "2"
+base64 = "0.22"
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+```
+
+## src/main.rs
+
+```rust
+use axum::{
+    body::Bytes,
+    http::{HeaderMap, StatusCode},
+    routing::post,
+    Router,
+};
+use base64::{engine::general_purpose::STANDARD, Engine};
+use ed25519_dalek::{Signature, VerifyingKey};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const DEFAULT_PEGANA_PUB_KEY_B64: &str = "gAKAhNG4BLCF0xm/gCcDb0OcP6cxzt1IfXkmkzyVYVo=";
+const REPLAY_WINDOW_SEC: i64 = 300;
+
+fn pub_key_b64() -> String {
+    std::env::var("PEGANA_PUB_KEY_B64").unwrap_or_else(|_| DEFAULT_PEGANA_PUB_KEY_B64.to_string())
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt().init();
+    let app = Router::new().route("/", post(handle));
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:9000").await.unwrap();
+    tracing::info!("pegana-receiver listening on :9000");
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn handle(headers: HeaderMap, body: Bytes) -> Result<&'static str, StatusCode> {
+    let sig = headers
+        .get("x-pegana-signature")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let ts = headers
+        .get("x-pegana-timestamp")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let ts_i: i64 = ts.parse().map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    if (now - ts_i).abs() > REPLAY_WINDOW_SEC {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    let sig_b64 = sig.strip_prefix("ed25519:").unwrap_or(sig);
+    let sig_bytes = STANDARD
+        .decode(sig_b64)
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    if sig_bytes.len() != 64 {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let mut sig_arr = [0u8; 64];
+    sig_arr.copy_from_slice(&sig_bytes);
+    let sig = Signature::from_bytes(&sig_arr);
+
+    let pub_bytes = STANDARD
+        .decode(pub_key_b64())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if pub_bytes.len() != 32 {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    let mut pub_arr = [0u8; 32];
+    pub_arr.copy_from_slice(&pub_bytes);
+    let public =
+        VerifyingKey::from_bytes(&pub_arr).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let body_str = std::str::from_utf8(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let input = format!("{}.{}", ts, body_str);
+    public
+        .verify_strict(input.as_bytes(), &sig)
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let event: serde_json::Value =
+        serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    tracing::info!(?event, "verified webhook");
+
+    // Your business logic here.
+    Ok("ok")
+}
+```
+
+## Run
+
+```bash
+PEGANA_PUB_KEY_B64="<base64 key>" cargo run --release
+# binds 0.0.0.0:9000
+```
+
+Behind a TLS-terminating reverse proxy (Caddy, nginx, Cloudflare). Or use
+[`axum-server`](https://crates.io/crates/axum-server) with rustls for direct TLS.
+
+## Why `verify_strict`
+
+`verify_strict` enforces RFC-8032 strict-mode rules:
+
+- Rejects malleable signatures (signatures whose `s` value is not in canonical form)
+- Rejects public keys with point-at-infinity edge cases
+
+Pegana signs with libsodium-style strict semantics, so strict verification
+round-trips correctly. If you used the non-strict `verify` you'd accept some
+technically-valid Ed25519 signatures that the original spec rejects — a defense-in-depth
+issue, not a correctness one for our payloads.
+
+## Body extraction order
+
+axum's `Bytes` extractor reads the raw body before any deserialization. Do not put
+a `Json<T>` extractor before `Bytes` — that would consume the body and you'd sign
+over an empty input.
+
+If you need typed access to the body, parse after verification:
+
+```rust
+let event: MyEvent = serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+```
+
+## Idempotency
+
+The reference receiver above does NOT enforce idempotency. For production, persist
+`alert_id` in your DB or Redis with a 24h TTL:
+
+```rust
+// After verification
+let alert_id = event.get("alert_id").and_then(|v| v.as_str())
+    .ok_or(StatusCode::BAD_REQUEST)?;
+
+if redis_client.set_nx(format!("pegana:seen:{alert_id}"), "1", 86400).await? {
+    // First time we've seen this alert
+    process_event(event).await?;
+} else {
+    // Duplicate delivery — just ack
+}
+```
+
+## Deploy
+
+For a hobby endpoint:
+
+```bash
+cargo build --release
+./target/release/pegana-hook
+# behind nginx/Caddy for TLS
+```
+
+For production:
+
+- Run as a systemd unit
+- Set `PEGANA_PUB_KEY_B64` from a secret store
+- Front with TLS + rate-limiting reverse proxy
+- Ship `tracing` to your log aggregator
+
+## Why ed25519-dalek
+
+- Pure Rust, no system OpenSSL dependency
+- Audited
+- Constant-time by construction
+- Available in `no_std` mode for embedded use
+
+For FIPS-required environments, swap to [`ring`](https://crates.io/crates/ring) —
+same algorithm, different crate.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="TypeScript example" icon="js" href="/guides/webhooks-examples-typescript">
+    Web Crypto API for edge runtimes.
+  </Card>
+  <Card title="Python example" icon="python" href="/guides/webhooks-examples-python">
+    FastAPI + cryptography.
+  </Card>
+</CardGroup>

@@ -1,0 +1,106 @@
+---
+title: "Introduction"
+description: "Pegana is the peg-risk oracle for Solana. Read peg state for every LST, stablecoin, yield-bearing asset and synthetic — via REST, WebSocket, MCP, Webhook or Telegram."
+---
+
+## What Pegana does
+
+Pegana watches **69 active pegged assets on Solana mainnet** in real time (plus
+inactive entries kept for history). For every asset, we compare market price to intrinsic value, smooth
+the spread with an EWMA, and publish a peg state through a 5-state FSM:
+**PEGGED · DRIFT · DEPEG · CRITICAL · BLACK_SWAN**. (UNKNOWN is a separate non-alerting
+status — cold-start or a detectably broken anchor — not a severity band.)
+
+When the state changes, we emit an alert. That's the whole product.
+
+```
+spread = 1 − market / intrinsic
+```
+
+Everything else is plumbing.
+
+## Who reads from Pegana
+
+<CardGroup cols={3}>
+  <Card title="Lending & perps" icon="building-columns">
+    Adjust collateral risk before a depeg cascades into liquidations.
+  </Card>
+  <Card title="Insurance protocols" icon="shield">
+    Trigger payouts on confirmed depeg with credible third-party events.
+  </Card>
+  <Card title="AI agents" icon="robot">
+    Pre-flight peg check before a swap, via MCP. Free reads, paid streams.
+  </Card>
+</CardGroup>
+
+## Six ways to consume
+
+<CardGroup cols={2}>
+  <Card title="REST API" icon="code" href="/guides/rest-api">
+    `GET /v1/assets/:asset/state` · JSON over HTTPS · no key · soft rate limit.
+  </Card>
+  <Card title="WebSocket" icon="bolt" href="/guides/websocket">
+    Sub-second peg-state stream. Subscribe per asset over WSS.
+  </Card>
+  <Card title="MCP" icon="code" href="/guides/mcp">
+    Native Model Context Protocol for Claude, Cursor, Cline. Free + paid.
+  </Card>
+  <Card title="Webhooks" icon="arrow-up-right-from-square" href="/guides/webhooks">
+    Ed25519-signed POST on every state transition, with delivery history and replay.
+  </Card>
+  <Card title="Embed widget" icon="window" href="/guides/embed-widget">
+    320 × 86 iframe. ~3 KB HTML. `<iframe>` and you're done.
+  </Card>
+  <Card title="Telegram bot" icon="telegram" href="/guides/telegram-bot">
+    Human-readable alerts via `@PeganaWatchBot`. No wallet, no API key.
+  </Card>
+</CardGroup>
+
+## Coverage
+
+**69 active assets across 7 classes** — **mainnet only**, no devnet feeds. Source of
+truth: [`assets.toml`](https://github.com/PeganaHQ/ReplayCLI/blob/main/assets.toml);
+the canonical **live** list, with each asset's current peg state, is always
+[`GET /v1/assets`](/guides/rest-api). Some assets carry a `monitoring_only` flag
+(alerts live but labeled beta while the calibration is provisional); the live
+calibration status of each asset is always on `GET /v1/assets` — treat any
+`monitoring_only` read as experimental until it graduates.
+
+| Class        | Active | Examples                                               |
+| ------------ | ------ | ------------------------------------------------------ |
+| lst          | 44     | jitoSOL, mSOL, bSOL, INF, JupSOL, BNSOL, STKESOL …     |
+| stable_yield | 10     | USDY, sUSDe, syrupUSDC, JLP, ONyc, PST, eUSX, USD\* …  |
+| stable_fiat  | 8      | USDC, USDT, PYUSD, USDG, USD1, USDu, CASH, AUSD        |
+| stable_dn    | 3      | USDe, JupUSD, USX                                      |
+| stable_cdp   | 2      | USDS, hyUSD                                            |
+| stable_fx    | 1      | EURC                                                   |
+| synth_lev    | 1      | xSOL                                                   |
+
+The asset set grows over time — treat this table as a snapshot and `GET /v1/assets`
+as the source of truth for what is live right now.
+
+**Inactive entries** (in `assets.toml` with `active = false`, not polled, so not in
+the 69): `BRZ` (BRL FX-pegged) and `pbUSDC` — deactivated 2026-06-01 (only thin dust
+DEX pairs left, prices unreliable). `dSOL` was removed after the Drift exploit
+(2026-04-01) and survives only as a historical comment.
+
+## What we promise
+
+- **Methodology is public.** Every threshold, every source, every smoothing parameter
+  lives in [/methodology](/methodology/overview). No black box.
+- **Open methodology + verifier (MIT).** The math behind every threshold and the
+  `pegana-replay` CLI that reproduces any receipt are public at
+  [`github.com/PeganaHQ/ReplayCLI`](https://github.com/PeganaHQ/ReplayCLI) —
+  re-derive any verdict yourself. The operational services run from a separate repo.
+- **No API key for reads.** REST, WebSocket and Embed are public. Only the MCP paid
+  tools require x402 settlement.
+- **One source per asset class.** We do not "blend" prices. Sanctum exchange rates —
+  or a direct on-chain stake-pool read for LSTs outside the Sanctum registry — for LST
+  intrinsic; Pyth for FX and for yield-bearing redemption rates; on-chain vault/CDP
+  decode for Hylo, Solayer, and Perena USD\*; Jupiter for routed market price.
+
+## Next step
+
+<Card title="Quickstart — 5 minutes" icon="rocket" href="/quickstart">
+  Pick a channel, copy the snippet, get a real response.
+</Card>

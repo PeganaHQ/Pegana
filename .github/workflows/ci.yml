@@ -1,0 +1,233 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (fmt · clippy · check · test)
+    runs-on: ubuntu-latest
+
+    # Stand up the same Postgres + Redis the integration tests expect so they
+    # actually run instead of self-skipping on unset PEGANA_INTEGRATION_*.
+    #   - Postgres: TimescaleDB image (matches prod) — migrations need the
+    #     `timescaledb` + `pgcrypto` extensions (0001_initial.sql).
+    #   - Redis: started as a step below (NOT a service container) because
+    #     service containers can't override the command to set --requirepass,
+    #     and we want the same authed URL shape as prod.
+    services:
+      postgres:
+        image: timescale/timescaledb@sha256:fd28d07eab916c2eade574fcbe49cd19fe11ea8fdb9d1c0902470cc4bedd23cc # latest-pg16, linux/amd64
+        env:
+          POSTGRES_USER: pegana
+          POSTGRES_PASSWORD: pegana
+          POSTGRES_DB: pegana
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pegana"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      REDIS_PASSWORD: ci-redis-pw
+      PEGANA_INTEGRATION_DB: postgres://pegana:pegana@localhost:5432/pegana
+      PEGANA_INTEGRATION_PG_URL: postgres://pegana:pegana@localhost:5432/pegana
+      PEGANA_INTEGRATION_REDIS: redis://default:ci-redis-pw@localhost:6379
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: "ci-rust"
+
+      - name: Start Redis (password-protected, prod-shaped URL)
+        # Vanilla `redis` as a GH service container can't take --requirepass,
+        # so run it directly. Matches REDIS_PASSWORD / PEGANA_INTEGRATION_REDIS.
+        run: |
+          # redis:7-alpine, linux/amd64
+          docker run -d --name ci-redis -p 6379:6379 redis@sha256:9702d01c1f10c3ea9f48211b4362e44f154ff02d063e6f7268eba804059f53bf \
+            redis-server --requirepass "$REDIS_PASSWORD"
+          for i in $(seq 1 20); do
+            if docker exec ci-redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG; then
+              echo "redis up"; break
+            fi
+            sleep 1
+          done
+
+      - name: Apply all migrations
+        # Apply migrations/*.sql in lexical order via psql. The 0021 number is
+        # intentionally skipped in the repo (0020 → 0022) — the glob simply
+        # never sees a 0021 file, so the gap is a no-op, not a failure.
+        env:
+          PGPASSWORD: pegana
+        run: |
+          for f in $(ls migrations/*.sql | sort); do
+            echo "==> applying $f"
+            psql -v ON_ERROR_STOP=1 -h localhost -p 5432 -U pegana -d pegana -f "$f"
+          done
+
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: check
+        run: cargo check --workspace --all-targets
+
+      - name: test
+        run: cargo test --workspace --all-targets
+
+  verify-assets:
+    name: Verify mint addresses against mainnet RPC
+    runs-on: ubuntu-latest
+    needs: rust
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: "ci-rust"
+
+      - name: Run cargo xtask verify-assets
+        # Strict: every asset in assets.toml carries `verified = true` (no
+        # TODO entries remain), so validate them ALL against mainnet RPC —
+        # `--strict` makes an unverified mint a hard CI failure instead of a
+        # silent skip. Drop back to non-strict only if a `verified = false`
+        # entry is ever reintroduced.
+        run: cargo xtask verify-assets --file assets.toml --strict
+
+  mcp-ts:
+    name: mcp-ts (typecheck · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-ts
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - name: Lint
+        run: bun run lint
+      - run: bun run test
+
+  # protocol-indexer-ts had NO CI job at all, while CLAUDE.md claimed its
+  # k-anonymity invariant was "CI-enforced by a grep-guard". It wasn't — the
+  # guard existed but nothing ran it. ADR-0036 is a PRIVACY invariant (never
+  # persist per-wallet position data), so "enforced by whoever remembers to run
+  # bun test" is not enforcement. This job makes the claim true.
+  protocol-indexer-ts:
+    name: protocol-indexer-ts (typecheck · test · ADR-0036 guard)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: protocol-indexer-ts
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - name: Lint
+        run: bun run lint
+      # Runs the whole suite, which includes test/adr-0036-guard.test.ts —
+      # the grep-guard banning .owner/.authority/*ByWallet* in src/sources/.
+      - run: bun run test
+
+  # Protocol-indexer production dependency audit. Reports but does NOT block
+  # because bigint-buffer@1.1.5 (CVE-2025-3194) has no patched upstream —
+  # removal would strip required Kamino/Jupiter HF source behavior (ADR-0036).
+  # The advisory is documented with compensating controls in
+  # docs/security/protocol-indexer-bigint-buffer-waiver.md. When a patch ships
+  # or the dependency is replaced, flip `|| true` to a blocking check.
+  audit-protocol-indexer:
+    name: bun audit (protocol-indexer)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: protocol-indexer-ts
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - run: bun install --frozen-lockfile
+      - run: bun audit --prod --audit-level=high || true
+
+  web:
+    name: web (typecheck · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - name: Lint
+        run: bun run lint
+      - run: bun run test
+
+  audit-rust:
+    name: cargo-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: "ci-rust"
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.1 --locked --quiet
+      - name: cargo audit
+        # `.cargo/audit.toml` is the machine-readable source of enforcement;
+        # ownership, reachability, controls, and review dates are recorded in
+        # `docs/security/rustsec-waivers.md`.
+        run: cargo audit
+
+  audit-web:
+    name: bun audit (web)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      # Block on `high` and above; `moderate` warnings are noisy in the
+      # React 19 / Next 16 ecosystem and we triage them out-of-band.
+      - run: bun audit --prod --audit-level=high

@@ -1,0 +1,72 @@
+---
+title: "GHO traded sub-$0.97 for eight months — when mint-only is the design flaw"
+description: "Aave's GHO launched July 2023 with a mint cap and no symmetric burn path. The peg stayed below parity for nearly a year before governance fixed the mechanism."
+---
+
+<Info>
+  **Asset**: GHO · **Class**: CDP · **Date**: 2023-08-15
+  **Worst spread**: −550 bps · **Duration**: ≈ 8 months below $0.99
+  **Detected live**: No (pre-Pegana retrospective)
+</Info>
+
+## Background
+
+GHO is Aave's native stablecoin, minted by users depositing supported collateral
+(mostly ETH and aTokens) and paying a borrow rate. At launch it had no Peg Stability
+Module — the only way to mint was open a CDP, the only way to retire GHO was repay
+debt. **That asymmetry is a structural depeg trap.**
+
+## Trigger
+
+Within weeks of launch GHO was trading $0.97–$0.98 on Curve and Balancer. The 1.5%
+borrow rate let arbitrageurs mint GHO at $1, sell at $0.98, pocket $0.02 minus
+borrow cost — and that flow set the floor. **Without a symmetric mint-to-$1 path from
+anyone holding GHO, the market couldn't reach back up.**
+
+## Cascade
+
+- Curve's GHO/3CRV pool stayed permanently imbalanced — depositors collected fees
+  but couldn't restore the peg.
+- Aave's borrow rate was too low to choke off new supply; raising it would have hurt
+  legitimate borrowers.
+- Each new mint cap increase moved the price lower as fresh GHO hit thin secondary
+  liquidity.
+- Other CDP stablecoins (crvUSD, LUSD) traded near-parity during the same period —
+  the issue was specifically GHO's mechanism.
+
+## Recovery
+
+Aave governance shipped two interventions:
+
+1. Raised the GHO borrow rate to ~5% to slow mint flow.
+2. Added a GHO Stability Module (GSM) allowing 1:1 swaps with USDC and USDT inside a cap.
+
+Both took until Q1–Q2 2024 to stabilize the peg back near $1.00.
+
+## What Pegana would have shown
+
+- **August 2023, week 1** — GHO crosses 100 bps spread. **`PEGGED → DRIFT`**.
+- **August 2023, week 3** — Spread crosses 200 bps. **`DRIFT → DEPEG`**.
+- **August 2023 to ~Q1 2024** — Spread fluctuates 250 – 550 bps. **State stays in
+  `DEPEG` for ~8 months** with brief `DEPEG → DRIFT` ducks when borrow rate hikes
+  bit, then back to `DEPEG`.
+- **Q2 2024** — GSM lands; spread compresses sustainably below 50 bps. After exit
+  dwell, **`DEPEG → DRIFT → PEGGED`**.
+
+A protocol watching GHO's `time_in_DEPEG` would have measured 240+ days of sustained
+under-peg state — a structural signal of a mechanism that was designed wrong, not a
+shock that needed to pass.
+
+## Lesson
+
+A stablecoin without a symmetric mint/burn path is a one-way valve. Watching the
+daily price for a sub-1% deviation misses the structural signal — eight months of
+$0.97 is a different kind of depeg than a 48h spike. Pegana's EWMA-smoothed state
+machine catches both: short shocks emit transitions, and sustained drift accumulates
+into DEPEG-state durations on the events feed.
+
+## Sources
+
+- [Aave Governance — GHO Stability Module proposal](https://governance.aave.com)
+- [Aave Labs blog — GHO launch](https://aave.com)
+- [DefiLlama — GHO stable page](https://defillama.com/stablecoin/gho)

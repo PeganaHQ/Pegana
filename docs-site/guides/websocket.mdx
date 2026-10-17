@@ -1,0 +1,158 @@
+---
+title: "WebSocket stream"
+description: "Sub-second push for every peg-state change on Solana mainnet. No polling, no per-message throttling (5 connections/IP)."
+---
+
+When you need state updates faster than 15-second polling allows, open a WebSocket.
+The server pushes every state transition and a heartbeat every 5 seconds.
+
+**Endpoint:** `wss://api.pegana.xyz/v1/ws`
+
+## Open a connection
+
+```bash
+wscat -c wss://api.pegana.xyz/v1/ws
+```
+
+```typescript
+import WebSocket from "ws";
+
+const ws = new WebSocket("wss://api.pegana.xyz/v1/ws");
+
+ws.on("open", () => console.log("connected"));
+ws.on("message", (data) => {
+  const msg = JSON.parse(data.toString());
+  console.log(msg);
+});
+```
+
+Prefer a typed helper? The first-party SDKs wrap this feed and handle the
+subscribe/heartbeat framing for you — TypeScript `PegFeed` / `connectPegFeed`
+(`@peganahq/sdk-ts`) and Python `peg_feed()` (`pegana-sdk`). Works from the browser
+too (`globalThis.WebSocket`), Node, and Bun.
+
+No auth, no key. Origin header is checked against an allowlist —
+`https://pegana.xyz`, `https://www.pegana.xyz`, `http://localhost:3000` by default.
+Add more origins via the `CORS_EXTRA_ORIGINS` env var on self-hosted instances.
+
+## Message shapes
+
+All messages are JSON, single-line per frame. The `op` field discriminates.
+
+### Server → client: state update
+
+```json
+{
+  "op": "update",
+  "asset": "jitoSOL",
+  "payload": {
+    "state": "DRIFT",
+    "discount": "-0.0034",
+    "intrinsic_usd": "213.42",
+    "market_usd": "212.69",
+    "updated_at": "2026-05-26T14:32:11Z"
+  }
+}
+```
+
+Pushed on every peg-state change for the asset. The envelope carries the `asset`
+symbol; `payload` carries the new `state`, the `discount`, the two underlying
+values (`intrinsic_usd`, `market_usd`), and `updated_at`. There is no
+`previous_state` or `confidence` field on this frame — fetch the prior state from
+your own last-seen value, and use [`/v1/assets/{symbol}/state`](/guides/rest-api)
+for the confidence score.
+
+### Server → client: heartbeat
+
+```json
+{
+  "op": "heartbeat",
+  "ts": "2026-05-26T14:32:16Z"
+}
+```
+
+Every 5 seconds. Use this to detect connection death — if you go 15s without any
+frame (update or heartbeat), drop and reconnect.
+
+### Server → client: error
+
+```json
+{
+  "op": "error",
+  "msg": "malformed subscribe message"
+}
+```
+
+Returned on bad input. Connection stays open.
+
+### Client → server: ping
+
+```json
+{ "op": "ping" }
+```
+
+Server responds with `{ "op": "pong" }`. Optional — heartbeats already keep the
+connection alive on most NAT/proxy configurations.
+
+### Client → server: subscribe / unsubscribe
+
+```json
+{ "op": "subscribe", "assets": ["USDC", "jitoSOL"] }
+```
+
+In v1 these are **no-ops** — the server broadcasts updates for every asset to every
+connection. Filter client-side by inspecting `msg.asset`. Per-asset subscription is
+planned for v2.
+
+## Connection limits
+
+- **Per-IP cap:** 5 concurrent connections. Beyond that, handshakes return `429`.
+- **Idle timeout:** None. If both server heartbeat and client ping flow normally, the
+  connection stays open indefinitely.
+
+## Reconnect strategy
+
+Recommended client logic:
+
+```typescript
+function connect() {
+  const ws = new WebSocket("wss://api.pegana.xyz/v1/ws");
+  let lastFrame = Date.now();
+
+  ws.on("message", (data) => {
+    lastFrame = Date.now();
+    // handle msg
+  });
+
+  // Hardstop if no frame in 15s
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastFrame > 15_000) {
+      ws.terminate();
+    }
+  }, 5_000);
+
+  ws.on("close", () => {
+    clearInterval(watchdog);
+    setTimeout(connect, jitter(1_000, 5_000));   // backoff with jitter
+  });
+}
+
+connect();
+```
+
+## What about historical data?
+
+The WebSocket is **stream-only**. For history, use
+[`/v1/assets/{symbol}/history`](/guides/rest-api). A common pattern is to fetch the
+last 24h via REST on connect, then maintain real-time via WebSocket.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Webhooks" icon="arrow-up-right-from-square" href="/guides/webhooks">
+    Push to your endpoint instead of holding a connection.
+  </Card>
+  <Card title="MCP for agents" icon="code" href="/guides/mcp">
+    Native MCP tool for Claude, Cursor, Cline.
+  </Card>
+</CardGroup>

@@ -1,0 +1,48 @@
+# Build artifacts (massive — would balloon Docker build context otherwise)
+target/
+**/target/
+**/node_modules/
+web/.next/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Local secrets / env
+.env
+.env.local
+.env.*.local
+
+# Playwright screenshots (P1 sweep artifacts)
+*.png
+.playwright-mcp/
+
+# Docs not needed inside containers
+docs/
+README.md
+ROADMAP.md
+LICENSE
+
+# Docker compose files don't need to be in build context
+docker-compose*.yml
+Caddyfile
+Caddyfile.*
+
+# Web frontend — built and deployed separately on Vercel
+web/
+
+# Telegram bot is built from bot-ts/ context, exclude when building Rust crates
+bot-ts/node_modules/
+bot-ts/dist/
+
+# CI
+.github/

@@ -1,0 +1,34 @@
+-- 0052: index intrinsic_snapshots on (asset, ts DESC) — fixes the /v1/assets
+-- slow query (api WARN "slow statement ... 2.1-2.4s", measured 2026-06-19).
+--
+-- ROOT CAUSE (EXPLAIN ANALYZE on prod, 2026-06-19): the assets list/detail SQL
+-- has a per-asset LATERAL that takes the latest intrinsic snapshot:
+--   SELECT ... FROM intrinsic_snapshots WHERE asset = a.symbol ORDER BY ts DESC LIMIT 1
+-- intrinsic_snapshots only had PK (asset, source, ts) — `source` sits between
+-- `asset` and `ts`, so the index can't satisfy "max ts for this asset" with a
+-- single seek — and a separate (ts DESC) index. Postgres therefore walked the
+-- hypertable BACKWARD across day-chunks via the ts index, filtering by asset
+-- (~82k rows removed per chunk, ~6.9M shared buffers), spending ~2.0s of the
+-- ~2.1s query. It degraded over time as more day-chunks accumulated (the memory
+-- recorded ~0.95s post-cache-prewarmer on 2026-06-17; it had grown to ~2.3s).
+--
+-- FIX: a composite index on (asset, ts DESC) turns that LATERAL into a single
+-- index seek — exactly what discount_snapshots' PK (asset, ts) already does for
+-- its sibling LATERAL (which the same EXPLAIN showed at ~0.02ms/asset). Expected:
+-- the /v1/assets query drops from ~2.1s to well under 100ms.
+--
+-- NOTE: TimescaleDB hypertables do NOT support CREATE INDEX CONCURRENTLY
+-- ("ERROR: hypertables do not support concurrent index creation"). The live
+-- prod application (2026-06-19) used `... WITH (timescaledb.transaction_per_chunk)`
+-- so only one chunk is briefly locked at a time (the indexer writes to the
+-- current chunk → minimal disruption). For this migration file a plain
+-- CREATE INDEX IF NOT EXISTS is correct: on a fresh DB the table is empty
+-- (instant, no lock), and on prod the index already exists so IF NOT EXISTS
+-- makes it a no-op (the deploy.sh runner re-applies every file). Pure additive
+-- index — no schema/data change, no service recreate (the planner picks it up).
+--
+-- VERIFIED 2026-06-19 (EXPLAIN ANALYZE on prod): /v1/assets dropped from
+-- ~2100ms to ~35ms (~60×); the intrinsic LATERAL went from ~14ms/chunk
+-- seq-filter (82k rows removed/chunk) to ~0.005ms/chunk index seeks.
+CREATE INDEX IF NOT EXISTS intrinsic_snapshots_asset_ts_idx
+    ON intrinsic_snapshots (asset, ts DESC);

@@ -1,0 +1,85 @@
+# Wave 11M.7 — reproducible build verification (manual-trigger only).
+#
+# Rebuilds pegana-engine twice on the same runner and fails if the two
+# binary hashes differ. This is a v0.1.0 stub — manual dispatch only so a
+# spurious cache miss can't block a PR while we calibrate the recipe.
+#
+# Promote to `on: pull_request` once it's been green on three consecutive
+# manual runs. See `docs/operations/reproducible-builds.md` for the full
+# operator recipe and known caveats (same-machine only, timestamp leakage,
+# Docker layer reproducibility deferred to v0.2.0).
+name: Reproducible build verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: "Crate to rebuild (e.g. pegana-engine, api-rs)"
+        required: false
+        default: "pegana-engine"
+
+permissions:
+  contents: read
+
+jobs:
+  build-twice-compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install Rust toolchain (matches rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+
+      - name: Cache cargo deps (shared across both builds)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: "ci-reproducible"
+
+      - name: First build
+        run: |
+          cargo build --release --locked --frozen -p "${{ inputs.crate }}"
+
+      - name: Hash first build
+        run: |
+          sha256sum "target/release/${{ inputs.crate }}" | tee /tmp/hash-1
+          # Capture image-digest reference snapshot for the ops log.
+          for img in rust:1.90-slim debian:bookworm-slim oven/bun:1 oven/bun:1-slim oven/bun:1.2-alpine; do
+            docker pull "$img" >/dev/null 2>&1 || true
+            digest=$(docker inspect "$img" --format='{{index .RepoDigests 0}}' 2>/dev/null || echo "n/a")
+            echo "$img → $digest" >> /tmp/image-digests.txt
+          done
+          cat /tmp/image-digests.txt || true
+
+      - name: Clean and rebuild
+        run: |
+          cargo clean -p "${{ inputs.crate }}"
+          cargo build --release --locked --frozen -p "${{ inputs.crate }}"
+
+      - name: Hash second build
+        run: |
+          sha256sum "target/release/${{ inputs.crate }}" | tee /tmp/hash-2
+
+      - name: Compare
+        run: |
+          if ! diff -q /tmp/hash-1 /tmp/hash-2 >/dev/null; then
+            echo "::error::Build is NOT same-machine reproducible"
+            echo "First:"; cat /tmp/hash-1
+            echo "Second:"; cat /tmp/hash-2
+            exit 1
+          fi
+          echo "::notice::OK — same-machine bit-for-bit reproducible"
+          cat /tmp/hash-1
+
+      - name: Upload artifact log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reproducible-build-log
+          path: |
+            /tmp/hash-1
+            /tmp/hash-2
+            /tmp/image-digests.txt
+          retention-days: 14

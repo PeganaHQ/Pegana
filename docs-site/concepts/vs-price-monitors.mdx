@@ -1,0 +1,67 @@
+---
+title: "Pegana vs. market-price depeg monitors"
+description: "Why comparing on-chain intrinsic value to market price catches breaks a market-price consensus never sees — and why a verifiable receipt matters to a risk desk."
+---
+
+Most stablecoin/depeg dashboards — including broad multi-chain risk tools that have
+recently added depeg tracking (e.g. market-price monitors like Webacy) — work by
+**market-price consensus**: they pull a token's price from several sources
+(DeFiLlama, CoinGecko, DEX aggregators, on-chain VWAP) and raise a flag when those
+sources **disagree** or the price drifts from $1.
+
+That is useful, but it is structurally blind to two of the most dangerous cases.
+
+## What a market-price monitor cannot see
+
+1. **A break where every market source agrees on the same wrong price.** In thin or
+   correlated liquidity, all your price feeds quote the *same* number — so "sources
+   agree" reads as healthy even while the token is trading far from what its
+   collateral is actually worth. Consensus-of-agreeing-feeds is not proof of health.
+2. **A NAV / accounting break *before* it reaches the price.** When the backing
+   itself degrades — a frozen redemption rate, an under-collateralized vault, a
+   stale oracle feeding the mint — the on-chain **intrinsic** value moves first. A
+   market-price monitor only sees it once the market has already repriced, which is
+   exactly too late for a lender deciding whether to keep taking the asset as
+   collateral.
+
+## What Pegana does instead
+
+Pegana compares each asset's **on-chain intrinsic value** — its redemption rate, NAV,
+or collateral ratio, read directly from the protocol's own program state — against its
+**market price**. The gap between the two *is* the signal. See
+[Intrinsic vs. market](/concepts/intrinsic-vs-market).
+
+- It catches a break where the market is quietly wrong, because it isn't asking the
+  market — it's asking the collateral.
+- It surfaces a backing degradation on the intrinsic side before the price reprices.
+- It is **Solana-native**: it reads Sanctum LST stake pools, Hylo's exchange state,
+  Perena/Solayer redemption rates, and Pyth/Jupiter directly — coverage a multi-chain
+  market-price tool does not have on Solana today.
+
+## The part a chart can't give you: a verifiable receipt
+
+Every Pegana verdict ships a **byte-exact, re-derivable receipt**. Anyone — you, your
+auditor, a counterparty in a dispute — can recompute the exact classification from the
+frozen inputs and confirm the hash matches, with an optional on-chain SPL-Memo anchor.
+See [Honesty](/methodology/honesty) and the [audit endpoint](/guides/rest-api).
+
+For an **insurer or a lender in a dispute**, this is the difference between a screenshot
+of a chart and a **provable on-chain fact** about whether a depeg occurred and when.
+No market-price monitor produces this.
+
+## At a glance
+
+| | Market-price monitors | **Pegana** |
+|---|---|---|
+| Core signal | market-price consensus across sources | on-chain **intrinsic** value vs. market price |
+| Catches "all feeds agree on a wrong price" | ✗ | ✓ |
+| Catches a NAV/backing break before price moves | ✗ | ✓ |
+| Solana LST / CDP / yield-stable intrinsic coverage | limited / none | ✓ native |
+| Byte-exact, re-derivable receipt | ✗ | ✓ |
+| One 0–100 `risk_score` to branch on | varies | ✓ (`state`-anchored) |
+
+<Note>
+Pegana is **purely observational**. It never touches your contracts or parameters and
+never actuates anything — it only classifies and proves. You keep full control of any
+response.
+</Note>

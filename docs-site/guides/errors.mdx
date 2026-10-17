@@ -1,0 +1,51 @@
+---
+title: "Errors"
+description: "Every error is JSON with a stable machine code. Branch on `error`, never on `message`."
+---
+
+Every error response across the API — from a 400 to a 500 — is JSON with the **same
+envelope**, so a client that `.json()`s every response never breaks on an error.
+
+```json
+{ "error": "unknown_asset", "message": "asset 'FOO' is not in the tracked universe", "asset": "FOO" }
+```
+
+<Note>
+Branch on the stable **`error`** code, never on the human-readable `message` (which may
+be reworded at any time). `asset` is present only on asset-scoped errors.
+</Note>
+
+## Status codes
+
+The HTTP status tells you the class; the `error` code tells you the specifics.
+
+| Status | Meaning |
+| --- | --- |
+| `2xx` | Success. |
+| `400` | Bad request — malformed input. |
+| `404` | Not found — unknown asset or endpoint. |
+| `429` | Rate limit exceeded (see [Rate limits](/guides/rate-limits)). |
+| `5xx` | Unexpected server error — safe to retry with backoff. |
+
+## Error codes
+
+| `error` | Status | When |
+| --- | --- | --- |
+| `unknown_asset` | 404 | The symbol/mint is not in the tracked universe. Carries `asset`. |
+| `not_found` | 404 | No such endpoint — see [`GET /`](https://api.pegana.xyz/) or [`/openapi.json`](https://api.pegana.xyz/openapi.json). |
+| `invalid_body` | 400 | The request body failed validation. |
+| `rate_limited` | 429 | Per-IP limit exceeded; a `Retry-After` header tells you when to retry. |
+| `internal` | 500 | Unexpected server error. Retry with backoff; if it persists, quote the `x-request-id`. |
+
+## Debugging with `x-request-id`
+
+**Every response** (success or error) carries an **`x-request-id`** header. When something
+looks wrong, grab it and include it in your report — it lets us trace the exact request.
+
+```bash
+curl -sS -D - -o /dev/null https://api.pegana.xyz/v1/stats | grep -i x-request-id
+# x-request-id: 6f6b2f0e-9a1c-4c2e-8b7a-3d4e5f6a7b8c
+```
+
+If you send your own `x-request-id` header, we echo it back so the id survives across your
+own hops.

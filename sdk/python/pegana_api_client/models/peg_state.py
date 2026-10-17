@@ -1,0 +1,12 @@
+from enum import Enum
+
+class PegState(str, Enum):
+    BLACK_SWAN = "BLACK_SWAN"
+    CRITICAL = "CRITICAL"
+    DEPEG = "DEPEG"
+    DRIFT = "DRIFT"
+    PEGGED = "PEGGED"
+    UNKNOWN = "UNKNOWN"
+
+    def __str__(self) -> str:
+        return str(self.value)

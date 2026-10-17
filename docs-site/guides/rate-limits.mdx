@@ -1,0 +1,51 @@
+---
+title: "Rate limits"
+description: "Soft per-IP limit with RateLimit-* headers on every response, so you see your budget before a 429."
+---
+
+Public read endpoints require no API key but **are** rate-limited per IP:
+
+- **~300 requests/min** globally per IP (repo default is 60/min).
+- **10 requests/min** on `GET /v1/audit.csv` (the bulk export, per ADR-0014).
+- `GET /healthz` and `GET /readyz` are exempt, so uptime monitors can poll freely.
+
+The window is a **60-second sliding counter**, so your budget refills continuously as the
+previous window ages out — not in a single step at a fixed reset.
+
+## Headers on every response
+
+You don't have to guess your remaining budget — every response carries it, using the
+IETF standards-track `RateLimit-*` fields (mirrored as `X-RateLimit-*` for older clients):
+
+| Header | Meaning |
+| --- | --- |
+| `RateLimit-Limit` | Your ceiling for the window (e.g. `300`). |
+| `RateLimit-Remaining` | Requests left before you're throttled. |
+| `RateLimit-Reset` | Seconds until the window rolls. |
+
+```bash
+curl -sS -D - -o /dev/null https://api.pegana.xyz/v1/stats | grep -i ratelimit
+# ratelimit-limit: 300
+# ratelimit-remaining: 287
+# ratelimit-reset: 42
+```
+
+<Note>
+Browser clients can read these cross-origin — they're in the CORS `expose-headers` allowlist
+on the public read surface.
+</Note>
+
+## When you hit the limit
+
+Exceeding the limit returns **`429`** with the JSON [error envelope](/guides/errors)
+(`{"error":"rate_limited"}`) and a **`Retry-After`** header (seconds). Back off for that
+long, then resume.
+
+```json
+{ "error": "rate_limited", "message": "rate limit exceeded — retry after the window resets (see Retry-After)" }
+```
+
+<Warning>
+Don't hammer through 429s — back off on `Retry-After`. Sustained abuse past the limit
+just keeps you throttled.
+</Warning>

@@ -1,0 +1,109 @@
+---
+title: "Why hysteresis matters in peg detection"
+description: "If a stable hovers around the drift threshold, a naive monitor will fire an alert every tick. Pegana's hysteretic FSM uses asymmetric enter/exit thresholds and dwell timers so a real transition emits one alert, not a hundred."
+---
+
+Every peg-monitoring system eventually faces the same problem: a noisy signal that
+crosses a threshold a dozen times in a single minute. The first alert is useful. The
+next ninety-nine are spam — and the user mutes the channel within an hour. The fix is
+**hysteresis**.
+
+Hysteresis means a state machine remembers where it came from. Going up needs a
+higher threshold than coming back down. It's the same logic a household thermostat
+uses: heat turns on at 19°C, but won't turn off until the room reaches 21°C. Without
+that gap, the heater clicks on and off every few seconds.
+
+## The state ladder, explicitly
+
+Pegana has five peg states for every monitored asset:
+
+- `PEGGED` — spread inside the calm band; no alert.
+- `DRIFT` — spread crossed the per-asset drift threshold; subscribers are notified.
+- `DEPEG` — spread crossed depeg; more urgent alert framing.
+- `CRITICAL` — spread crossed critical; the system explicitly tags the asset as
+  actively breaking.
+- `BLACK_SWAN` — the most extreme band, reachable from **both** the spread path (a
+  discount beyond `2× critical`, per-asset overridable) and the CR path (hyUSD, CR < 100%).
+  It auto-exits via the normal hysteresis like every other band — not a no-reset terminal
+  state (ADR-0025).
+
+`UNKNOWN` is a non-alerting status, not a severity band. On routine stale or low-confidence
+input the engine skips the recompute and holds the last published state rather than
+flipping to `UNKNOWN`; it *does* publish honest-dark `UNKNOWN` at cold-start and when an
+anchor is detectably broken (a >10% premium on a NAV-priced asset → the NAV-sanity gate,
+ADR-0025).
+
+## Asymmetric enter and exit
+
+For an LST with a drift threshold at 30 bps:
+
+- `PEGGED → DRIFT`: the smoothed spread must cross **30 bps** and stay there for **30s**.
+- `DRIFT → PEGGED`: the smoothed spread must fall to **22 bps** (30 × 0.75) AND stay there for **120s**.
+- `DRIFT → DEPEG`: the smoothed spread must cross **100 bps** and stay there for **30s**.
+- `DEPEG → DRIFT`: the smoothed spread must fall to **75 bps** (100 × 0.75) AND stay there for **120s**.
+
+Notice the asymmetry. The exit threshold sits 25% below the entry threshold
+(`DEADBAND_PCT = 25%`). Combined with the 120-second exit dwell, this means a signal noisily
+oscillating in the 25–35 bps range stays in `DRIFT` for the entire duration — **one
+alert at entry, none in the middle, one transition back when the underlying actually
+heals**.
+
+## Why the exit dwell is longer than the entry dwell
+
+Entering a stressed state is something subscribers want fast — a 30-second
+confirmation is plenty. Exiting back to `PEGGED` is something subscribers want to
+**trust** — a single tick at 29 bps after a 200 bps spike is not the same as a
+sustained recovery. Extending the exit dwell to 120s is a small cost (a couple extra
+minutes of alert state) and a big honesty win.
+
+The same logic applies at every state boundary. `CRITICAL → DEPEG` requires 120s
+below the critical exit threshold, and `BLACK_SWAN` decays back the same way once the
+spread (or hyUSD CR) genuinely recovers — it auto-exits via the normal hysteresis, not a
+manual operator reset (ADR-0025).
+
+## EWMA smoothing on top of the FSM
+
+Even with asymmetric thresholds, raw ticks are too noisy. Pegana smooths the raw
+spread with an EWMA (exponentially-weighted moving average) using `α = 0.3` by
+default. That means each new tick contributes 30% to the displayed spread; the prior
+smoothed value carries 70%.
+
+`α` matters. A higher `α` (say 0.6) is more responsive but lets transient spikes flip
+state. A lower `α` (0.1) is laggy and misses real depegs. 0.3 is calibrated against
+24h p99 noise per asset class — it's tight enough to catch a real depeg inside 15
+seconds and loose enough that a single bad Jupiter quote doesn't trip the alert.
+
+## What this means for downstream consumers
+
+If you're consuming Pegana's WebSocket stream as an event source — webhook trigger,
+prediction-market settlement, insurance payout — **you want hysteresis**. Without it,
+you'd see a 1-second `DRIFT → PEGGED → DRIFT` roundtrip as two separate transitions,
+and your downstream automation would react twice.
+
+Pegana's published transitions are guaranteed to be **sticky** for at least the exit
+dwell window (30s entry, 120s exit). A transition emitted at 12:34:05 means
+the state held for that long. You can act on the transition immediately and trust it
+won't reverse in the next breath.
+
+## Reading the parameters
+
+Every threshold and dwell timer lives in `assets.toml` and is exposed via
+`/v1/assets/<symbol>/extra`. The `/thresholds <symbol>` command in `@PeganaWatchBot`
+returns the same numbers in chat. Reproduce the FSM yourself from raw discount ticks
+if you want — the parameters are open.
+
+## Read next
+
+<CardGroup cols={2}>
+  <Card title="Methodology" icon="equals" href="/methodology/spread">
+    Full FSM parameters, formulas, exit thresholds per asset class.
+  </Card>
+  <Card title="State machine" icon="diagram-project" href="/concepts/state-machine">
+    Higher-level overview of the five states.
+  </Card>
+</CardGroup>
+
+### Sources
+
+- [Schmitt trigger — hysteresis in signal processing](https://en.wikipedia.org/wiki/Schmitt_trigger)
+- [EWMA on Wikipedia](https://en.wikipedia.org/wiki/Moving_average#Exponentially_weighted_moving_average)

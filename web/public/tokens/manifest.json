@@ -1,0 +1,492 @@
+[
+  {
+    "mint": "aeroXvCT6tjGVNyTvZy86tFDwE4sYsKCh7FbNDcrcxF",
+    "symbol": "aeroSOL",
+    "source": "sanctum",
+    "url": "https://raw.githubusercontent.com/phaselabscrypto/.github/main/profile/public/aeroSOL.png",
+    "bytes": 970
+  },
+  {
+    "mint": "AUSD1jCcCyPLybk1YnvPWsHQSrZ46dxwoMniN4N2UEB9",
+    "symbol": "AUSD",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/agora-finance/public-assets/refs/heads/master/src/token-icon/AUSD_1024px.png",
+    "bytes": 3160
+  },
+  {
+    "mint": "Bybit2vBJGhPF52GBdNaQfUJ6ZpThSgHBobjWZpLPb4B",
+    "symbol": "bbSOL",
+    "source": "jupiter",
+    "url": "https://static.bymj.io/web3/staking/bbsol/bbsol2.png",
+    "bytes": 1714
+  },
+  {
+    "mint": "BNso1VUJnh4zcfpZa6986Ea66P6TCp59hvtNJ8b1X85",
+    "symbol": "BNSOL",
+    "source": "jupiter",
+    "url": "https://arweave.net/LepI-hea-JrbLMb4L_HpMzaq9k0aHY2-lVSGiBtwvFM?ext=png",
+    "bytes": 4224
+  },
+  {
+    "mint": "BonK1YhkXEGLZzwtcvRTip3gAL9nCeQD7ppZBLXhtTs",
+    "symbol": "bonkSOL",
+    "source": "jupiter",
+    "url": "https://arweave.net/ms-FdIyJ8TxEJOb2SAYhfyrLop7TDrCEjD-I-oIl5u4",
+    "bytes": 3916
+  },
+  {
+    "mint": "BPSoLzmLQn47EP5aa7jmFngRL8KC3TWAeAwXwZD8ip3P",
+    "symbol": "bpSOL",
+    "source": "jupiter",
+    "url": "https://bpsol.s3.us-west-1.amazonaws.com/bpSOL.png",
+    "bytes": 3434
+  },
+  {
+    "mint": "bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1",
+    "symbol": "bSOL",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1/logo.png",
+    "bytes": 2088
+  },
+  {
+    "mint": "BULKoNSGzxtCqzwTvg5hFJg8fx6dqZRScyXe5LYMfxrn",
+    "symbol": "BulkSOL",
+    "source": "jupiter",
+    "url": "https://arweave.net/tBlyAYsdhdXFdAUO7OeEZdcZ-KYXYgR8DAEPjx7akig",
+    "bytes": 1818
+  },
+  {
+    "mint": "CASHx9KJUStyftLFWGvEVf59SGeG9sh5FfcnZMVPCASH",
+    "symbol": "CASH",
+    "source": "jupiter",
+    "url": "https://token-metadata.bridge.xyz/images/cash.png",
+    "bytes": 872
+  },
+  {
+    "mint": "CDCSoLckzozyktpAp9FWT3w92KFJVEUxAU7cNu2Jn3aX",
+    "symbol": "CDCSOL",
+    "source": "jupiter",
+    "url": "https://arweave.net/12xEvVVvGFM5n5U6ILXdShlLtUJOT1gUQTlSy8sGybg",
+    "bytes": 2528
+  },
+  {
+    "mint": "CgnTSoL3DgY9SFHxcLj6CgCgKKoTBr6tp4CPAEWy25DE",
+    "symbol": "cgntSOL",
+    "source": "jupiter",
+    "url": "https://cogent-cogs.s3.us-west-2.amazonaws.com/cgntSOL.png",
+    "bytes": 2832
+  },
+  {
+    "mint": "CorvuSSoLxPKLoXWXSfn8pFSMhCRHhe7Uwqe874cmwvg",
+    "symbol": "corvusSOL",
+    "source": "jupiter",
+    "url": "https://pub-ca023c3462be43ae907f450320832e8b.r2.dev/logo.png",
+    "bytes": 2532
+  },
+  {
+    "mint": "DEF1NXSZ8Th9n28hYBayrFtx9bj1EwwTiy3mhHEB9oyA",
+    "symbol": "definSOL",
+    "source": "jupiter",
+    "url": "https://hv4gxzchk24cqfezebn3ujjz6oy2kbtztv5vghn6kpbkjc3vg4rq.arweave.net/n3W2lUNPCJpX9WXjXEl0Tx0hB57BvioKUG8pixx1A4o",
+    "bytes": 2570
+  },
+  {
+    "mint": "sctmB7GPi5L2Q5G9tUSzXvhZ4YiDMEGcRov9KfArQpx",
+    "symbol": "dfdvSOL",
+    "source": "sanctum",
+    "url": "https://pbs.twimg.com/profile_images/1897064824317861888/I02i5oX3_400x400.jpg",
+    "bytes": 1030
+  },
+  {
+    "mint": "Dso1bDeDjCQxTrWHqUUi63oBvV7Mdm6WaobLbQ7gnPQ",
+    "symbol": "dSOL",
+    "source": "sanctum",
+    "url": "https://drift-public.s3.eu-central-1.amazonaws.com/dSOL.svg",
+    "bytes": 3026
+  },
+  {
+    "mint": "cPQPBN7WubB3zyQDpzTK2ormx1BMdAym9xkrYUJsctm",
+    "symbol": "dumSOL",
+    "source": "sanctum",
+    "url": "https://arweave.net/TZferu00LMEEmXe9iCHQYu9OGDzw5LmU0leiwP3FQLk",
+    "bytes": 2932
+  },
+  {
+    "mint": "DYNoyS3x5qgbccZg7RPXagm4xQzfnm5iwd9o8pMyJtdE",
+    "symbol": "dynoSOL",
+    "source": "jupiter",
+    "url": "https://ycfcqd4kivi3yuj7dy6djscn2a7mql24ntvvufef7ltbqri5fila.arweave.net/wIooD4pFUbxRPx48NMhN0D7IL1xs61oUhfrmGEUdKhY",
+    "bytes": 3690
+  },
+  {
+    "mint": "Gekfj7SL2fVpTDxJZmeC46cTYxinjB6gkAnb6EGT6mnn",
+    "symbol": "dzSOL",
+    "source": "jupiter",
+    "url": "https://doublezero.xyz/dzSOL/icon.png",
+    "bytes": 1408
+  },
+  {
+    "mint": "edge86g9cVz87xcpKpy3J77vbp4wYd9idEV562CCntt",
+    "symbol": "edgeSOL",
+    "source": "override",
+    "url": "https://coin-images.coingecko.com/coins/images/35492/small/edgesol.png?1708918562",
+    "bytes": 2844
+  },
+  {
+    "mint": "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr",
+    "symbol": "EURC",
+    "source": "jupiter",
+    "url": "https://www.circle.com/eurc-icon",
+    "bytes": 4436
+  },
+  {
+    "mint": "3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC",
+    "symbol": "eUSX",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/Solstice-Labs-Official/eusx-metadata/refs/heads/main/eusx.png",
+    "bytes": 4606
+  },
+  {
+    "mint": "gateMurAxe4YFoUR6J63gXGKtkbTfdkMdLjZrCmThFP",
+    "symbol": "GTSOL",
+    "source": "sanctum",
+    "url": "https://arweave.net/3h5EhmHcesVLbtqkAkGP3DzxNaW8Zde7RyKEvI4Atm0",
+    "bytes": 4534
+  },
+  {
+    "mint": "haSo1Vz5aTsqEnz8nisfnEsipvbAAWpgzRDh2WhhMEh",
+    "symbol": "haSOL",
+    "source": "override",
+    "url": "file:lib/token-icons/placeholders/haSo1Vz5aTsqEnz8nisfnEsipvbAAWpgzRDh2WhhMEh.png",
+    "bytes": 2276
+  },
+  {
+    "mint": "he1iusmfkpAdwvxLNGV8Y1iSbj4rUy6yMhEA3fotn9A",
+    "symbol": "hSOL",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/igneous-labs/lst-offchain-metadata/master/hSOL/hSOL.png",
+    "bytes": 1748
+  },
+  {
+    "mint": "hy1oXYgrBW6PVcJ4s6s2FKavRdwgWTXdfE69AxT7kPT",
+    "symbol": "hyloSOL",
+    "source": "jupiter",
+    "url": "https://i.ibb.co/bgScQbGF/hyloSOL.png",
+    "bytes": 3632
+  },
+  {
+    "mint": "hy1opf2bqRDwAxoktyWAj6f3UpeHcLydzEdKjMYGs2u",
+    "symbol": "hyloSOL+",
+    "source": "jupiter",
+    "url": "https://i.ibb.co/GfsbDVQK/hylo-SOLPlus.png",
+    "bytes": 3430
+  },
+  {
+    "mint": "5YMkXAYccHSGnHn9nob9xEvv6Pvka9DZWH7nTbotTu9E",
+    "symbol": "hyUSD",
+    "source": "jupiter",
+    "url": "https://hylo-token-metadata.s3.us-east-2.amazonaws.com/hyUSD/icon.png",
+    "bytes": 3256
+  },
+  {
+    "mint": "HALALGvdNJ8u1J3uFFSsba1tyYPRF3vnYfCQ3CpJasfD",
+    "symbol": "iASOL",
+    "source": "jupiter",
+    "url": "https://xuc3mbv42u5h53lqxv3dmanqs7rexotek3jedpy6wb2yjhgadsvq.arweave.net/vQW2BrzVOn7tcL12NgGwl-JLumRW0kG_HrB1hJzAHKs",
+    "bytes": 1526
+  },
+  {
+    "mint": "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm",
+    "symbol": "INF",
+    "source": "jupiter",
+    "url": "https://arweave.net/CtPUchyfybiHymdCNAA_cDkPZ7p0xZDLmBYvHWOsAkE",
+    "bytes": 2604
+  },
+  {
+    "mint": "jag58eRBC1c88LaAsRPspTMvoKJPbnzw9p9fREzHqyV",
+    "symbol": "jagSOL",
+    "source": "jupiter",
+    "url": "https://www.jagpool.xyz/images/jagSOL.png",
+    "bytes": 2914
+  },
+  {
+    "mint": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+    "symbol": "jitoSOL",
+    "source": "jupiter",
+    "url": "https://storage.googleapis.com/token-metadata/JitoSOL-256.png",
+    "bytes": 4722
+  },
+  {
+    "mint": "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
+    "symbol": "JLP",
+    "source": "jupiter",
+    "url": "https://static.jup.ag/jlp/icon.png",
+    "bytes": 3522
+  },
+  {
+    "mint": "7Q2afV64in6N6SeZsAAB81TJzwDoD6zpqmHkzi9Dcavn",
+    "symbol": "JSOL",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/7Q2afV64in6N6SeZsAAB81TJzwDoD6zpqmHkzi9Dcavn/logo.svg",
+    "bytes": 2548
+  },
+  {
+    "mint": "jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v",
+    "symbol": "JupSOL",
+    "source": "jupiter",
+    "url": "https://static.jup.ag/jupSOL/icon.png",
+    "bytes": 4160
+  },
+  {
+    "mint": "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD",
+    "symbol": "JupUSD",
+    "source": "jupiter",
+    "url": "https://static.jup.ag/jupUSD/icon.png",
+    "bytes": 3968
+  },
+  {
+    "mint": "LAinEtNLgpmCP9Rvsf5Hn8W6EhNiKLZQti1xfWMLy6X",
+    "symbol": "laineSOL",
+    "source": "jupiter",
+    "url": "https://vvmbtadq63n53sdsqhlzbnzhvj5tdfp7moqixyv7rgkk6frqhqqq.arweave.net/rVgZgHD2293IcoHXkLcnqnsxlf9joIviv4mUrxYwPCE",
+    "bytes": 3402
+  },
+  {
+    "mint": "LnTRntk2kTfWEY6cVB8K9649pgJbt6dJLS1Ns1GZCWg",
+    "symbol": "lanternSOL",
+    "source": "jupiter",
+    "url": "https://arweave.net/juI8rxciTff6pljaDiXMEq5klSOngQol_8lvyokGGwY",
+    "bytes": 6744
+  },
+  {
+    "mint": "LSTxxxnJzKDFSLr4dUkPcmCf5VyryEqzPLz5j4bpxFp",
+    "symbol": "LST",
+    "source": "jupiter",
+    "url": "https://storage.googleapis.com/static-marginfi/lst.png",
+    "bytes": 2300
+  },
+  {
+    "mint": "MangmsBgFqJhW4cLUR9LxfVgMboY1xAoP8UUBiWwwuY",
+    "symbol": "mangoSOL",
+    "source": "override",
+    "url": "file:lib/token-icons/placeholders/MangmsBgFqJhW4cLUR9LxfVgMboY1xAoP8UUBiWwwuY.png",
+    "bytes": 2232
+  },
+  {
+    "mint": "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
+    "symbol": "mSOL",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So/logo.png",
+    "bytes": 2900
+  },
+  {
+    "mint": "5Y8NV33Vv7WbnLfq3zBcKSdYPrk7g2KoiQoe7M2tcxp5",
+    "symbol": "ONyc",
+    "source": "jupiter",
+    "url": "https://arweave.net/PyZzfGP-CqzaVlxTU3sb-I5uv4ZZKwnY8aCjcWn9S1A",
+    "bytes": 4086
+  },
+  {
+    "mint": "picobAEvs6w7QEknPce34wAE4gknZA9v5tTonnmHYdX",
+    "symbol": "picoSOL",
+    "source": "jupiter",
+    "url": "https://arweave.net/zR2ZKXpwmG4hMpqhGXlvz-B7PMs34cXxVb2gC1DmlDo",
+    "bytes": 3516
+  },
+  {
+    "mint": "jucy5XJ76pHVvtPZb5TKRcGQExkwit2P5s4vY8UzmpC",
+    "symbol": "proSOL",
+    "source": "override",
+    "url": "https://bafybeigaa3mbr4qe4hgc55e6srfliawtzdebrs3lrieas63dfc4vdyhiii.ipfs.w3s.link/ProStaking-CircleMark-360px.png",
+    "bytes": 3274
+  },
+  {
+    "mint": "pSo1f9nQXWgXibFtKf7NWYxb5enAM4qfP6UJSiXRQfL",
+    "symbol": "PSOL",
+    "source": "jupiter",
+    "url": "https://assets.phantom.app/assets/metadata/PSOL.png",
+    "bytes": 3860
+  },
+  {
+    "mint": "59obFNBzyTBGowrkif5uK7ojS58vsuWz3ZCvg6tfZAGw",
+    "symbol": "PST",
+    "source": "jupiter",
+    "url": "https://meta.huma.finance/pst.svg",
+    "bytes": 1624
+  },
+  {
+    "mint": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+    "symbol": "PYUSD",
+    "source": "jupiter",
+    "url": "https://424565.fs1.hubspotusercontent-na1.net/hubfs/424565/PYUSDLOGO.png",
+    "bytes": 1974
+  },
+  {
+    "mint": "Ra1so1sTkvX3PorAM9ewqrsUMz9sPSbfFZ5oZUjN4oc",
+    "symbol": "raiSOL",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/rakurai-io/token-metadata/master/assets/RaiSOL-Logo.png",
+    "bytes": 2752
+  },
+  {
+    "mint": "rkubjTrZYioRSeXwDnhwGQzvW3qkcin72JSxUt3WMVp",
+    "symbol": "rkuSOL",
+    "source": "jupiter",
+    "url": "https://arweave.net/0y-faXJ7pArc83FnXv8bNf_0wjloZcTrUBNnbEMJ9Cg",
+    "bytes": 1764
+  },
+  {
+    "mint": "roxDFxTFHufJBFy3PgzZcgz6kwkQNPZpi9RfpcAv4bu",
+    "symbol": "RoXSOL",
+    "source": "override",
+    "url": "file:lib/token-icons/placeholders/roxDFxTFHufJBFy3PgzZcgz6kwkQNPZpi9RfpcAv4bu.png",
+    "bytes": 2246
+  },
+  {
+    "mint": "sctmAy9zFfZznZUWxEMgGtF6PHZ3gwoiCGcfwRua1AZ",
+    "symbol": "sctmSOL",
+    "source": "sanctum",
+    "url": "https://solana-validator-website-italo-casas.vercel.app/sanctum.png",
+    "bytes": 2872
+  },
+  {
+    "mint": "BdMLRC2gKyFu8FRBErazzpEaKmB1jcVB9Eq1rXXFm4EV",
+    "symbol": "sharkSOL",
+    "source": "override",
+    "url": "https://raw.githubusercontent.com/sharkslabs/validator/refs/heads/main/sharkpool.jpg",
+    "bytes": 1188
+  },
+  {
+    "mint": "HnnGv3HrSqjRpgdFmx7vQGjntNEoex1SU4e9Lxcxuihz",
+    "symbol": "sHYUSD",
+    "source": "jupiter",
+    "url": "https://hylo-token-metadata.s3.us-east-2.amazonaws.com/Staked-hyUSD/icon.png",
+    "bytes": 3476
+  },
+  {
+    "mint": "stke7uu3fXHsGqKVVjKnkmj65LRPVrqr4bLG2SJg7rh",
+    "symbol": "STKESOL",
+    "source": "jupiter",
+    "url": "https://img.solstrategies.io/stkesol.png",
+    "bytes": 3862
+  },
+  {
+    "mint": "susdabGDNbhrnCa6ncrYo81u4s9GM8ecK2UwMyZiq4X",
+    "symbol": "sUSD",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/solayer-labs/token-metadata/main/susd/image.png",
+    "bytes": 1864
+  },
+  {
+    "mint": "Eh6XEPhSwoLv5wFApukmnaVSHQ6sAnoD9BmgmwQoN2sN",
+    "symbol": "sUSDe",
+    "source": "jupiter",
+    "url": "https://arweave.net/iY7Aj5iwHKDIDL0m7QxeQN2URRrphWRpdKPJjE8fcaQ",
+    "bytes": 4200
+  },
+  {
+    "mint": "AvZZF1YaZDziPY2RCK4oJrRVrbN3mTD9NL24hPeaZeUj",
+    "symbol": "syrupUSDC",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/maple-labs/maple-metadata/refs/heads/main/assets/syrupUSDC.svg",
+    "bytes": 3236
+  },
+  {
+    "mint": "star9agSpjiFe3M49B3RniVU4CMBBEK3Qnaqn3RGiFM",
+    "symbol": "USD*",
+    "source": "jupiter",
+    "url": "https://arweave.net/rn2JGVw61GimeOX64KHOsURjvsXi-qUlrYMc0E9v_pE",
+    "bytes": 3514
+  },
+  {
+    "mint": "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB",
+    "symbol": "USD1",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/worldliberty/usd1-metadata/refs/heads/main/logo.png",
+    "bytes": 3442
+  },
+  {
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "symbol": "USDC",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
+    "bytes": 4346
+  },
+  {
+    "mint": "DEkqHyPN7GMRJ5cArtQFAWefqbZb33Hyf6s5iCwjEonT",
+    "symbol": "USDe",
+    "source": "jupiter",
+    "url": "https://arweave.net/qeSnRm_FIyp_khPfmg8o1zQeGO4AczDaEKe8jEUOzL4",
+    "bytes": 4012
+  },
+  {
+    "mint": "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
+    "symbol": "USDG",
+    "source": "jupiter",
+    "url": "https://424565.fs1.hubspotusercontent-na1.net/hubfs/424565/GDN-USDG-Token-512x512.png",
+    "bytes": 2306
+  },
+  {
+    "mint": "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
+    "symbol": "USDS",
+    "source": "jupiter",
+    "url": "https://ipfs.io/ipfs/QmTW9HWfb2wsQqEVJiixkQ73Nsfp2Rx4ESaDSiQ7ThwnFM",
+    "bytes": 2772
+  },
+  {
+    "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    "symbol": "USDT",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.svg",
+    "bytes": 2180
+  },
+  {
+    "mint": "9ckR7pPPvyPadACDTzLwK2ZAEeUJ3qGSnzPs8bVaHrSy",
+    "symbol": "USDu",
+    "source": "jupiter",
+    "url": "https://gateway.irys.xyz/Hg7LLjvsm2KKRu9Br33gZ6veVhxAby57iXDRgtwH3DCo",
+    "bytes": 3896
+  },
+  {
+    "mint": "A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6",
+    "symbol": "USDY",
+    "source": "override",
+    "url": "https://img-v1.raydium.io/icon/A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6.png",
+    "bytes": 4956
+  },
+  {
+    "mint": "6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG",
+    "symbol": "USX",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/Thomas-Solstice/usx-metadata/refs/heads/main/usx.png",
+    "bytes": 4322
+  },
+  {
+    "mint": "vSoLxydx6akxyMD9XEcPvGYNGq6Nn66oqVb3UkGkei7",
+    "symbol": "vSOL",
+    "source": "jupiter",
+    "url": "https://bafkreig55mf3lazzbgndiqyqvdmchdsykvvebww7cqlws6ywgog5xfdzta.ipfs.nftstorage.link/",
+    "bytes": 2378
+  },
+  {
+    "mint": "XAnDeUmMcqFyCdef9jzpNgtZPjTj3xUMj9eXKn2reFN",
+    "symbol": "xandSOL",
+    "source": "jupiter",
+    "url": "https://raw.githubusercontent.com/bernieblume/XAND-meta-2024/main/xandSOL.png",
+    "bytes": 3664
+  },
+  {
+    "mint": "xSoL18r4U1k2ALa4yF857VDZJqCKecLtty92nscre3o",
+    "symbol": "xSHIN",
+    "source": "sanctum",
+    "url": "https://xshin.fi/icons/xSHIN_3d.png",
+    "bytes": 3706
+  },
+  {
+    "mint": "4sWNB8zGWHkh6UnmwiEtzNxL4XrN7uK9tosbESbJFfVs",
+    "symbol": "xSOL",
+    "source": "jupiter",
+    "url": "https://hylo-token-metadata.s3.us-east-2.amazonaws.com/xSOL/icon.png",
+    "bytes": 4318
+  }
+]

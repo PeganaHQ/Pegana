@@ -1,0 +1,143 @@
+---
+title: "Honesty about limits"
+description: "What Pegana does not model. Where the signal can lie. When to mistrust an alert."
+---
+
+Pegana's signal is good enough to act on for monitoring, risk dashboards, alerting, and
+AI agent pre-flight checks. It is **not** a low-level price oracle for liquidation
+engines, large-size routing, or settlement of high-value derivatives without
+additional checks.
+
+This page is the explicit list of failure modes. If a future incident bites you,
+chances are it's already here.
+
+## Slippage at size is not modeled
+
+The Jupiter probe size is fixed per asset (~$10k notional for most). Your effective
+swap price at $5M will be measurably worse. If you intend to act on Pegana state to
+execute a large trade, use Jupiter's quote API directly at your real size.
+
+## Single source per class
+
+We deliberately do not blend prices. If **Sanctum** is wrong about `sol_value` for an
+LST, every LST spread is wrong. If **Pyth** is wrong about SOL/USD, every USD spread is
+wrong. If **Hylo's** Exchange PDA decode drifts, hyUSD's CR is wrong.
+
+We accept this trade-off because reproducibility and clear failure modes matter more
+than belt-and-suspenders robustness — but you should know it. For high-value
+automation (insurance payout, liquidation), **cross-check against your own oracle of
+choice** before pulling the trigger.
+
+## Thin venues lie
+
+Even with Jupiter routing, an asset whose dominant venue dries up will print a
+crash-shaped spread that reflects venue stress, not asset stress. The
+[mSOL/Pyth case](/case-studies/msol-pyth-may-2022) is the textbook example.
+
+Mitigation: every asset has a `confidence` field in the API — a discrete label
+(`high` / `medium` / `low` / `unknown`) derived from the Pyth confidence interval. When a
+feed's interval widens or the feed goes stale, the label degrades and the consumer can
+choose to ignore the print. The default rule is to act only on `confidence: "high"`. See
+[confidence label](/concepts/confidence-score).
+
+## Program upgrades
+
+Any LST or CDP whose stake pool / vault is mid-upgrade may pause redemptions or change
+account layout. Our decoders are pinned to specific IDLs. **IDL drift** is the silent
+failure mode. When a decode fails or drifts, the engine **skips the recompute and holds
+the last published state** rather than emitting a confident-but-wrong number — it does
+not flip the asset to `UNKNOWN`.
+
+<Note>
+An automated hourly pinned-IDL check against the on-chain canonical IDL (with a Sentry
+alert on divergence) is **not yet shipped** — that detector is not in the current Rust
+source. Today, decode drift surfaces as a warn log plus a Prometheus counter, and the
+mitigation for unreliable single-source assets is a provisional `monitoring_only`
+(beta) label on their alerts plus the NAV-sanity gate, which publishes `UNKNOWN`
+when an anchor is detectably broken.
+</Note>
+
+## Best-effort delivery
+
+Alerts are best-effort. Telegram delivery is rate-limited by Telegram's own API; in a
+burst (e.g., dozens of assets transitioning at once during a market-wide event), delivery
+may take 10–30 seconds. Webhook delivery has 6 attempts with 5s / 30s / 5m / 30m /
+2h backoff. If your endpoint is unreachable for the full retry envelope, the
+attempts are visible in `/v1/me/webhooks/:id/deliveries` and the event can be
+replayed.
+
+**For mission-critical automation, poll `/v1/assets/:symbol/state` as a safety
+net** — that endpoint is the source of truth and is always reachable.
+
+## We do not score "predicted" depegs
+
+Pegana publishes what is happening **right now**, smoothed by an asymmetric dwell window:
+a worsening transition must hold for **30s** before it confirms (`CONFIRM_UP_SECS`), while
+a recovery must hold for **120s** before the state relaxes (`DECAY_DOWN_SECS`) — quick to
+flag stress, slow to declare all-clear. We do not project forward, do not score
+"likelihood of depeg in the next hour," do not model correlation between assets.
+
+If you want forward-looking risk modeling, build it on top of our raw `/v1/assets/.../history`
+data. We expose 1-minute aggregates and raw discount points for that purpose.
+
+## We do not arbitrate
+
+When Sanctum's `sol_value` says jitoSOL = 1.180 SOL and Jupiter's routed quote says
+1.176 SOL, the spread is `-34 bps`. We do not decide whether Sanctum or Jupiter is
+"right." We report the spread.
+
+If you need a single "fair price" — i.e., a number to liquidate against — that's a
+different product. Pegana is the *state* oracle, not the *price* oracle.
+
+## Frozen / dropped assets
+
+When an asset's mechanism becomes untrustworthy, we freeze it. A frozen entry
+remains in [`assets.toml`](https://github.com/PeganaHQ/ReplayCLI/blob/main/assets.toml)
+for historical continuity but the engine no longer polls it. `dSOL` (Drift's LST)
+was soft-deactivated on 2026-05-26 after the 2026-04-01 exploit — no live counterparty
+for redemption. Rather than an `active = false` entry, its definition is preserved as a
+commented-out block in `assets.toml` so historical snapshots remain reproducible while the
+indexer and engine skip it entirely. It is excluded from the 69 assets tracked live
+and no longer polled.
+
+## Frozen backing can currently read as confident
+
+Pegana's staleness gate is a *timestamp* gate: it asks when a value was last written,
+not whether that value has actually moved. A backing source can therefore go frozen —
+returning the same NAV forever — while the indexer dutifully re-reads it every 30
+seconds and stamps each read with `now`. The timestamp looks perfectly fresh, so the
+gate never trips, and the asset reads as a confident `PEGGED`.
+
+A liveness gate that detects exactly this (a backing value that has not changed across
+many reads) is built, calibrated and shipped — but it ships **disabled**, so it is not
+currently protecting anything. Every intrinsic-backed asset shares that exposure today.
+One asset (dSOL) is deliberately held out of the product for this reason rather than
+shown with a number we cannot stand behind.
+
+If a peg matters to you at size, do not treat a `PEGGED` verdict as evidence that the
+issuer's backing is still being updated. Cross-check the issuer directly.
+
+## Duration is not in the hashed receipt
+
+The classification is instantaneous: it describes the spread at the moment of decision,
+not how long the asset has been there. Duration *is* published — `sustained` and
+`current_state_duration_secs` are on `/v1/assets` — but they are **not** part of the
+frozen inputs that get hashed into the receipt, and a forced `UNKNOWN` resets the clock.
+
+This matters if you are building on the receipt rather than on the API: a receipt tells
+you, verifiably, that the spread was what we said it was. It does not tell you, verifiably,
+that the asset had been there for four hours. Anything that needs to settle on duration
+needs a different input than the one we currently sign.
+
+## How to verify mistrust
+
+Every alert includes the `intrinsic_usd`, `market_usd`, and `discount` values at the
+moment it fired. Re-fetch the asset's history endpoint around the alert timestamp:
+
+```bash
+curl "https://api.pegana.xyz/v1/assets/USDC/history?from=2026-05-26T14:32:00Z&to=2026-05-26T14:33:00Z&bucket=raw"
+```
+
+If the raw spread series doesn't show the threshold crossing, the alert is wrong and
+you should open a Sentry ticket — but in practice you will see exactly the print that
+fired the alert, with the same numbers.

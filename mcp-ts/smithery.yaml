@@ -1,0 +1,96 @@
+# Smithery registry config for the Pegana oracle MCP server.
+# Docs: https://smithery.ai/docs/build
+#
+# This server is hosted remotely at https://mcp.pegana.xyz over the
+# Streamable HTTP transport. Agents don't need to install or run anything
+# locally — they point their MCP client at the URL.
+
+name: pegana-oracle
+displayName: "Pegana Oracle"
+description: >
+  The peg-risk oracle for Solana. Real-time peg state, history, and
+  state-transition events for the live tracked asset list (call get_assets
+  for the current symbols) across LSTs, fiat
+  stablecoins, yield-bearing tokens, CDPs, and synthetics. Free read tools
+  for current state and methodology; paid tools (history, alert stream)
+  metered per-call in USDC on Solana mainnet via x402 — no API keys, no
+  signup, no monthly minimum.
+
+homepage: https://pegana.xyz
+documentation: https://pegana.xyz/developers#mcp
+license: MIT
+repository: https://github.com/PeganaHQ/ReplayCLI
+
+tags:
+  - solana
+  - stablecoin
+  - lst
+  - liquid-staking
+  - peg
+  - depeg
+  - oracle
+  - defi
+  - x402
+  - usdc
+  - real-time
+
+# Remote, hosted endpoint — no local startCommand required. Smithery
+# auto-discovers tools by introspecting the running server.
+runtime: remote
+endpoint: https://mcp.pegana.xyz
+transport: streamable-http
+
+# Public — no configuration / no env vars required for free tools. Paid
+# tools use x402, which is settled by the agent's own wallet (not via
+# Smithery), so there is nothing to provision here.
+configSchema: {}
+
+examples:
+  - name: "Liveness check"
+    description: "Ping the server to confirm it is reachable."
+    tool: ping
+    args: {}
+
+  - name: "Discover supported assets"
+    description: "Enumerate every asset Pegana is currently tracking."
+    tool: get_assets
+    args: {}
+
+  - name: "Read current jitoSOL peg state"
+    description: "Free — current discount/intrinsic/market for a single LST."
+    tool: get_asset_state
+    args:
+      symbol: "jitoSOL"
+
+  - name: "Explain the USDe peg mechanism"
+    description: "Free — methodology blurb tailored to the asset class."
+    tool: get_methodology
+    args:
+      symbol: "USDe"
+
+  - name: "Last 24h of jitoSOL discount at 5-minute resolution"
+    description: "Paid ($0.001) — bucketed time-series via Postgres."
+    tool: get_asset_history
+    args:
+      symbol: "jitoSOL"
+      bucket: "5m"
+      limit: 288
+
+  - name: "Subscribe to jitoSOL + USDe state transitions ≥ 25bps"
+    description: "Paid ($0.0005) — batch of AlertEvents since cursor."
+    tool: subscribe_peg_events
+    args:
+      symbols: ["jitoSOL", "USDe"]
+      since_ts: 0
+      threshold_bps: 25
+
+systemPrompt: >
+  You can use the Pegana oracle to assess peg risk for Solana LSTs,
+  stablecoins, and yield-bearing assets. Start with `get_assets` to
+  enumerate supported symbols. Use `get_asset_state` for one-shot reads,
+  `get_asset_history` (paid) for trends, and `subscribe_peg_events` (paid)
+  for alert streams. The `state` field is one of PEGGED, DRIFT, DEPEG,
+  CRITICAL, BLACK_SWAN, or UNKNOWN. `discount` = 1 − market/intrinsic,
+  signed — NEGATIVE means trading ABOVE intrinsic (a premium), POSITIVE
+  means BELOW (a discount). Paid tools settle in USDC on Solana
+  mainnet via x402.

@@ -1,0 +1,14 @@
+-- P5: case-insensitive symbol resolution.
+--
+-- The public /v1/assets/{symbol}[/state|/history] routes resolve a possibly
+-- mis-cased symbol to its canonical catalog casing via
+--   SELECT symbol FROM assets WHERE lower(symbol) = lower($1)
+-- This functional UNIQUE index backs that lookup AND promotes "no two symbols
+-- collide case-insensitively" from a convention to a hard constraint: a future
+-- assets.toml entry that case-collides with an existing (active OR inactive)
+-- catalog row now fails loudly here instead of making the resolver ambiguous.
+--
+-- Verified zero collisions across the full catalog (active + inactive) before
+-- creating this; the CI guard
+-- tests/assets_case_insensitive.rs::catalog_symbols_are_case_unique keeps it so.
+CREATE UNIQUE INDEX assets_symbol_lower_uidx ON assets (lower(symbol));

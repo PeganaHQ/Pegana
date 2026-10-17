@@ -1,0 +1,130 @@
+---
+title: "Telegram bot"
+description: "@PeganaWatchBot delivers human-readable alerts via Telegram. No wallet, no API key, English."
+---
+
+<Note>
+  **Alerts are live.** The bot delivers state-transition notifications to subscribers
+  in real time, alongside lookups (`/status`, `/explain`, `/history`).
+</Note>
+
+The fastest path from "I want to be notified when an asset depegs" to actually being
+notified. No code, no integration — open Telegram, subscribe.
+
+<Card title="Open @PeganaWatchBot" icon="telegram" href="https://t.me/PeganaWatchBot">
+  Or message `@PeganaWatchBot` directly.
+</Card>
+
+## What it does
+
+- Sends a notification on every state transition for assets you subscribe to
+- Supports custom thresholds per subscription (`USDC@50bps` = alert me when USDC
+  spreads beyond 50 bps)
+- Adds one-tap alert actions: mute an asset, snooze all alerts, or open the chart
+- Lookups via `/status <symbol>` for current state and `/history` for past alerts
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `/start` | Welcome + optional deep-link auto-subscribe |
+| `/menu` | Open the main menu |
+| `/help` | Command reference |
+| `/subscribe <ASSET> [pct]` | Subscribe with an optional percentage threshold |
+| `/unsubscribe <ASSET>` | Unsubscribe |
+| `/list` | List your active subscriptions |
+| `/status [ASSET]` | Show current state, intrinsic, market, spread |
+| `/threshold <ASSET> <pct>` | Change an existing subscription threshold |
+| `/alerts` | Turn alerts on or off |
+| `/mute <ASSET> [hours]` | Mute one asset temporarily |
+| `/mute all [hours]` | Mute every active Telegram subscription temporarily |
+| `/snooze [hours]` | Quick global mute, default 1 hour |
+| `/unmute <ASSET>` | Resume alerts for one asset |
+| `/explain <ASSET>` | Plain-English methodology + risk factors |
+| `/define <TERM>` | Define a peg-related term |
+| `/history [ASSET] [limit]` | Recent alerts scoped to assets you subscribe to |
+| `/digest on\|off [hourUTC]` | Toggle daily digest |
+| `/me` | Your settings + activity |
+| `/web` | Open the web dashboard |
+
+## Example notification
+
+```
+🚨 DRIFT ALERT — USDT  (stable_fiat)
+
+State: PEGGED → DRIFT
+Spread: 0.155% (discount · market below intrinsic)
+Intrinsic: $1.0000
+Market:    $0.998331
+```
+
+Recovery alerts use calmer wording:
+
+```
+✅ RE-PEGGED — USDT  (stable_fiat)
+
+State: DRIFT → PEGGED
+Spread: 0.142% (normalized · inside threshold)
+Intrinsic: $1.0000
+Market:    $0.998500
+```
+
+The wording differs by state — CRITICAL alerts use stronger framing. Every
+alert includes inline actions for muting the
+asset, snoozing all alerts, and opening the asset chart.
+
+## How subscriptions work
+
+Subscriptions live in your Telegram identity (your `telegram_id`). They follow you if
+you reset the chat or change devices. They sync with the web dashboard at
+[pegana.xyz/account/alerts](https://pegana.xyz/account/alerts) — every subscription
+created in either place appears in both.
+
+## Privacy
+
+We store only:
+
+- Telegram ID (numeric)
+- Username (if set; nullable)
+- Your subscriptions (asset + threshold)
+- Delivery history for operations and user-facing history
+
+No phone number, no email, no contacts. Telegram routes the message — we do not
+read your other chats. The bot runtime is `bot-ts/`.
+
+## Group chats
+
+You can use commands in a group after first opening a private DM with the bot.
+Alerts are delivered to the user's private chat, not back into the group. This
+prevents accidental alert leakage across shared chats.
+
+## Rate limiting
+
+Bot deliveries are rate-limited by Telegram's API. In a burst (e.g., dozens of assets all
+transitioning during a market-wide event), delivery may take 10–30 seconds for the
+last alerts. Order is preserved within a chat — you receive transitions in the order
+they occurred, not the order of subscription.
+
+For mission-critical alerts where 10–30s tail latency matters, use
+[Webhooks](/guides/webhooks) — they deliver in seconds and retry over roughly
+2h35m.
+
+## Hosted — no setup needed
+
+The bot is hosted as `@PeganaWatchBot` — no setup needed. Just open Telegram and
+subscribe; it talks to `api.pegana.xyz` and delivers alerts in real time.
+
+The runtime (`bot-ts/`) is `grammY` + a small Postgres session storage. It is
+**English-only** (ADR-0022); the Fluent localization scaffolding is kept dormant in
+the tree but is not wired up — there is no language toggle.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Webhooks (for code)" icon="arrow-up-right-from-square" href="/guides/webhooks">
+    Code-driven receivers with verification.
+  </Card>
+  <Card title="Embed widget" icon="window" href="/guides/embed-widget">
+    Show state on a webpage instead of in chat.
+  </Card>
+</CardGroup>

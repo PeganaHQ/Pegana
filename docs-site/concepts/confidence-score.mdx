@@ -1,0 +1,128 @@
+---
+title: "Confidence label"
+description: "Per-asset confidence is a discrete label (high / medium / low / unknown) derived from the price oracle's confidence interval. When it isn't high, don't act on the print without re-checking."
+---
+
+Not every Pegana print is equally trustworthy. A jitoSOL spread computed against a Pyth
+SOL/USD feed whose published confidence interval is tight (a fraction of a basis point)
+is high-confidence. The same spread computed when that feed's interval has blown out, or
+when the feed is stale or missing entirely, is not.
+
+The **`confidence`** field in every API response captures that quality as a **discrete
+label**, not a number:
+
+| Label | Meaning |
+| --- | --- |
+| `high` | Pyth confidence interval is tight: `conf / price < 0.1%` |
+| `medium` | Interval is moderate: `0.1% ≤ conf / price < 1%` |
+| `low` | Interval is wide: `conf / price ≥ 1%` |
+| `unknown` | No usable feed — missing, stale, or zero price/confidence |
+
+There is **no** `0.0 – 1.0` numeric confidence score in the public contract. Consumers
+should branch on the label (e.g. `confidence === "high"`), not compare against a
+threshold.
+
+## What feeds the label
+
+Confidence scopes the **price-oracle confidence interval only** — Pyth's own published
+`conf` value relative to the price. It is **not** a blend of market depth, route
+liquidity, or decoder health.
+
+For each asset, the engine collects every Pyth feed the asset depends on:
+
+- a `pyth_spot` market feed,
+- a `pyth_*` intrinsic feed (FX cross / redemption rate),
+- the numéraire feed behind a `jupiter_usd` market (e.g. SOL/USD or USDC/USD) — a real
+  Pyth dependency, since a broken numéraire feed would otherwise leave a Jupiter-quoted
+  asset reporting `high` on a broken price.
+
+Each feed is bucketed by its `conf / price` ratio into `high` / `medium` / `low`, and a
+missing/stale/zero feed becomes `unknown`. The **strictest** label across all of the
+asset's feeds wins (`unknown` > `low` > `medium` > `high`), so a single degraded feed can
+only ever make the verdict look *less* certain — never more.
+
+### The ratio buckets
+
+| `conf / price` | Label |
+| --- | --- |
+| `< 0.1%` (`0.001`) | `high` |
+| `< 1%` (`0.01`) | `medium` |
+| `≥ 1%` | `low` |
+| feed missing / stale / zero price or zero conf | `unknown` |
+
+### No independent cross-check → MEDIUM cap
+
+An asset with **no Pyth feed anywhere** — neither a `pyth_spot` / `jupiter_usd`-numéraire
+market nor a `pyth_*` intrinsic — has no independent oracle to cross-check its price. A
+single DEX/quote source stands alone, so the engine **cannot** assert `high`: it caps the
+label at `medium`.
+
+Today this is exactly **sUSD** (a DexScreener Raydium pool plus a custom rate, with no
+Pyth feed). Every other active asset has a Pyth dependency and is unaffected.
+
+<Note>
+The MEDIUM cap ships in **methodology 0.4.0** (ADR-0025 §2) and is **branch-only — not
+yet deployed**. Until it ships, an asset with no Pyth feed can still report `high` off its
+single source.
+</Note>
+
+## When the label is not `high`
+
+A degraded confidence label does **not** change the state on its own. `PEGGED` with
+`confidence: "low"` is still `PEGGED` — the published state is what the FSM saw. But you
+should treat it as "PEGGED, but I wouldn't bet money on it without re-fetching."
+
+Patterns that produce a non-`high` label:
+
+1. **Wide Pyth confidence intervals.** During volatile or thin-publisher windows, Pyth's
+   published interval widens, pushing `conf / price` into the `medium` or `low` bucket.
+2. **Source staleness.** If a feed goes stale past its per-feed staleness window, that
+   feed resolves to `unknown` and (being strictest) collapses the asset's label to
+   `unknown`.
+3. **Decode / mechanism failure.** When a protocol upgrades and our pinned decoder no
+   longer matches the on-chain layout, the engine skips the recompute and holds the last
+   published state rather than emitting a fresh verdict on degraded inputs. Worst case —
+   we **don't know the truth** about the asset's intrinsic.
+
+## How to use it
+
+```typescript
+const state = await fetch(`https://api.pegana.xyz/v1/assets/${asset}/state`).then(r => r.json());
+
+if (state.confidence !== "high") {
+  // Re-fetch in 15s, or skip the decision
+  return;
+}
+
+if (state.state === "DEPEG" && state.confidence === "high") {
+  // Fire the automation
+}
+```
+
+In a webhook receiver, you should still verify the Ed25519 signature on the payload,
+then check the `confidence` label before acting. A signed-but-low-confidence webhook is a
+hint to act conservatively, not an immediate trigger.
+
+## Confidence label per use case
+
+| Use case | Minimum label to act |
+| --- | --- |
+| Telegram bot display | any (we show everything, including `unknown`) |
+| Dashboard chart | `low` (we render with a low-confidence indicator) |
+| Webhook to a notifier | `medium` |
+| Webhook to a liquidation pause | `high` |
+| Webhook to a payout | `high` + additional verification (human or multi-sig) |
+
+There is no universal answer. Calibrate against your downstream's blast radius.
+
+## What happens at `unknown`
+
+When a feed is missing or stale, the engine does **not** flip the asset to a separate
+state. It reports `confidence: "unknown"`, skips the recompute on degraded inputs, and
+holds the last published state. The published state is whatever the FSM last saw when the
+signal was healthy — read it alongside `confidence` and treat an `unknown` print
+conservatively.
+
+If `confidence` stays at `unknown` for >15 minutes, treat it as a real problem at the
+source and go investigate. The status page at
+[pegana.xyz/status](https://pegana.xyz/status) shows which sources are healthy.

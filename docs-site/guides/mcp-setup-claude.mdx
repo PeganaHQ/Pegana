@@ -1,0 +1,168 @@
+---
+title: "MCP setup — Claude / Cursor / Cline / Continue"
+description: "Point your MCP host at https://mcp.pegana.xyz. No install, no clone, no API key."
+---
+
+The Pegana MCP server is **hosted at `https://mcp.pegana.xyz`** and speaks the
+[Model Context Protocol](https://modelcontextprotocol.io) over HTTP (Streamable
+HTTP transport). You don't install anything — just point your MCP host at the URL.
+
+<Note>
+  Some MCP hosts (Claude Desktop, Cursor as of 2026-05) still expect a stdio
+  transport. For those, use the official [`mcp-remote`](https://www.npmjs.com/package/mcp-remote)
+  bridge — a tiny npx wrapper that proxies HTTP MCP into stdio. Configs below show
+  the bridge approach because it works everywhere; once your host adds native HTTP
+  support you can drop the bridge.
+</Note>
+
+## Verify the endpoint is up
+
+Before configuring your host:
+
+```bash
+curl https://mcp.pegana.xyz/health
+# → ok
+```
+
+## Claude Desktop (macOS / Windows)
+
+Edit `claude_desktop_config.json`:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "pegana": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.pegana.xyz"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The Pegana tools appear in the tool list (hammer icon):
+`ping`, `get_assets`, `get_asset_state`, `get_methodology`, `get_loop_exposure`,
+`simulate_depeg_impact`, `verify_alert`, `ping_paid`, `get_asset_history`,
+`subscribe_peg_events`.
+
+To enable paid tools, point `mcp-remote` at a CDP wallet you control. The wallet
+signs USDC payments per call. See
+[paid tools + x402](/guides/mcp-paid-tools-x402) for the wallet setup; once your
+wallet is configured at the host level, paid tools work transparently.
+
+## Cursor
+
+Cursor reads MCP config from `~/.cursor/mcp.json` (or via Cursor Settings →
+Features → MCP → Add new server). Same shape:
+
+```json
+{
+  "mcpServers": {
+    "pegana": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.pegana.xyz"]
+    }
+  }
+}
+```
+
+## Cline (VS Code extension)
+
+Cline's MCP config lives in `cline_mcp_settings.json` (Cline → Settings → MCP
+Settings → Edit JSON). Same shape as Claude Desktop / Cursor.
+
+## Continue
+
+Continue's `~/.continue/config.json` accepts MCP servers under
+`experimental.modelContextProtocolServers`:
+
+```json
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "transport": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://mcp.pegana.xyz"]
+        }
+      }
+    ]
+  }
+}
+```
+
+## Codex / OpenAI tooling
+
+If you're using the [Codex CLI](https://github.com/openai/codex) or another OpenAI
+tool that supports MCP, the same `npx -y mcp-remote https://mcp.pegana.xyz` recipe
+applies. Shape varies per tool — see each tool's MCP setup doc.
+
+## Hosts with native HTTP MCP support
+
+If your host supports Streamable HTTP transport natively (the spec is recent —
+support is growing), you can skip `mcp-remote`:
+
+```json
+{
+  "mcpServers": {
+    "pegana": {
+      "url": "https://mcp.pegana.xyz"
+    }
+  }
+}
+```
+
+This is cleaner but works in fewer hosts as of 2026-05. Check your host's
+release notes.
+
+## Verify it works
+
+Once configured, ask the model:
+
+```text
+Use the pegana ping tool and tell me the server version.
+```
+
+The model should call `ping()` and return something like:
+
+```text
+The Pegana MCP server is online — pong (uptime 4823s).
+```
+
+If you get "tool not available" or similar, check the host's MCP logs. Most hosts
+log to a file like `~/Library/Logs/Claude/mcp.log`.
+
+## Common errors
+
+**`npx: command not found`** — install Node.js (18+). `mcp-remote` ships via npx.
+
+**Tools list shows but calls hang** — the host may be on an older MCP SDK that
+doesn't yet support Streamable HTTP. Update the host. The Pegana server uses
+`WebStandardStreamableHTTPServerTransport` from `@modelcontextprotocol/sdk@^1.29`.
+
+**Paid tool returns 402 unhandled** — your wallet isn't configured. See
+[paid tools + x402](/guides/mcp-paid-tools-x402).
+
+**"unable to verify the first certificate"** — corporate proxy strips TLS. Set
+`NODE_EXTRA_CA_CERTS` env var to your corporate CA bundle.
+
+## Hosted — no clone needed
+
+The server is hosted at `mcp.pegana.xyz` — no clone needed; see
+[pegana.xyz/developers](https://pegana.xyz/developers). Just point your MCP host at
+the URL. The runtime (`mcp-ts/`) is TypeScript on Bun + Hono, configured via env vars
+(`PEGANA_API_BASE`, `REDIS_URL`, `DATABASE_URL`, plus the CDP block for paid tools).
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="What each tool does" icon="code" href="/guides/mcp-free-tools">
+    Schemas + example calls for the 7 free tools.
+  </Card>
+  <Card title="Paid tools + x402" icon="coins" href="/guides/mcp-paid-tools-x402">
+    Wallet setup for ping_paid + get_asset_history + subscribe_peg_events.
+  </Card>
+</CardGroup>

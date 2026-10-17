@@ -1,0 +1,17 @@
+26. [GET] https://api.pegana.xyz/v1/stats => [200] 
+27. [GET] https://api.pegana.xyz/v1/assets/jitoSOL => [200] 
+28. [GET] https://api.pegana.xyz/v1/alerts?asset=jitoSOL&limit=60 => [200] 
+29. [GET] https://api.pegana.xyz/v1/assets => [200] 
+30. [GET] https://api.pegana.xyz/v1/assets/jitoSOL/history?bucket=1m&from=2026-06-01T12%3A34%3A19.027Z&limit=2000 => [200] 
+74. [GET] https://www.pegana.xyz/api/jupiter-quote?inputMint=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=9907203305&slippageBps=50 => [200] 
+75. [GET] https://www.pegana.xyz/api/jupiter-quote?inputMint=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=99072033053&slippageBps=50 => [200] 
+76. [GET] https://www.pegana.xyz/api/jupiter-quote?inputMint=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=990720330530&slippageBps=50 => [200] 
+84. [GET] https://api.pegana.xyz/v1/assets/jitoSOL/history?bucket=1m&from=2026-06-01T12%3A34%3A19.759Z&limit=2000 => [200] 
+87. [GET] https://api.pegana.xyz/v1/stats => [200] 
+88. [GET] https://api.pegana.xyz/v1/assets/jitoSOL => [200] 
+89. [GET] https://api.pegana.xyz/v1/alerts?asset=jitoSOL&limit=60 => [200] 
+90. [GET] https://www.pegana.xyz/api/jupiter-quote?inputMint=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=9905813266&slippageBps=50 => [200] 
+91. [GET] https://www.pegana.xyz/api/jupiter-quote?inputMint=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=99058132661&slippageBps=50 => [200] 
+92. [GET] https://www.pegana.xyz/api/jupiter-quote?inputMint=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=990581326606&slippageBps=50 => [200] 
+
+Note: 45 static requests not shown, run with "static" option to see them.

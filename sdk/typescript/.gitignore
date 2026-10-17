@@ -1,0 +1,7 @@
+# Publish build output (emitted by `npm run build` / `prepack`).
+# Local file:/bun installs import ./src/index.ts directly, so dist/ is a
+# transient publish artifact and must never be committed.
+dist/
+
+# Dependencies
+node_modules/

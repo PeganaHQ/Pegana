@@ -1,0 +1,39 @@
+[package]
+name = "dispatcher-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dispatcher-rs"
+path = "src/main.rs"
+
+[dependencies]
+pegana-common = { path = "../common" }
+
+tokio = { workspace = true }
+futures = { workspace = true }
+anyhow = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+sentry = { workspace = true }
+sqlx = { workspace = true }
+redis = { workspace = true }
+reqwest = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+metrics = { workspace = true }
+dotenvy = { workspace = true }
+envy = "0.4"
+
+# v2 webhook channel (Plan 2 Track G)
+rand = { workspace = true }
+
+[dev-dependencies]
+base64 = "0.22"  # test-only: integration tests build/verify Ed25519 sigs
+# In-test HTTP sink for dispatch_one header coverage.
+# Pinned to the same minor as the webhook receiver sample (0.7).
+axum = "0.7"

@@ -1,0 +1,147 @@
+---
+title: "Webhook retry policy"
+description: "Failures retry 6 times over roughly 2h35m. After that, delivery is logged as failed and can be replayed."
+---
+
+A webhook delivery fails if your endpoint:
+
+- Doesn't return within 5 seconds
+- Returns a non-2xx HTTP status (3xx, 4xx, 5xx)
+- Refuses the TLS handshake
+- Closes the connection mid-response
+
+## Backoff schedule
+
+Dispatcher config — `max_attempts: 6`, `backoffs: [5s, 30s, 5m, 30m, 2h]`:
+
+| Attempt | Wait before this attempt | Cumulative time since first attempt |
+| --- | --- | --- |
+| 1 (initial) | 0s | 0s |
+| 2 | 5s | 5s |
+| 3 | 30s | 35s |
+| 4 | 5m | 5m35s |
+| 5 | 30m | 35m35s |
+| 6 | 2h | 2h35m35s |
+
+After the 6th failure, the delivery is marked failed and written to the
+dead-letter queue. The long tail covers temporary receiver deploys, TLS renewals,
+and short provider incidents without turning webhook delivery into an unbounded
+background job.
+
+Source: `crates/dispatcher-rs/src/webhook.rs`.
+
+## What "delivery succeeded" means
+
+Any 2xx response counts as success. We don't inspect the body. Common success
+patterns:
+
+```http
+HTTP/1.1 200 OK
+Content-Length: 0
+```
+
+or:
+
+```http
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Content-Length: 17
+
+{"queued": true}
+```
+
+Both are equally fine.
+
+## Detecting missed events
+
+If your endpoint was down for the full retry envelope and the alert ran out of
+retries, inspect the webhook delivery log:
+
+```bash
+curl 'https://api.pegana.xyz/v1/me/webhooks/$ID/deliveries?limit=50' \
+  -H "Authorization: Bearer $JWT"
+```
+
+```json
+[
+  {
+    "alert_id": "9c8e7f3a-...",
+    "attempt": 6,
+    "http_status": 500,
+    "elapsed_ms": 231,
+    "error": "receiver returned 500",
+    "is_test": false,
+    "attempted_at": "2026-05-26T16:07:46Z"
+  }
+]
+```
+
+A common pattern: poll `/v1/me/webhooks/$ID/deliveries` every few minutes as a
+safety net. Idempotency (using `x-pegana-event-id`) means you can re-process a
+stale event without duplicating action.
+
+## Manual replay
+
+If you want missed dead-letter events delivered again, hit the replay endpoint:
+
+```bash
+curl -X POST 'https://api.pegana.xyz/v1/me/webhooks/$ID/replay?since=1779880000&limit=25' \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Replay re-attempts dead-letter rows for that subscription. Successful replay does
+not delete the dead-letter row; receiver-side dedup makes repeated replay safe.
+
+## TLS errors
+
+If your TLS handshake fails (expired cert, mismatched SAN, weak cipher), the
+delivery counts as a failed attempt. We don't differentiate handshake failures from
+HTTP errors in the retry schedule.
+
+If delivery history shows repeated handshake failures, you have a real TLS
+problem. We don't accept self-signed certs.
+
+## Timeouts
+
+Each attempt has a **5-second deadline** for the full request/response cycle. Read
+slow? Sleeping in your handler? Doing heavy work in-band? You'll timeout.
+
+Recommended pattern:
+
+```typescript
+app.post("/pegana-hook", async (req, res) => {
+  if (!verify(req)) return res.status(401).end();
+  
+  // ACK immediately
+  res.status(202).end();
+  
+  // Then do real work async
+  queue.push(req.body);
+});
+```
+
+ACK within 100ms, then handle async. The webhook is the trigger, not the work.
+
+## Self-hosted: tune the schedule
+
+If you're running your own Pegana instance, the retry schedule is in
+`crates/dispatcher-rs/src/main.rs`
+under the `WebhookConfig` initialization (look for `max_attempts: 6`). To shorten
+or extend the window, change both `max_attempts` and the backoff array in
+`crates/dispatcher-rs/src/webhook.rs`.
+
+## Next
+
+<CardGroup cols={3}>
+  <Card title="TypeScript example" icon="js" href="/guides/webhooks-examples-typescript">
+    Cloudflare Worker reference.
+  </Card>
+  <Card title="Rust example" icon="rust" href="/guides/webhooks-examples-rust">
+    axum reference.
+  </Card>
+  <Card title="Python example" icon="python" href="/guides/webhooks-examples-python">
+    FastAPI reference.
+  </Card>
+</CardGroup>

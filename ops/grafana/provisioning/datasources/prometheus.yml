@@ -1,0 +1,18 @@
+# Provisioned datasource — Grafana pulls metrics from the internal
+# Prometheus container at http://prometheus:9090 (docker compose network).
+# `editable: false` prevents the operator from accidentally modifying the
+# datasource via the UI in a way that doesn't persist across container
+# restarts (provisioning always wins on next boot).
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST

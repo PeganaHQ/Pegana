@@ -1,0 +1,121 @@
+---
+title: "Embed widget"
+description: "320 × 86 iframe badge (320 × 56 without the sparkline) showing live peg status for any tracked asset. No JavaScript, no API key, ~3 KB HTML."
+---
+
+The simplest way to surface Pegana state in a third-party site, dashboard, or
+status page is to embed our `iframe` badge. It's an HTML route served from
+`pegana.xyz/embed/badge/<symbol>` — no JS bundle to load, no auth, ~3 KB of HTML
+per request.
+
+## Basic embed
+
+```html
+<iframe
+  src="https://pegana.xyz/embed/badge/USDC"
+  width="320"
+  height="86"
+  frameborder="0"
+  loading="lazy"
+></iframe>
+```
+
+That's it. The badge renders the asset symbol, current state pip (green / amber / red),
+spread, and a 24h mini-spark.
+
+Try it in the [playground](https://pegana.xyz/embed) on the main site.
+
+## Query parameters
+
+| Param | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `theme` | `dark`, `light` | `dark` | Color scheme |
+| `sparkline` | `on`, `off` | `on` | Show the 24h mini-spark |
+
+Example:
+
+```html
+<iframe
+  src="https://pegana.xyz/embed/badge/jitoSOL?theme=light&sparkline=off"
+  width="320"
+  height="56"
+></iframe>
+```
+
+## Caching
+
+The badge response is **server-rendered every 60 seconds** with `Cache-Control:
+public, s-maxage=60, stale-while-revalidate=300`. If you embed it on a high-traffic
+page, CDN-level caching applies — your viewers do not hit our origin per render.
+
+## Sizing
+
+Native dimensions are 320 × 86 with the sparkline (the default), and **320 × 56**
+when `sparkline=off` — set the iframe `height` to match the variant you embed. The
+HTML is responsive within that frame. If you resize the iframe, set both `width` and
+`height` proportionally — content does not reflow below 280px wide.
+
+For higher density, embed two badges side-by-side:
+
+```html
+<div style="display: flex; gap: 8px">
+  <iframe src="https://pegana.xyz/embed/badge/USDC"   width="320" height="86"></iframe>
+  <iframe src="https://pegana.xyz/embed/badge/jitoSOL" width="320" height="86"></iframe>
+</div>
+```
+
+## No JavaScript required
+
+The badge is server-rendered HTML + inline CSS. There's no client-side JS bundle to
+load. State updates require a page reload (or whatever your parent page does to
+re-fetch the iframe). This is by design — we want the embed to be safe on any page,
+including ones with strict CSP.
+
+If you need real-time updates without a page reload, use the
+[WebSocket](/guides/websocket) and render your own UI.
+
+## Frame protection
+
+We send `Content-Security-Policy: frame-ancestors *` so the badge can be embedded
+anywhere (the modern, authoritative cross-origin framing directive — the old
+`X-Frame-Options` header only supports `DENY`/`SAMEORIGIN`, so it can't express
+"allow any origin"). Your CSP needs to allow `frame-src https://pegana.xyz` (or
+`https://*.pegana.xyz`).
+
+## Use cases
+
+- **Status pages**: pin one badge per LST you depend on, give your users a one-glance
+  signal that the underlying is healthy.
+- **Protocol dashboards**: pin badges for your collateral basket alongside utilization
+  metrics.
+- **Discord widget**: embed the iframe inside a Discord channel's embed (some clients
+  render iframes).
+
+## Asset symbols
+
+Every asset Pegana tracks works. Lowercase or uppercase, e.g.:
+
+- `USDC`, `USDT`, `PYUSD`, `USDS`, `USDe` (fiat stables)
+- `jitoSOL`, `mSOL`, `bSOL`, `INF`, `bbSOL`, `JupSOL` (LSTs)
+- `USDY`, `sUSD`, `syrupUSDC`, `sUSDe`, `sHYUSD`, `hyUSD`, `ONyc` (yield-bearing)
+- `hyloSOL`, `hyloSOL+`, `xSOL` (Hylo)
+
+See the full list at [`pegana.xyz/dashboard`](https://pegana.xyz/dashboard).
+
+## Limitations
+
+- No customization beyond `theme` and `sparkline`. If you need a different layout,
+  build your own using the [REST API](/guides/rest-api).
+- No live JS updates — page reload to refresh.
+- 60-second cache means the badge may lag the dashboard by up to a minute.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="REST API" icon="code" href="/guides/rest-api">
+    Build a custom widget with full control.
+  </Card>
+  <Card title="Telegram bot" icon="telegram" href="/guides/telegram-bot">
+    Subscribe to alerts in your chat.
+  </Card>
+</CardGroup>

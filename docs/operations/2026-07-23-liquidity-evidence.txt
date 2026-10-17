@@ -1,0 +1,40 @@
+# Liquidity evidence — beta promotion retro 2026-07-23 (floor $25k, ADR-0026)
+# Sources: tokens.xyz (liquidity_observations, in the prod retro SQL) + Birdeye token_overview sweep (below) + DexScreener 1:1 for eUSX.
+# Birdeye sweep of the 32 CHECK-LIQ mints (symbol / mint / aggregated liquidity USD):
+#
+sharkSOL    BdMLRC2gKyFu8FRBErazzpEaKmB1jcVB9Eq1rXXFm4EV   143.1883974861926
+eUSX        3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC   1127.2478174604998
+RoXSOL      roxDFxTFHufJBFy3PgzZcgz6kwkQNPZpi9RfpcAv4bu    4208.280844652504
+STKESOL     stke7uu3fXHsGqKVVjKnkmj65LRPVrqr4bLG2SJg7rh    22598.444255022718
+xandSOL     XAnDeUmMcqFyCdef9jzpNgtZPjTj3xUMj9eXKn2reFN    522375.3215131405
+laineSOL    LAinEtNLgpmCP9Rvsf5Hn8W6EhNiKLZQti1xfWMLy6X    958460.4220892893
+hyloSOL+    hy1opf2bqRDwAxoktyWAj6f3UpeHcLydzEdKjMYGs2u    964078.4743834365
+proSOL      jucy5XJ76pHVvtPZb5TKRcGQExkwit2P5s4vY8UzmpC    1108773.3810371712
+mangoSOL    MangmsBgFqJhW4cLUR9LxfVgMboY1xAoP8UUBiWwwuY    1237015.7983098547
+lanternSOL  LnTRntk2kTfWEY6cVB8K9649pgJbt6dJLS1Ns1GZCWg    1503467.5514886722
+iASOL       HALALGvdNJ8u1J3uFFSsba1tyYPRF3vnYfCQ3CpJasfD   1542087.9575525315
+picoSOL     picobAEvs6w7QEknPce34wAE4gknZA9v5tTonnmHYdX    1599991.1524364213
+raiSOL      Ra1so1sTkvX3PorAM9ewqrsUMz9sPSbfFZ5oZUjN4oc    2078543.0590654348
+corvusSOL   CorvuSSoLxPKLoXWXSfn8pFSMhCRHhe7Uwqe874cmwvg   2695011.082560131
+edgeSOL     edge86g9cVz87xcpKpy3J77vbp4wYd9idEV562CCntt    3237075.867794405
+PST         59obFNBzyTBGowrkif5uK7ojS58vsuWz3ZCvg6tfZAGw   3528305.746737847
+haSOL       haSo1Vz5aTsqEnz8nisfnEsipvbAAWpgzRDh2WhhMEh    3541506.45111008
+CDCSOL      CDCSoLckzozyktpAp9FWT3w92KFJVEUxAU7cNu2Jn3aX   3985986.8764038524
+cgntSOL     CgnTSoL3DgY9SFHxcLj6CgCgKKoTBr6tp4CPAEWy25DE   5197828.263585769
+JLP         27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4   7358583.090776361
+LST         LSTxxxnJzKDFSLr4dUkPcmCf5VyryEqzPLz5j4bpxFp    7467258.431618233
+ONyc        5Y8NV33Vv7WbnLfq3zBcKSdYPrk7g2KoiQoe7M2tcxp5   8446647.16968154
+rkuSOL      rkubjTrZYioRSeXwDnhwGQzvW3qkcin72JSxUt3WMVp    9851689.5213333
+bonkSOL     BonK1YhkXEGLZzwtcvRTip3gAL9nCeQD7ppZBLXhtTs    10786730.625972837
+BulkSOL     BULKoNSGzxtCqzwTvg5hFJg8fx6dqZRScyXe5LYMfxrn   12654918.086300557
+definSOL    DEF1NXSZ8Th9n28hYBayrFtx9bj1EwwTiy3mhHEB9oyA   20924724.04183244
+jagSOL      jag58eRBC1c88LaAsRPspTMvoKJPbnzw9p9fREzHqyV    59595813.19874084
+hSOL        he1iusmfkpAdwvxLNGV8Y1iSbj4rUy6yMhEA3fotn9A    69529243.03219832
+vSOL        vSoLxydx6akxyMD9XEcPvGYNGq6Nn66oqVb3UkGkei7    103943387.32694988
+JSOL        7Q2afV64in6N6SeZsAAB81TJzwDoD6zpqmHkzi9Dcavn   108622537.55312125
+dzSOL       Gekfj7SL2fVpTDxJZmeC46cTYxinjB6gkAnb6EGT6mnn   116947437.90142797
+dynoSOL     DYNoyS3x5qgbccZg7RPXagm4xQzfnm5iwd9o8pMyJtdE   128197420.23835652
+#
+# NOTE eUSX: Birdeye $1127 is a USDC-anchoring artifact. Real market = $9.2M across
+#   Orca ($4.69M) + Raydium ($4.54M) eUSX/USX pools, ~$187k/24h volume (DexScreener 1:1).
+#   → eUSX PASSES the gate; included in mig 0069.

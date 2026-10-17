@@ -1,0 +1,107 @@
+import type { NextRequest } from "next/server";
+import { apiBase } from "@/lib/api/base";
+
+// Lazy-imported so build doesn't fail when the API base isn't reachable; the
+// route fetches at request time and degrades to an empty (still well-formed)
+// feed when upstream is down.
+const API_BASE = apiBase();
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
+
+interface AlertRow {
+  id: string;
+  asset: string;
+  class: string;
+  from_state: string;
+  to_state: string;
+  detected_at: string;
+  discount: string | null;
+}
+
+function xmlEscape(s: string): string {
+  return s.replace(
+    /[<>&'"]/g,
+    (c) =>
+      ({
+        "<": "&lt;",
+        ">": "&gt;",
+        "&": "&amp;",
+        "'": "&apos;",
+        '"': "&quot;",
+      })[c] ?? c,
+  );
+}
+
+function rfc822(iso: string): string {
+  try {
+    return new Date(iso).toUTCString();
+  } catch {
+    return new Date().toUTCString();
+  }
+}
+
+function alertToItem(a: AlertRow): string {
+  const title = `${a.asset}: ${a.from_state} → ${a.to_state}`;
+  const url = `${SITE_URL}/asset/${encodeURIComponent(a.asset)}`;
+  // Suppress the spread label if the snapshot is physically impossible
+  // (|discount| > 1.0). A corrupted upstream sample shouldn't bake a fake
+  // "-9218%" into the public RSS feed permanently.
+  const bps = (() => {
+    if (!a.discount) return null;
+    const n = parseFloat(a.discount);
+    if (!Number.isFinite(n) || Math.abs(n) > 1) return null;
+    return Math.round(n * 10000);
+  })();
+  const desc = `Pegana detected a state transition on ${a.asset}${bps != null ? ` (spread ${(bps / 100).toFixed(2)}%)` : ""}. Class: ${a.class}.`;
+  return `
+    <item>
+      <title>${xmlEscape(title)}</title>
+      <link>${xmlEscape(url)}</link>
+      <guid isPermaLink="false">${xmlEscape(a.id)}</guid>
+      <pubDate>${rfc822(a.detected_at)}</pubDate>
+      <description>${xmlEscape(desc)}</description>
+      <category>${xmlEscape(a.class)}</category>
+    </item>`.trim();
+}
+
+export async function GET(_req: NextRequest) {
+  let items: string[] = [];
+  let lastBuildDate = new Date().toUTCString();
+
+  try {
+    const res = await fetch(`${API_BASE}/v1/alerts?limit=100`, {
+      headers: { Accept: "application/json" },
+      // Cache for 5 minutes — the feed is consumed by readers polling on
+      // their own schedule (RSS clients typically poll 15–60 min).
+      next: { revalidate: 300 },
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { data: AlertRow[] };
+      const alerts = body.data;
+      items = alerts.map(alertToItem);
+      if (alerts[0]?.detected_at) lastBuildDate = rfc822(alerts[0].detected_at);
+    }
+  } catch {
+    // Empty feed — still a valid response; readers will retry.
+  }
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Pegana. Depeg events</title>
+    <link>${xmlEscape(SITE_URL)}/events</link>
+    <atom:link href="${xmlEscape(SITE_URL)}/feed/events.xml" rel="self" type="application/rss+xml" />
+    <description>State transitions out of PEGGED for the Solana assets Pegana monitors.</description>
+    <language>en</language>
+    <ttl>15</ttl>
+    <lastBuildDate>${lastBuildDate}</lastBuildDate>
+    ${items.join("\n    ")}
+  </channel>
+</rss>`;
+
+  return new Response(xml, {
+    headers: {
+      "Content-Type": "application/rss+xml; charset=utf-8",
+      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+    },
+  });
+}

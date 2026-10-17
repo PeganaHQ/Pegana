@@ -1,0 +1,83 @@
+---
+title: "Data model & glossary"
+description: "The core asset object, its enums, and the fields you'll actually branch on."
+---
+
+Every read endpoint returns some shape of an **asset** — a tracked mint with its latest
+peg reading. This page pins the closed enums and the fields that matter; the full,
+authoritative schema is the live [OpenAPI spec](https://api.pegana.xyz/openapi.json).
+
+## Enums (closed sets)
+
+<ResponseField name="state" type="PegState">
+The engine's class-aware verdict — **trust this, don't re-threshold `discount` yourself**.
+`PEGGED` · `DRIFT` · `DEPEG` · `CRITICAL` · `BLACK_SWAN` · `UNKNOWN`. `UNKNOWN` is
+non-alerting (missing/untrustworthy data — never rendered as healthy).
+</ResponseField>
+
+<ResponseField name="anchor" type="Anchor">
+How to read fair value: `USD` (fixed $1 target) · `FX` (fixed non-USD fiat rate, see
+`peg_target`) · `NAV` (intrinsic/redemption value that legitimately moves — LSTs,
+yield-bearing stables, synthetics).
+</ResponseField>
+
+<ResponseField name="confidence" type="Confidence">
+Pyth oracle confidence bucket for the reading: `high` · `medium` · `low` · `unknown`.
+Scopes the price-oracle interval only, not market-depth reliability.
+</ResponseField>
+
+<ResponseField name="calibration" type="Calibration">
+`calibrated` · `provisional`. The self-describing form of `monitoring_only` — `provisional`
+means the asset is live but its thresholds are still being validated on mainnet data.
+</ResponseField>
+
+<ResponseField name="risk_side" type="RiskSide">
+Which direction of `discount` is the risk: `below` (USD/FX anchors — a discount from peg)
+or `either` (NAV anchors — premium and discount both matter).
+</ResponseField>
+
+## Key fields
+
+<ResponseField name="mint" type="string">
+Canonical Solana mint — the **stable join key**. Resolve assets by mint, not symbol.
+</ResponseField>
+
+<ResponseField name="discount" type="string (decimal)">
+Signed spread vs. fair value, as a fraction (`"0.0123"` = 123 bps). ×10000 → bps. Negative =
+below peg / discount, positive = premium. See [Response format](/guides/rest-api#response-format).
+</ResponseField>
+
+<ResponseField name="intrinsic_usd / market_usd" type="string (decimal)">
+The two legs of the discount: mechanism/NAV fair value vs. observed market price.
+</ResponseField>
+
+<ResponseField name="risk_score" type="integer | null">
+Derived 0–100 peg-risk score, anchored to `state` (PEGGED ≤ 24 … BLACK_SWAN 95–100). A single
+sortable number that never disagrees with the classification. `null` when there's no
+trustworthy discount.
+</ResponseField>
+
+<ResponseField name="market_cap / circulating_supply" type="string | null">
+Size/context signals (USD market cap, circulating supply). **Never** an input to
+`discount`/`state`/thresholds. `null` until observed.
+</ResponseField>
+
+<ResponseField name="worst_abs_24h / jitter_bps_24h" type="string (decimal)">
+Trailing-24h stability: worst absolute discount, and peak-to-trough dispersion (jitter).
+Same signed-fraction units as `discount`.
+</ResponseField>
+
+<ResponseField name="monitoring_only" type="boolean">
+`true` = actively monitored but excluded from the calibrated launch set (a calibration
+status, not a health state — a `monitoring_only` asset can still be `PEGGED`).
+</ResponseField>
+
+<ResponseField name="updated_at" type="string (RFC3339)">
+Freshness of the current snapshot. The engine stops writing when a feed goes stale, so a
+frozen `updated_at` is how a stale feed surfaces — always gate on it.
+</ResponseField>
+
+<Note>
+Values follow the [Response format](/guides/rest-api#response-format) conventions: decimals
+are exact strings (parse with a decimal library), timestamps are RFC3339 millisecond-`Z`.
+</Note>

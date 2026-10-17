@@ -1,0 +1,31 @@
+name: backtest
+
+on:
+  pull_request:
+    paths:
+      - "crates/methodology/**"
+      - "crates/pegana-replay-cli/**"
+      - "crates/xtask/**"
+      - "docs/backtests/**"
+      - ".github/workflows/backtest.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  drift-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: "ci-rust"
+      - name: Backtest drift gate (committed fixture, no network)
+        run: cargo run -p xtask -- backtest --case 2025-10-10-usde-depeg --check
+      - name: Directional sanity tests
+        run: cargo test -p xtask --test backtest_runner golden_
+      - name: Public CLI receipt acceptance
+        run: |
+          cargo run -p pegana-replay -- --bundle docs/backtests/2025-10-10-usde-depeg/receipts/USDe-001.json | tee replay-output.txt
+          grep -q "PASS" replay-output.txt

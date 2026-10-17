@@ -1,0 +1,208 @@
+---
+title: "Seven MCP tools"
+description: "Seven MCP tools available with no payment, no API key. ping, get_assets, get_asset_state, get_methodology, get_loop_exposure, simulate_depeg_impact, verify_alert."
+---
+
+These tools require no settlement and no API key. Call them from any MCP host
+configured against `https://mcp.pegana.xyz` (see [setup](/guides/mcp-setup-claude)).
+
+## `ping`
+
+Liveness check. Returns server version and timestamp.
+
+```json
+// → ping()
+{
+  "ok": true,
+  "version": "0.1.0",
+  "ts": "2026-05-26T14:32:11Z"
+}
+```
+
+Use this to verify the MCP connection is healthy before relying on other tools.
+
+## `get_assets`
+
+Lists every tracked asset with the latest snapshot.
+
+```json
+// → get_assets()
+{
+  "count": 26,
+  "assets": [
+    {
+      "asset": "USDC",
+      "state": "PEGGED",
+      "discount": "-0.0002",
+      "intrinsic_usd": "1.0000",
+      "market_usd": "0.9998",
+      "ts": 1748269920
+    },
+    {
+      "asset": "jitoSOL",
+      "state": "PEGGED",
+      "discount": "-0.0034",
+      "intrinsic_usd": "213.42",
+      "market_usd": "212.69",
+      "ts": 1748269928
+    }
+  ]
+}
+```
+
+The full list is 69 active assets (plus inactive entries kept for history — see
+[`assets.toml`](https://github.com/PeganaHQ/ReplayCLI/blob/main/assets.toml)). No
+filtering parameter in v1 — filter client-side or in the model's reasoning.
+
+## `get_asset_state`
+
+Current state for one asset.
+
+```json
+// → get_asset_state({ symbol: "USDC" })
+{
+  "asset": "USDC",
+  "state": "PEGGED",
+  "since": "2026-05-26T14:32:11Z",
+  "discount": -0.0002,
+  "intrinsic_usd": 1.0000,
+  "market_usd": 0.9998,
+  "confidence": "high"
+}
+```
+
+If the asset is unknown, returns:
+
+```json
+{ "error": "asset_not_found", "asset": "XYZ" }
+```
+
+## `get_methodology`
+
+Returns the formula, sources, and thresholds the asset uses. Static content vendored
+at build time — safe for the model to read as authoritative.
+
+```json
+// → get_methodology({ symbol: "USDC" })
+{
+  "symbol": "USDC",
+  "explanation": "USDC is a fiat-backed stablecoin. Pegana computes intrinsic_usd from the Pyth USDC/USD reference and market_usd from a Jupiter routed quote; the discount is the signed gap between them. ...",
+  "methodology_url": "https://pegana.xyz/methodology"
+}
+```
+
+Methodology resolves to the asset's class, so any LST symbol (e.g.
+`{ symbol: "jitoSOL" }`) returns the shared LST explainer.
+
+## `get_loop_exposure`
+
+Returns anonymous, aggregate cross-protocol leverage exposure for Kamino and
+Jupiter Lend positions collateralized by the given asset. No per-wallet
+information is exposed.
+
+```json
+// → get_loop_exposure({ symbol: "jitoSOL" })
+{
+  "asset": "jitoSOL",
+  "loop_exposure_usd": "18420000.00",
+  "collateral_usd": "24600000.00",
+  "debt_usd": "6180000.00",
+  "coverage": "full",
+  "by_protocol": [],
+  "advisory_note": "Advisory model estimate"
+}
+```
+
+Use this when an agent needs to assess whether a peg break on this asset would
+cascade into liquidations across lending protocols.
+
+## `simulate_depeg_impact`
+
+Estimates the cross-protocol liquidation cascade caused by a hypothetical depeg
+shock. `shock_bps` must be one of `100`, `250`, `500`, `1000`, or `2000`.
+
+```json
+// → simulate_depeg_impact({ symbol: "USDC", shock_bps: 500 })
+{
+  "asset": "USDC",
+  "shock_bps": 500,
+  "loop_exposure_usd": "18420000.00",
+  "liquidatable_usd": "4200000.00",
+  "positions": "25–49",
+  "coverage": "full",
+  "by_protocol": [],
+  "advisory_note": "Advisory model estimate"
+}
+```
+
+Use this when a user asks how much leveraged collateral may become liquidatable
+under a specific depeg shock.
+
+## `verify_alert`
+
+Verify an on-chain alert receipt. Proxies `GET /v1/audit/:alert_id` — the underlying
+data is already public, so this tool is free.
+
+```json
+// → verify_alert({ alert_id: "9c8e7f3a-..." })
+{
+  "result": {
+    "alert": {
+      "id": "9c8e7f3a-...",
+      "asset": "jitoSOL",
+      "class": "lst",
+      "from_state": "PEGGED",
+      "to_state": "DRIFT",
+      "discount": "-0.0034",
+      "intrinsic_usd": "213.42",
+      "market_usd": "212.69",
+      "confidence": "high",
+      "detected_at": "2026-05-25T15:20:00Z"
+    },
+    "evidence": {
+      "methodology_version": "0.3.0",
+      "methodology_git_sha": "...",
+      "assets_toml_sha256": "...",
+      "inputs_frozen": { },
+      "computed": { },
+      "has_replay_artifact": true,
+      "receipt_sha256": "...",
+      "onchain_tx_sig": "...",
+      "created_at": "2026-05-25T15:20:01Z"
+    },
+    "evidence_status": "ready"
+  }
+}
+```
+
+The response is wrapped in a `result` envelope. `evidence_status` discriminates
+`ready` (full receipt, shown above), `pending`, or `failed_permanent` — the
+`pending` / `failed_permanent` shapes mirror the `/v1/audit/:id` four-state
+contract and omit the `evidence` object.
+
+Use this when a user pastes an alert ID and the model needs to confirm it corresponds
+to a real, on-chain-anchored transition before acting on it.
+
+## Typical agent flow
+
+```text
+1. ping() — verify connection
+2. get_assets() — read all 26 (caches in agent context)
+3. For each user request involving asset X:
+   - get_asset_state({ symbol: X })
+   - if state != "PEGGED" and not user-acknowledged:
+       refuse, return state + explanation
+   - else: proceed
+4. Optionally, get_methodology({ symbol: X }) once at startup,
+   so model can reason about WHY an alert exists
+```
+
+The methodology call is the differentiator — agents that read it before reasoning can
+explain peg state to a user in plain language, including the per-asset threshold
+context ("INF's drift threshold is wide because its 24h p99 is wide").
+
+## Next
+
+<Card title="Paid tools — ping_paid + get_asset_history + subscribe_peg_events" icon="coins" href="/guides/mcp-paid-tools-x402">
+  Settlement flow for the three paid tools.
+</Card>

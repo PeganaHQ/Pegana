@@ -1,0 +1,184 @@
+---
+title: "Webhook receiver — Python / FastAPI"
+description: "Production-ready reference using the cryptography library. Verbatim from the repo."
+---
+
+For Python services. Uses the well-maintained `cryptography` library.
+
+**Full source (verbatim):** `docs/examples/webhook-receivers/python-fastapi/main.py`
+
+## Dependencies
+
+```bash
+pip install fastapi uvicorn cryptography
+```
+
+## main.py
+
+```python
+"""
+Pegana webhook receiver — Python / FastAPI reference.
+"""
+
+import base64
+import json
+import os
+import time
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from fastapi import FastAPI, HTTPException, Request
+
+DEFAULT_PEGANA_PUB_KEY_B64 = "gAKAhNG4BLCF0xm/gCcDb0OcP6cxzt1IfXkmkzyVYVo="
+REPLAY_WINDOW_SEC = 300
+
+app = FastAPI()
+_pub = Ed25519PublicKey.from_public_bytes(
+    base64.b64decode(os.environ.get("PEGANA_PUB_KEY_B64", DEFAULT_PEGANA_PUB_KEY_B64))
+)
+
+
+@app.post("/")
+async def webhook(req: Request) -> dict[str, str]:
+    sig = req.headers.get("x-pegana-signature")
+    ts = req.headers.get("x-pegana-timestamp")
+    if not sig or not ts:
+        raise HTTPException(401, "missing signature headers")
+    try:
+        ts_i = int(ts)
+    except ValueError as exc:
+        raise HTTPException(401, "bad timestamp") from exc
+    if abs(int(time.time()) - ts_i) > REPLAY_WINDOW_SEC:
+        raise HTTPException(401, "stale")
+
+    body = (await req.body()).decode("utf-8")
+    sig_b64 = sig.replace("ed25519:", "", 1)
+
+    try:
+        sig_bytes = base64.b64decode(sig_b64)
+        if len(sig_bytes) != 64:
+            raise HTTPException(401, "bad signature length")
+        _pub.verify(sig_bytes, f"{ts}.{body}".encode("utf-8"))
+    except (InvalidSignature, ValueError) as exc:
+        raise HTTPException(401, "bad signature") from exc
+
+    event = json.loads(body)
+    # Your business logic here. Examples:
+    #   redis.set(f"pegana:seen:{event['alert_id']}", "1", ex=86400)
+    #   await slack_post(f"{event['asset']} → {event['to_state']}")
+    print("verified:", event)
+
+    return {"status": "ok"}
+```
+
+## Run
+
+```bash
+PEGANA_PUB_KEY_B64="<base64 key>" uvicorn main:app --host 0.0.0.0 --port 3000
+```
+
+Behind a TLS-terminating reverse proxy (Caddy, nginx). Or use uvicorn with
+`--ssl-keyfile` and `--ssl-certfile` for direct TLS.
+
+## Async work pattern
+
+The reference above ACKs synchronously. For production, return 202 and process in
+the background:
+
+```python
+from fastapi import BackgroundTasks
+
+
+async def process_alert(payload: dict) -> None:
+    # heavy work — DB writes, downstream notifications, etc.
+    ...
+
+
+@app.post("/", status_code=202)
+async def webhook(req: Request, background_tasks: BackgroundTasks) -> dict[str, str]:
+    # ... (verify as above) ...
+
+    event = json.loads(body)
+    background_tasks.add_task(process_alert, event)
+    return {"queued": "true"}
+```
+
+ACK within ~100ms, do real work async.
+
+## Production tips
+
+**Read body before parsing.** `await request.body()` gives you the original bytes —
+sign over those exact bytes. Do not let FastAPI's automatic JSON parsing intercept.
+
+**Persist `alert_id` for idempotency.** Use Redis (`SET` with TTL = 86400) or your
+DB. Without idempotency a retry can double-act.
+
+**Worker count.** With multiple uvicorn workers, any in-memory dedup set becomes
+per-worker — leaks deliveries. Move to Redis before scaling.
+
+**Hardcode the key allowlist.** The example uses one key. During rotation, support
+two:
+
+```python
+TRUSTED_KEYS = [
+    Ed25519PublicKey.from_public_bytes(base64.b64decode("gAKAhNG4BLCF0xm/gCcDb0OcP6cxzt1IfXkmkzyVYVo=")),
+    # Ed25519PublicKey.from_public_bytes(base64.b64decode("<old key>")),  # during rotation
+]
+
+def verify_with_any(sig: bytes, msg: bytes) -> bool:
+    for key in TRUSTED_KEYS:
+        try:
+            key.verify(sig, msg)
+            return True
+        except InvalidSignature:
+            continue
+    return False
+```
+
+## Test locally
+
+The dashboard's **"Send test event"** button delivers to your registered URL with a
+known payload. To test fully offline:
+
+```python test.py
+import base64
+import json
+import time
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+# Generate a fresh keypair for testing
+sk = Ed25519PrivateKey.generate()
+pk = sk.public_key()
+pk_b64 = base64.b64encode(pk.public_bytes_raw()).decode()
+
+body = json.dumps({
+    "asset": "USDC",
+    "from_state": "PEGGED",
+    "to_state": "DRIFT",
+    "discount_bps": -47,
+    "ts": "2026-05-26T22:55:00Z",
+    "alert_id": "550e8400-e29b-41d4-a716-446655440000",
+}).encode()
+ts = str(int(time.time()))
+message = f"{ts}.".encode() + body
+sig = base64.b64encode(sk.sign(message)).decode()
+
+print(f"x-pegana-timestamp: {ts}")
+print(f"x-pegana-signature: ed25519:{sig}")
+print(f"Body: {body.decode()}")
+print(f"\nSet PEGANA_PUB_KEY_B64={pk_b64} on the receiver")
+```
+
+Add the generated public key as the receiver's `PEGANA_PUB_KEY_B64` env, hit your
+endpoint with curl, verify the 200.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="TypeScript example" icon="js" href="/guides/webhooks-examples-typescript">
+    Web Crypto API for edge.
+  </Card>
+  <Card title="Rust example" icon="rust" href="/guides/webhooks-examples-rust">
+    ed25519-dalek strict mode.
+  </Card>
+</CardGroup>

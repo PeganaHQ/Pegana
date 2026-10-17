@@ -1,0 +1,43 @@
+---
+title: "Pagination & limits"
+description: "Collections return the full current set; time-series and the audit ledger are windowed by query params."
+---
+
+Pegana's collections are small and current, so most read endpoints return the **full
+active set** in one call — no cursor needed. Time-series and the audit ledger are the
+exception: they're windowed with query parameters.
+
+## Full-set endpoints
+
+`GET /v1/assets`, `GET /v1/alerts`, `GET /v1/calibration`, and `GET /v1/peg/feed` return
+every currently-tracked row (dozens, not millions). Poll them as often as your logic needs,
+within the [rate limit](/guides/rate-limits).
+
+## Windowed endpoints
+
+<ParamField query="from" type="string (RFC3339)">
+Start of the window for `GET /v1/assets/{symbol}/history` (this parameter is `from`, **not**
+`since`). Pair with `to`.
+</ParamField>
+
+<ParamField query="to" type="string (RFC3339)">
+End of the history window.
+</ParamField>
+
+<ParamField query="bucket" type="string">
+History granularity: `raw` (per-sample) or `1m` (1-minute aggregate).
+</ParamField>
+
+<ParamField query="limit" type="integer">
+Max rows returned. History defaults to 500. The audit ledger (`GET /v1/audit`) and its CSV
+export (`GET /v1/audit.csv`) are capped per ADR-0014 (100-row page / 50k CSV rows).
+</ParamField>
+
+<ParamField query="since" type="string (RFC3339)">
+Lower time bound for `GET /v1/alerts` (newest first).
+</ParamField>
+
+<Note>
+The audit ledger is append-only and time-ordered — walk it by advancing `to`/`since` across
+windows. History is returned **newest-first**.
+</Note>

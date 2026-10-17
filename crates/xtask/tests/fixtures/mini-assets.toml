@@ -1,0 +1,27 @@
+[[assets]]
+symbol         = "USDC"
+name           = "USD Coin"
+mint           = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+verified       = true
+decimals       = 6
+token_program  = "spl"
+class          = "stable_fiat"
+peg_target     = "USD"
+intrinsic      = { kind = "fixed_1_usd" }
+market         = { kind = "pyth_spot", feed = "USDC/USD" }  # H5: own Pyth USDC/USD spot — breaks the USDC<->USDT numéraire cycle (no degenerate same-mint Jupiter quote)
+pyth_feed_id   = "0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a"
+thresholds_bps = { drift = 15, depeg = 50, critical = 200 }
+
+[[assets]]
+symbol         = "USDe"
+name           = "Ethena USDe"
+mint           = "DEkqHyPN7GMRJ5cArtQFAWefqbZb33Hyf6s5iCwjEonT"
+verified       = true   # confirmed via Ethena docs + on-chain getMint 2026-05-21
+decimals       = 9      # NOTE: 9 on Solana (not 6) — Wormhole NTT bridged variant
+token_program  = "spl"
+class          = "stable_dn"
+peg_target     = "USD"
+intrinsic      = { kind = "fixed_1_usd" }
+market         = { kind = "jupiter_usd", numeraire = "USDC", numeraire_feed = "USDC/USD" }
+pyth_feed_id   = "0x6ec879b1e9963de5ee97e9c8710b742d6228252a5e2ca12d4ae81d7fe5ee8c5d"
+thresholds_bps = { drift = 25, depeg = 100, critical = 300 }

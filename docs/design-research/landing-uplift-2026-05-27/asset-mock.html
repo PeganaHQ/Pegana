@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pegana — /asset/[symbol] mock (decision-utility direction)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@1,9..144,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --canvas:#000;--surface-1:#0a0a0a;--surface-2:#141414;
+  --text:#fffdf9;--text-body:#e8e8e8;--text-muted:#9aa9b8;--text-caption:#7c7c7c;
+  --hairline:rgba(255,253,249,0.08);--outline:rgba(255,253,249,0.18);
+  --coral:#ff8a5b;--magenta:#e878d8;
+  --st-pegged:#6bd697;--st-drift:#c08a55;--st-depeg:#a55a5a;--st-critical:#b73838;
+  --grad:linear-gradient(90deg,#feed7a 0%,#ff8400 50%,#df91f7 100%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--canvas);color:var(--text);font-family:'Geist',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+/* serif-i removed — brand.md locks "no italic anywhere"; emphasis uses weight/color */
+a{color:inherit;text-decoration:none}
+button{font:inherit;background:none;border:0;color:inherit;cursor:pointer}
+
+/* dotted bg */
+.dot-bg{position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:radial-gradient(rgba(255,253,249,0.05) 1px,transparent 1px);
+  background-size:24px 24px;mask-image:radial-gradient(ellipse 80% 60% at center,black 30%,transparent 90%)}
+
+/* ─ TOPBAR (same as dashboard) ─ */
+.topbar{position:relative;z-index:10;border-bottom:1px solid var(--hairline);background:rgba(0,0,0,.7);backdrop-filter:blur(10px)}
+.topbar-inner{max-width:1440px;margin:0 auto;display:flex;align-items:center;gap:40px;padding:14px 24px}
+.brand{font-family:'JetBrains Mono',monospace;font-size:14px;display:inline-flex;align-items:baseline;gap:4px}
+.brand .b1{color:var(--coral)}.brand .b2{color:var(--magenta)}
+.nav{display:flex;align-items:center;gap:32px;flex:1}
+.nav a{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);position:relative;padding-bottom:4px;display:inline-flex;align-items:baseline;gap:8px}
+.nav a .n{color:var(--text-caption);font-size:10px}
+.nav a:hover{color:var(--text)}
+.signin{margin-left:auto;font-size:12px;color:var(--text-muted)}
+.signin:hover{color:var(--text)}
+
+/* ─ BREADCRUMB ─ */
+.crumb{max-width:1440px;margin:0 auto;padding:18px 24px 0;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.06em;color:var(--text-caption);display:flex;align-items:center;gap:8px}
+.crumb a:hover{color:var(--text)}
+.crumb .arrow{opacity:.5}
+
+/* ─ ABOVE-FOLD: 2-col split ─ */
+.fold{max-width:1440px;margin:0 auto;padding:18px 24px 24px;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:40px;position:relative;z-index:1}
+
+/* MAIN col — pattern A: spread is the only hero */
+
+/* Identity strip — quiet ticker + name subtitle. No eyebrow above.
+   Ticker is small enough not to compete with the 104px spread below. */
+.id-strip{margin-top:8px}
+.id-ticker{font-size:36px;font-weight:500;line-height:1.05;letter-spacing:-.02em;color:var(--text)}
+.id-name{margin-top:6px;font-size:16px;color:var(--text-muted);line-height:1.4}
+
+/* Hero spread — single dominant element. State pip+label sits directly
+   under so the eye gets number + state in one fixation. */
+.spread-block{margin-top:48px;display:flex;flex-direction:column;gap:18px}
+.spread-num{font-family:'JetBrains Mono',monospace;font-size:104px;line-height:.95;font-weight:500;letter-spacing:-.04em}
+.spread-num .pct{font-size:42px;color:var(--text-caption);font-weight:400;margin-left:2px}
+.spread-num.pegged{color:var(--text)}
+.spread-num.drift{color:var(--st-drift)}
+.spread-num.depeg{color:var(--st-depeg)}
+.spread-state{display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-muted);letter-spacing:.02em}
+.spread-state .pip{width:7px;height:7px;border-radius:50%;background:var(--st-pegged);box-shadow:0 0 6px var(--st-pegged);animation:pulse 2.4s ease-in-out infinite}
+.spread-state b{color:var(--st-pegged);font-weight:500}
+.spread-state .sep{color:var(--text-caption);opacity:.5}
+@keyframes pulse{50%{opacity:.5}}
+
+/* Reference strip — two lines, room to breathe. Geist sans for labels,
+   mono only for the numbers. */
+.spread-ref{margin-top:28px;display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--text-muted);line-height:1.5}
+.spread-ref .ln{display:flex;flex-wrap:wrap;gap:6px 18px}
+.spread-ref .l{color:var(--text-caption)}
+.spread-ref .v{font-family:'JetBrains Mono',monospace;color:var(--text);font-variant-numeric:tabular-nums}
+.spread-ref .sep{color:var(--text-caption);opacity:.35;font-family:'JetBrains Mono',monospace}
+
+/* Editorial pullquote — no card frame, no dashed marks. Thin coral left
+   bar (magazine pullquote convention) + generous left padding. */
+.editorial{margin-top:48px;padding:4px 0 4px 22px;border-left:2px solid var(--coral)}
+.editorial-label{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--coral);margin-bottom:14px}
+.editorial p{font-size:18px;line-height:1.55;color:var(--text-body)}
+.editorial b{color:var(--text);font-weight:500}
+.editorial .num{font-family:'JetBrains Mono',monospace;color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
+
+/* RAIL — sticky right col */
+.rail{position:sticky;top:24px;align-self:start;display:flex;flex-direction:column;gap:0;border:1px solid var(--hairline);background:rgba(20,20,20,.4)}
+.rail-section{padding:20px 22px;border-bottom:1px solid var(--hairline)}
+.rail-section:last-child{border-bottom:0}
+.rail-label{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--text-caption);margin-bottom:10px}
+.rail-state{display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--st-pegged)}
+.rail-state .pip{width:7px;height:7px;border-radius:50%;background:var(--st-pegged);box-shadow:0 0 6px var(--st-pegged)}
+.rail-spread{margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:36px;font-weight:500;color:var(--text);letter-spacing:-.02em}
+.rail-tick{margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-caption);letter-spacing:.06em}
+
+.rail-cta{display:flex;flex-direction:column;gap:8px}
+.btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--text);color:var(--canvas);padding:13px 18px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:500;transition:background .25s}
+.btn-primary:hover{background:rgba(255,253,249,.85)}
+.btn-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--outline);padding:11px 18px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);transition:all .25s}
+.btn-ghost:hover{border-color:var(--text);color:var(--text)}
+
+.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px;margin-top:6px}
+.kpi-key{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-caption)}
+.kpi-val{font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text);margin-top:2px}
+.kpi-val.good{color:var(--st-pegged)}
+
+.qlinks{display:flex;flex-direction:column;gap:6px;font-size:12px}
+.qlinks a{display:inline-flex;align-items:center;justify-content:space-between;color:var(--text-muted);padding:5px 0;border-bottom:1px solid var(--hairline)}
+.qlinks a:hover{color:var(--text)}
+.qlinks a:last-child{border-bottom:0}
+
+/* ─ TABS ─ */
+.tabs-wrap{max-width:1440px;margin:0 auto;padding:20px 24px 0;position:relative;z-index:1}
+.tabs{display:flex;align-items:center;gap:32px;border-bottom:1px solid var(--hairline);padding-bottom:0}
+.tab{position:relative;padding:14px 2px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);display:inline-flex;align-items:baseline;gap:8px}
+.tab .n{color:var(--text-caption);font-size:10px}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text)}
+.tab.active .n{color:var(--coral)}
+.tab.active::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;background:var(--grad)}
+
+/* ─ TAB CONTENT ─
+   Tabs use the full width below the above-fold rail. Inside each tab,
+   sections lay out side-by-side via .panel-grid so we use the horizontal
+   space instead of stacking everything vertically. */
+.panel{max-width:1440px;margin:0 auto;padding:36px 24px 80px;position:relative;z-index:1}
+.panel-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:32px;align-items:stretch}
+.panel-grid > *{min-width:0;display:flex;flex-direction:column}
+.panel-full{margin-top:32px}
+
+.section-h{font-size:28px;font-weight:500;letter-spacing:-.01em;color:var(--text);margin-bottom:6px}
+.section-sub{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-caption);margin-bottom:24px}
+
+/* ───── RECOVERY CONFIDENCE ───── */
+.rc-card{display:grid;grid-template-columns:auto 1fr;gap:32px;align-items:center;padding:28px 30px;border:1px solid var(--hairline);background:rgba(255,253,249,.02)}
+.rc-meter{display:flex;flex-direction:column;align-items:center;gap:8px}
+.rc-meter svg{display:block}
+.rc-grade{font-family:'JetBrains Mono',monospace;font-size:32px;font-weight:500;color:var(--st-pegged);letter-spacing:.06em}
+.rc-grade-label{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-caption)}
+.rc-copy{font-size:15px;line-height:1.55;color:var(--text-body)}
+.rc-copy em{font-family:'Fraunces',serif;font-style:italic;color:var(--text)}
+.rc-factors{margin-top:14px;display:flex;gap:20px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-caption);letter-spacing:.06em;text-transform:uppercase}
+.rc-factors b{color:var(--text);font-weight:500}
+
+/* ───── 24h CHART ───── */
+.chart-wrap{position:relative;border:1px solid var(--hairline);background:rgba(255,253,249,.01);padding:14px 18px 18px}
+.chart-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.chart-title{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-caption)}
+.chart-range{display:flex;gap:4px}
+.chart-range button{padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;color:var(--text-muted);border:1px solid transparent}
+.chart-range button.active{border-color:var(--outline);color:var(--text)}
+.chart-body{position:relative;height:180px}
+.chart-body svg{position:absolute;inset:0;width:100%;height:100%}
+.chart-band{position:absolute;left:0;right:0;background:rgba(192,138,85,.04)}
+
+/* ───── EXIT LIQUIDITY TABLE ───── */
+.liq-table{border:1px solid var(--hairline)}
+.liq-row{display:grid;grid-template-columns:120px 1fr 110px 100px 110px;padding:14px 18px;border-bottom:1px solid var(--hairline);align-items:center;font-size:13px;gap:14px}
+.liq-row:last-child{border-bottom:0}
+.liq-row.h{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-caption);background:rgba(255,253,249,.02);padding:10px 18px}
+.liq-size{font-family:'JetBrains Mono',monospace;font-weight:500;color:var(--text)}
+.liq-route{font-size:12px;color:var(--text-muted)}
+.liq-route b{color:var(--text);font-weight:500}
+.liq-recv{font-family:'JetBrains Mono',monospace;color:var(--text);text-align:right}
+.liq-slip{font-family:'JetBrains Mono',monospace;text-align:right}
+.liq-slip.good{color:var(--st-pegged)}
+.liq-slip.warn{color:var(--st-drift)}
+.liq-slip.bad{color:var(--st-depeg)}
+.liq-time{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-caption);text-align:right}
+
+/* ───── COMPARABLE EVENTS ───── */
+.cmp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.cmp-card{padding:20px;border:1px solid var(--hairline);background:rgba(255,253,249,.015);display:flex;flex-direction:column;gap:12px}
+.cmp-date{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-caption)}
+.cmp-spread{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;color:var(--st-drift);letter-spacing:-.02em}
+.cmp-meta{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-muted);margin-top:auto}
+.cmp-meta b{color:var(--text)}
+.cmp-mini{height:30px;width:100%}
+.cmp-mini svg{width:100%;height:100%}
+
+/* ───── TIME TO RECOVERY DISTRIBUTION ───── */
+.ttr-wrap{border:1px solid var(--hairline);padding:24px 26px;background:rgba(255,253,249,.015)}
+.ttr-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-bottom:24px}
+.ttr-stat .l{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-caption)}
+.ttr-stat .v{font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:500;color:var(--text);margin-top:6px;letter-spacing:-.02em}
+.ttr-stat .v small{font-size:14px;color:var(--text-muted);font-weight:400;margin-left:3px}
+.ttr-hist{height:96px;display:grid;grid-template-columns:repeat(20,1fr);gap:3px;align-items:end}
+.ttr-bar{background:var(--st-pegged);opacity:.6;transition:opacity .2s}
+.ttr-bar:hover{opacity:1}
+.ttr-axis{display:flex;justify-content:space-between;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-caption);letter-spacing:.06em}
+
+/* misc */
+.spacer-section{height:32px}
+</style>
+</head>
+<body>
+<div class="dot-bg"></div>
+
+<!-- ════ TOPBAR ════ -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand"><span class="b1">[</span>pegana<span class="b2">]</span></span>
+    <nav class="nav">
+      <a href="#"><span class="n">01</span> Dashboard</a>
+      <a href="#"><span class="n">02</span> Events</a>
+      <a href="#"><span class="n">03</span> Compare</a>
+      <a href="#"><span class="n">04</span> Account</a>
+    </nav>
+    <a class="signin" href="#">Sign in →</a>
+  </div>
+</header>
+
+<!-- ════ BREADCRUMB ════ -->
+<div class="crumb">
+  <a href="#">← Dashboard</a>
+  <span class="arrow">/</span>
+  <span>LSTs</span>
+  <span class="arrow">/</span>
+  <span style="color:var(--text)">jitoSOL</span>
+</div>
+
+<!-- ════ ABOVE-FOLD: hero + rail ════ -->
+<section class="fold">
+  <div>
+    <!-- Identity strip: quiet ticker + name. Eyebrow dropped — its info
+         lives in breadcrumb (class) and below the spread (state, timestamp). -->
+    <div class="id-strip">
+      <h1 class="id-ticker">jitoSOL</h1>
+      <p class="id-name">Jito Liquid Staking · staked SOL exposure</p>
+    </div>
+
+    <!-- Hero spread — single dominant element. State pip+label inline below. -->
+    <div class="spread-block">
+      <div class="spread-num pegged">−0.34<span class="pct">%</span></div>
+      <div class="spread-state">
+        <span class="pip"></span>
+        <b>Pegged</b>
+        <span class="sep">·</span>
+        <span>drift floor −0.18% (7d)</span>
+        <span class="sep">·</span>
+        <span>updated 12s ago</span>
+      </div>
+
+      <!-- Reference strip — 2 lines, breathing -->
+      <div class="spread-ref">
+        <div class="ln">
+          <span><span class="l">market</span> <span class="v">0.9966 SOL</span></span>
+          <span class="sep">·</span>
+          <span><span class="l">intrinsic</span> <span class="v">1.0000 SOL</span></span>
+        </div>
+        <div class="ln">
+          <span><span class="l">24h range</span> <span class="v">−0.48%</span> <span class="l">to</span> <span class="v">+0.02%</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Editorial pullquote — magazine convention with coral left bar.
+         Emphasis via weight/color, not italic (brand.md locked rule). -->
+    <div class="editorial">
+      <div class="editorial-label">What we think</div>
+      <p>
+        jitoSOL is <b>pegged</b> with a stable 7-day drift floor at −0.18%. The current −0.34% spread is <b>typical secondary-market discount</b> against intrinsic, not stress — peers (mSOL, bSOL) are tracking within 4 bps. Historical recovery from this level is fast: median <span class="num">9 min</span>, p95 <span class="num">28 min</span>.
+      </p>
+    </div>
+  </div>
+
+  <!-- RIGHT RAIL — sticky -->
+  <aside class="rail">
+    <div class="rail-section">
+      <div class="rail-label">Live state</div>
+      <div class="rail-state"><span class="pip"></span> Pegged</div>
+      <div class="rail-spread">−0.34%</div>
+      <div class="rail-tick">Engine tick 1.2s · 12s ago</div>
+    </div>
+
+    <div class="rail-section rail-cta">
+      <a class="btn-primary" href="#">Subscribe to alerts →</a>
+      <a class="btn-ghost" href="#">Custom threshold</a>
+    </div>
+
+    <div class="rail-section">
+      <div class="rail-label">Health · 7d</div>
+      <div class="kpi-grid">
+        <div>
+          <div class="kpi-key">Time pegged</div>
+          <div class="kpi-val good">99.2%</div>
+        </div>
+        <div>
+          <div class="kpi-key">State flips</div>
+          <div class="kpi-val">3</div>
+        </div>
+        <div>
+          <div class="kpi-key">Median spread</div>
+          <div class="kpi-val">−0.18%</div>
+        </div>
+        <div>
+          <div class="kpi-key">Worst spread</div>
+          <div class="kpi-val">−0.94%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rail-section">
+      <div class="rail-label">Quick links</div>
+      <div class="qlinks">
+        <a href="#"><span>Compare with peers</span> <span>→</span></a>
+        <a href="#"><span>Open Solscan</span> <span>↗</span></a>
+        <a href="#"><span>Jito docs</span> <span>↗</span></a>
+        <a href="#"><span>Pyth feed JITOSOL/USD</span> <span>↗</span></a>
+      </div>
+    </div>
+  </aside>
+</section>
+
+<!-- ════ TABS ════ -->
+<div class="tabs-wrap">
+  <nav class="tabs">
+    <a class="tab active" href="#" data-tab="overview"><span class="n">01</span> Overview</a>
+    <a class="tab" href="#" data-tab="history"><span class="n">02</span> History</a>
+    <a class="tab" href="#" data-tab="mechanism"><span class="n">03</span> Mechanism</a>
+    <a class="tab" href="#" data-tab="risk"><span class="n">04</span> Risk</a>
+    <a class="tab" href="#" data-tab="identity"><span class="n">05</span> Identity</a>
+  </nav>
+</div>
+
+<!-- ════ TAB PANEL: OVERVIEW ════ -->
+<section class="panel" id="panel-overview">
+  <!-- Two-up: Recovery confidence | 24h chart -->
+  <div class="panel-grid">
+
+    <!-- Recovery confidence -->
+    <div>
+      <h2 class="section-h">Recovery confidence</h2>
+      <p class="section-sub">Pegana editorial · what we think happens next</p>
+      <div class="rc-card" style="flex:1">
+        <div class="rc-meter">
+          <svg width="84" height="84" viewBox="0 0 84 84">
+            <circle cx="42" cy="42" r="36" fill="none" stroke="rgba(255,253,249,0.08)" stroke-width="6"/>
+            <circle cx="42" cy="42" r="36" fill="none" stroke="var(--st-pegged)" stroke-width="6" stroke-dasharray="226.2" stroke-dashoffset="22.6" transform="rotate(-90 42 42)" stroke-linecap="round"/>
+          </svg>
+          <div class="rc-grade">A</div>
+          <div class="rc-grade-label">High · 90%</div>
+        </div>
+        <div>
+          <p class="rc-copy">
+            Combined signal from <em>time-pegged 99.2% (7d)</em>, peer convergence within 4 bps, and a recovery-distribution median of 9 min suggests the current spread mean-reverts inside the hour. <em>No leading indicators of stress</em>.
+          </p>
+          <div class="rc-factors">
+            <span>peg time · <b>99.2%</b></span>
+            <span>peer spread · <b>±4 bps</b></span>
+            <span>recovery p50 · <b>9 min</b></span>
+            <span>vol regime · <b>quiet</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 24h chart -->
+    <div>
+      <h2 class="section-h">24h spread</h2>
+      <p class="section-sub">market vs intrinsic · drift band shaded</p>
+      <div class="chart-wrap" style="flex:1;display:flex;flex-direction:column">
+        <div class="chart-head">
+          <span class="chart-title">JITOSOL — drift bps</span>
+          <div class="chart-range">
+            <button>1h</button>
+            <button class="active">24h</button>
+            <button>7d</button>
+            <button>30d</button>
+          </div>
+        </div>
+        <div class="chart-body" style="flex:1;min-height:180px">
+          <div class="chart-band" style="top:65%;height:8%"></div>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+            <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,253,249,0.06)" stroke-dasharray="1,2"/>
+            <polyline fill="none" stroke="var(--st-pegged)" stroke-width="1.2" points="0,45 5,46 10,44 15,45 20,47 25,52 30,55 35,58 40,55 45,53 50,50 55,52 60,55 65,53 70,50 75,48 80,47 85,46 90,45 95,46 100,45"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Full-width: Exit liquidity (table doesn't fit a column without crowding) -->
+  <div class="panel-full">
+    <h2 class="section-h">Exit liquidity</h2>
+    <p class="section-sub">redeem to USDC right now — slippage by size</p>
+    <div class="liq-table">
+      <div class="liq-row h">
+        <span>Size</span>
+        <span>Best route</span>
+        <span style="text-align:right">USDC received</span>
+        <span style="text-align:right">Slippage</span>
+        <span style="text-align:right">Est. fill</span>
+      </div>
+      <div class="liq-row">
+        <span class="liq-size">$100k</span>
+        <span class="liq-route">Jupiter · <b>Whirlpool jitoSOL/USDC</b></span>
+        <span class="liq-recv">99,884.20</span>
+        <span class="liq-slip good">−0.12%</span>
+        <span class="liq-time">&lt; 1 block</span>
+      </div>
+      <div class="liq-row">
+        <span class="liq-size">$1M</span>
+        <span class="liq-route">Jupiter · <b>split 3 routes</b></span>
+        <span class="liq-recv">997,420.00</span>
+        <span class="liq-slip warn">−0.26%</span>
+        <span class="liq-time">1–2 blocks</span>
+      </div>
+      <div class="liq-row">
+        <span class="liq-size">$10M</span>
+        <span class="liq-route">Jupiter · <b>5 routes + Jito unstake</b></span>
+        <span class="liq-recv">9,891,000.00</span>
+        <span class="liq-slip bad">−1.09%</span>
+        <span class="liq-time">3 blocks · or 2-day delayed unstake</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ TAB PANEL: HISTORY (visually shown — would be hidden in real tabs) ════ -->
+<section class="panel" id="panel-history" style="border-top:1px solid var(--hairline);padding-top:64px">
+  <!-- Full-width: Time to recovery (the histogram needs horizontal room) -->
+  <div>
+    <h2 class="section-h">Time to recovery</h2>
+    <p class="section-sub">when jitoSOL drifts past −30 bps · distribution of recovery time · 90 days</p>
+    <div class="ttr-wrap">
+      <div class="ttr-stats">
+        <div class="ttr-stat"><div class="l">Median (p50)</div><div class="v">9<small>min</small></div></div>
+        <div class="ttr-stat"><div class="l">p75</div><div class="v">17<small>min</small></div></div>
+        <div class="ttr-stat"><div class="l">p95</div><div class="v">28<small>min</small></div></div>
+        <div class="ttr-stat"><div class="l">Worst (p99)</div><div class="v">1.4<small>h</small></div></div>
+      </div>
+      <div class="ttr-hist">
+        <div class="ttr-bar" style="height:18%"></div>
+        <div class="ttr-bar" style="height:32%"></div>
+        <div class="ttr-bar" style="height:68%"></div>
+        <div class="ttr-bar" style="height:88%"></div>
+        <div class="ttr-bar" style="height:100%"></div>
+        <div class="ttr-bar" style="height:84%"></div>
+        <div class="ttr-bar" style="height:72%"></div>
+        <div class="ttr-bar" style="height:56%"></div>
+        <div class="ttr-bar" style="height:48%"></div>
+        <div class="ttr-bar" style="height:38%"></div>
+        <div class="ttr-bar" style="height:30%"></div>
+        <div class="ttr-bar" style="height:22%"></div>
+        <div class="ttr-bar" style="height:18%"></div>
+        <div class="ttr-bar" style="height:14%"></div>
+        <div class="ttr-bar" style="height:10%"></div>
+        <div class="ttr-bar" style="height:8%"></div>
+        <div class="ttr-bar" style="height:6%"></div>
+        <div class="ttr-bar" style="height:4%"></div>
+        <div class="ttr-bar" style="height:3%"></div>
+        <div class="ttr-bar" style="height:2%"></div>
+      </div>
+      <div class="ttr-axis">
+        <span>&lt; 5 min</span>
+        <span>15 min</span>
+        <span>30 min</span>
+        <span>1h</span>
+        <span>2h+</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full-width: Comparable events as a 3-col grid (the cmp-grid handles it) -->
+  <div class="panel-full">
+    <h2 class="section-h">Comparable events</h2>
+    <p class="section-sub">last 3 times spread crossed −40 bps · recovery profile</p>
+    <div class="cmp-grid">
+      <div class="cmp-card">
+        <div class="cmp-date">May 18, 2026</div>
+        <div class="cmp-spread">−0.62%</div>
+        <div class="cmp-mini">
+          <svg viewBox="0 0 100 30"><polyline fill="none" stroke="var(--st-drift)" stroke-width="1.4" points="0,18 10,22 25,28 40,24 60,18 80,12 100,10"/></svg>
+        </div>
+        <div class="cmp-meta">
+          <span>Recovered in <b>14 min</b></span>
+          <span>Trigger: <b>Validator slashing rumor</b></span>
+        </div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-date">Apr 27, 2026</div>
+        <div class="cmp-spread">−0.51%</div>
+        <div class="cmp-mini">
+          <svg viewBox="0 0 100 30"><polyline fill="none" stroke="var(--st-drift)" stroke-width="1.4" points="0,16 10,20 25,24 40,18 60,12 80,10 100,10"/></svg>
+        </div>
+        <div class="cmp-meta">
+          <span>Recovered in <b>7 min</b></span>
+          <span>Trigger: <b>Large redemption batch</b></span>
+        </div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-date">Apr 11, 2026</div>
+        <div class="cmp-spread">−0.88%</div>
+        <div class="cmp-mini">
+          <svg viewBox="0 0 100 30"><polyline fill="none" stroke="var(--st-depeg)" stroke-width="1.4" points="0,14 10,20 25,28 40,26 60,18 80,12 100,10"/></svg>
+        </div>
+        <div class="cmp-meta">
+          <span>Recovered in <b>32 min</b></span>
+          <span>Trigger: <b>SOL flash crash spillover</b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+// Real impl would hide non-active panels; in this mock both panels are
+// stacked so the user can see all the content at once.
+document.querySelectorAll('.tab').forEach((t) => {
+  t.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
+    t.classList.add('active');
+    const id = t.dataset.tab;
+    const el = document.getElementById('panel-' + id);
+    if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+});
+</script>
+</body>
+</html>

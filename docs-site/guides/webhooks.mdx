@@ -1,0 +1,182 @@
+---
+title: "Webhooks"
+description: "Ed25519-signed HTTP POST to your endpoint on every peg-state transition. Self-serve registration, delivery history, and replay."
+---
+
+<Note>
+  **Live since 2026-06-11.** Registration, signing, test events, replay, and
+  production delivery to public endpoints are all active. Calibration v1 shipped on
+  2026-06-10; the public-alerts gate flipped on 2026-06-11.
+</Note>
+
+Webhooks deliver state transitions to your URL within seconds of the engine detecting
+them. Every payload is signed with **Ed25519** so you can verify authenticity
+without trusting the transport.
+
+## Why webhooks (vs WebSocket)
+
+- **WebSocket** — you hold a connection. Best for read-only consumers with strict
+  freshness needs (dashboards, agent runtimes).
+- **Webhooks** — we push to your URL. Best for fire-and-forget reactions
+  (notifications, automated risk pauses, audit logging). No connection to maintain.
+
+For most B2B integrations (lending protocol pausing collateral, insurance trigger,
+prediction-market settlement) webhooks are the right fit.
+
+## Quickstart
+
+1. **Register** a webhook via the dashboard at
+   [pegana.xyz/account/webhooks](https://pegana.xyz/account/webhooks). Telegram Login
+   required.
+2. **Implement** signature verification at your endpoint
+   ([see signing](/guides/webhooks-signing)).
+3. **Test** with the dashboard's "Send test event" button.
+
+Or via API:
+
+```bash
+curl -X POST https://api.pegana.xyz/v1/me/webhooks \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-domain.com/pegana-hook",
+    "asset": "USDC",
+    "threshold_bps": 50
+  }'
+```
+
+## Payload shape
+
+The body is JSON. All fields below are always present (additive fields never
+change the Ed25519 signature contract — the signed body IS this JSON):
+
+```json
+{
+  "asset": "sUSDe",
+  "from_state": "PEGGED",
+  "to_state": "DRIFT",
+  "discount_bps": -47,
+  "ts": "2026-05-26T22:55:00Z",
+  "alert_id": "550e8400-e29b-41d4-a716-446655440000",
+  "evidence_url": "https://pegana.xyz/audit/550e8400-e29b-41d4-a716-446655440000",
+  "evidence_status": "ready",
+  "calibration": "calibrated"
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `asset` | string | Symbol (e.g. `USDC`, `jitoSOL`) |
+| `from_state` | string | One of `PEGGED`, `DRIFT`, `DEPEG`, `CRITICAL`, `BLACK_SWAN`, `UNKNOWN` |
+| `to_state` | string | Same enum |
+| `discount_bps` | integer | Spread at trigger, **basis points**, signed |
+| `ts` | string | ISO 8601 timestamp of the state change |
+| `alert_id` | string | UUID. Use for idempotency. |
+| `evidence_url` | string | Public audit-receipt URL for this alert (verify with the replay CLI). |
+| `evidence_status` | string | One of `ready` (receipt live), `pending` (still materializing), `failed_permanent` (the anchor gave up — receipt won't appear), or `unknown` (lookup unavailable this tick). |
+| `calibration` | string | **`calibrated`** or **`provisional`**. `provisional` = a beta/uncalibrated asset — treat its verdict as unvalidated; do not gate real money on it. Branch on this. |
+
+## HTTP headers we send
+
+```http
+POST /your-path HTTP/1.1
+Host: your-domain.com
+Content-Type: application/json
+x-pegana-timestamp: 1779889253
+x-pegana-signature: ed25519:<base64 64-byte sig>
+x-pegana-event-id: 550e8400-e29b-41d4-a716-446655440000
+x-pegana-delivery-id: 9d6b420f-3f92-476a-b237-f465d29a57f8
+x-pegana-attempt: 1/6
+
+<JSON body>
+```
+
+Note the `ed25519:` prefix on the signature value — your verifier strips it before
+base64-decoding. See [signing](/guides/webhooks-signing) for the full algorithm.
+
+We **do not** ship the public key in a header on every request. Active keys are
+published at `https://api.pegana.xyz/v1/meta/webhook-keys`; your verifier should
+cache that list or read it from an env override.
+
+## URL requirements
+
+- Must be `https://` — we refuse HTTP
+- We **SSRF-guard** the URL: rejects private IP ranges (10.x, 172.16.x, 192.168.x),
+  localhost, `*.local`, `*.internal`, and metadata endpoints
+- Returns must be **2xx** for the delivery to count as successful. 3xx redirects are
+  not followed
+- We expect a response within **5 seconds**. Beyond that, treated as failed and retried
+
+## What to do in your handler
+
+A robust receiver does three things, in order:
+
+1. **Verify the signature** ([webhooks-signing](/guides/webhooks-signing))
+2. **Check `x-pegana-timestamp`** is within ±300 seconds of now (replay protection)
+3. **Idempotency**: check `x-pegana-event-id` against your local record — if seen
+   already, return `200 OK` without re-acting
+
+After those three, your business logic can act on the payload — pause collateral,
+fire a notification, settle a position.
+
+## Retry policy
+
+Failures (non-2xx, timeout, TLS error) trigger retries. Dispatcher config
+(`crates/dispatcher-rs/src/main.rs`):
+`max_attempts: 6`, backoffs `[5s, 30s, 5m, 30m, 2h]`.
+
+| Attempt | Wait before this attempt |
+| --- | --- |
+| 1 (initial) | 0s |
+| 2 | 5s |
+| 3 | 30s |
+| 4 | 5m |
+| 5 | 30m |
+| 6 | 2h |
+
+After the 6th failure (~2h35m total), the delivery is logged as failed and written
+to the webhook dead-letter queue. Your endpoint can inspect delivery history or
+manually replay missed events. See [retry policy](/guides/webhooks-retry-policy).
+
+## Example receivers
+
+We ship reference receivers in three languages, each with full verification logic
+(production code, not docs prose):
+
+<CardGroup cols={3}>
+  <Card title="TypeScript / Cloudflare Worker" icon="js" href="/guides/webhooks-examples-typescript">
+    Web Crypto API. Works on edge, Vercel functions, Node 18+.
+  </Card>
+  <Card title="Rust / axum" icon="rust" href="/guides/webhooks-examples-rust">
+    `ed25519-dalek` strict-mode verification.
+  </Card>
+  <Card title="Python / FastAPI" icon="python" href="/guides/webhooks-examples-python">
+    `cryptography` library.
+  </Card>
+</CardGroup>
+
+## Listing and managing webhooks
+
+```bash
+# List
+curl https://api.pegana.xyz/v1/me/webhooks \
+  -H "Authorization: Bearer $JWT"
+
+# Delete (soft, sets is_active = false)
+curl -X DELETE https://api.pegana.xyz/v1/me/webhooks/$ID \
+  -H "Authorization: Bearer $JWT"
+```
+
+The dashboard UI at `pegana.xyz/account/webhooks` exposes the same actions plus
+delivery history.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Signing details" icon="key" href="/guides/webhooks-signing">
+    Ed25519 algorithm, signing input format, public key.
+  </Card>
+  <Card title="Retry policy" icon="arrow-rotate-right" href="/guides/webhooks-retry-policy">
+    Failure modes, backoff schedule, and replay.
+  </Card>
+</CardGroup>

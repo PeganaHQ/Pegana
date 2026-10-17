@@ -1,0 +1,45 @@
+[package]
+name = "pegana-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Public types (config, evidence, peg state) live in pegana-common-verify so
+# we can mirror them to the public pegana-replay repo without exporting the
+# server-side surface that follows.
+pegana-common-verify = { path = "../common-verify" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+url = { workspace = true }
+sentry = { workspace = true }
+tracing = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+
+# Sprint 1c — shared Ed25519 signing primitive used by both
+# dispatcher-rs (production fan-out, retries) and api-rs (/test + /replay
+# single-shot delivery). Centralising here means the dual-active key
+# rotation logic has exactly one source of truth.
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+base64 = "0.22"
+
+# Sprint 1d (P1.1) — bounded receiver-body read in webhook_response.
+# Streams the response and stops at MAX_ERROR_BODY_BYTES so a hostile
+# subscriber can't OOM the dispatcher with a multi-MB error page.
+reqwest = { workspace = true }
+futures = { workspace = true }
+bytes = "1"
+
+[dev-dependencies]
+# webhook_sign tests generate fresh keypairs to exercise dual-active rotation.
+rand = { workspace = true }
+# webhook_response tests spin up a local axum sink to assert the
+# streaming truncation cap actually stops mid-body.
+axum = "0.7"

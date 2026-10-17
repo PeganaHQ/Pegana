@@ -1,0 +1,93 @@
+---
+title: "Methodology overview"
+description: "One formula. Five sources. A 5-state FSM (PEGGED → DRIFT → DEPEG → CRITICAL → BLACK_SWAN). Everything Pegana does is in this page."
+---
+
+Pegana computes peg state from two numbers — **intrinsic value** (what the asset *should*
+be worth, per its own mechanism) and **market value** (what you'd actually receive
+swapping it). The spread between them, smoothed and bucketed, is the entire output.
+
+```
+spread = 1 − market / intrinsic
+```
+
+Smoothed with an EWMA at `α = 0.3`. Compared against **per-asset, per-class thresholds**.
+Resolved through a 5-state FSM (PEGGED → DRIFT → DEPEG → CRITICAL → BLACK_SWAN) with
+**asymmetric hysteresis** so a noisy signal does not produce noisy alerts.
+
+## Reading order
+
+<CardGroup cols={2}>
+  <Card title="Intrinsic value" icon="anchor" href="/methodology/intrinsic-value">
+    What the asset is *supposed* to be worth. Per-class definition (LST, stable, CDP, NAV, FX).
+  </Card>
+  <Card title="Market value" icon="chart-line" href="/methodology/market-value">
+    What you'd get swapping it. Jupiter routed quote, repriced via Pyth.
+  </Card>
+  <Card title="The spread" icon="equals" href="/methodology/spread">
+    Formula, EWMA smoothing, per-asset thresholds, the 5-state FSM with hysteresis.
+  </Card>
+  <Card title="Honesty about limits" icon="circle-info" href="/methodology/honesty">
+    What we don't model. Where the signal can lie. When to mistrust an alert.
+  </Card>
+</CardGroup>
+
+## Sources, in one table
+
+| Source | Read by Pegana | Used for |
+| --- | --- | --- |
+| **Sanctum** | `sol_value` per LST mint, every 15s | SOL-pegged LST intrinsic |
+| **Pyth** | SOL/USD, FX crosses, Redemption Rate feeds | All USD conversion + yield-bearing NAV |
+| **Hylo (on-chain decode)** | `total_sol_cache.total_sol` from Exchange PDA | hyUSD CDP collateral ratio |
+| **Jupiter** | Best routed quote, USDC numeraire | Market value of every asset |
+| **Solayer / Piggybank** | Mint-level rebasing rate / dashboard NAV | Sub-set of yield-bearing accounting |
+
+Each adapter lives in `crates/indexer-rs/src/sources/`. One source per asset class is a
+deliberate constraint — we do not "blend" prices.
+
+## The 5-state FSM, in one table
+
+| State | Meaning | Alert? |
+| --- | --- | --- |
+| `PEGGED` | Spread inside the calm band | No |
+| `DRIFT` | Spread crossed the per-asset drift threshold | Yes |
+| `DEPEG` | Spread crossed depeg (2.00 – 5.00%) | Yes, urgent framing |
+| `CRITICAL` | Spread > 5.00% (up to 2× critical) | Yes, Telegram urgent |
+| `BLACK_SWAN` | Spread beyond `2× critical`, or hyUSD CR < 100% — terminal-grade break | Yes, terminal-grade |
+
+`BLACK_SWAN` is reachable from **both** the spread path (a discount beyond `2× critical`
+by default, overridable per asset via `black_swan` / `black_swan_bps`) and the CR path
+(hyUSD, CR < 100%). It re-labels only the most extreme moves and **auto-exits via the
+normal decay-down hysteresis** like every other band — it is **not** a no-reset terminal
+state (ADR-0025). `UNKNOWN` is a non-alerting status, not a severity band: the engine
+publishes it at cold-start and as honest-dark when an anchor is detectably broken (a >10%
+premium on a NAV-priced asset → the NAV-sanity gate). On routine stale, low-confidence, or
+decoder-drift input it instead **holds the last published state** rather than flipping to
+`UNKNOWN`.
+
+## Update cadence
+
+- **Indexers** poll their sources every **15s** (Sanctum, Solayer, Piggybank, Hylo, Jupiter)
+- **Pyth** pushes via SSE — sub-second arrivals
+- **Engine** recomputes on every source event, publishes to Redis + Postgres
+- **API** snapshots are `<1s` old; the WebSocket pushes within ~200ms of the engine
+- **Alert delivery** (Telegram / Webhook) fires within 1–3s of the state transition
+
+## How to verify
+
+Every parameter — threshold, dwell time, EWMA α, source endpoint — is committed in
+[`assets.toml`](https://github.com/PeganaHQ/ReplayCLI/blob/main/assets.toml) and
+`crates/engine-rs/src/main.rs`.
+The methodology is reproducible from raw inputs.
+
+To inspect any asset's live parameters:
+
+```bash
+curl https://api.pegana.xyz/v1/assets/USDC
+```
+
+Or run the bot:
+
+```text
+/thresholds USDC
+```
