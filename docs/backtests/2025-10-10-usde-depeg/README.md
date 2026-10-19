@@ -4,7 +4,7 @@
 
 On 2025-10-10, a market-wide deleveraging event liquidated more than $19 billion of leveraged positions within 24 hours. The most concentrated damage occurred around 21:00 UTC. Pyth's one-minute USDE/USD candle reached a $0.95331862 low at 21:29 UTC (about 467 bps below peg), while the conservative candle close used by this replay bottomed at $0.95923086. SOL fell to roughly $170–$174 during the event.
 
-This backtest replays the captured Pyth series through the unmodified Pegana methodology 0.4.0. It classifies peg risk; it is not a PnL simulation.
+This backtest replays the captured Pyth series through the current Pegana methodology (0.7.0), with no backtest-specific rules. The golden output is re-generated on every methodology release; the USDe transition times (DRIFT 21:23, DEPEG 21:28, CRITICAL 21:31 UTC) have been identical in every release from 0.4.0, when the backtest was first run, through 0.7.0. It classifies peg risk; it is not a PnL simulation.
 
 Sources: [CoinGecko event analysis](https://www.coingecko.com/learn/october-10-crypto-crash-explained), [CoinDesk market review](https://www.coindesk.com/research/market-spotlight-the-19-billion-liquidation-that-shook-crypto).
 
@@ -25,7 +25,7 @@ time_to_first_alert_secs is measured from the fixture start, 2025-10-09 00:00:00
 | mSOL | doubly-proxied | CRITICAL | 163560 |
 | sUSDe | perfect | PEGGED | — |
 
-USDC and sUSDe stayed PEGGED. USDT did not: its Pyth series remained above $1 and reached a $1.00704549 premium. Methodology 0.4.0 treats stable_fiat deviations symmetrically, so that sustained premium produced DEPEG. This is a real disagreement with the original “USDT held” design assumption, not a downward depeg or a modified backtest rule.
+USDC and sUSDe stayed PEGGED. USDT did not: its Pyth series remained above $1 and reached a $1.00704549 premium. The methodology treats stable_fiat deviations symmetrically, so that sustained premium produced DEPEG. This is a real disagreement with the original “USDT held” design assumption, not a downward depeg or a modified backtest rule.
 
 ## Fidelity
 
@@ -55,12 +55,12 @@ Build or install the public CLI, then verify any emitted schema-v2 receipt:
 
     pegana-replay --bundle docs/backtests/2025-10-10-usde-depeg/receipts/USDe-001.json
 
-The receipt pins methodology 0.4.0, the canonical asset snapshot, the frozen inputs, the computed transition, and its SHA-256 hash. Regenerate or check the complete case with:
+The receipt pins the methodology version (0.7.0), the canonical asset snapshot, the frozen inputs, the computed transition, and its SHA-256 hash. Regenerate or check the complete case with:
 
     scripts/run-backtest.sh 2025-10-10-usde-depeg check
 
 ## Disclaimer
 
-Hypothetical backtest against real historical Pyth data. No live alert was emitted on this date. Methodology v0.4.0, unmodified.
+Hypothetical backtest against real historical Pyth data. No live alert was emitted on this date. Methodology v0.7.0; the USDe transition times are unchanged since v0.4.0.
 
 Compare this replay with the live [USDe audit page](/audit?asset=USDe) or open the [web backtest](/backtest/2025-10-10-usde-depeg).
