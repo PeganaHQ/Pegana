@@ -3,11 +3,11 @@ version: 1.0
 name: pegana-v2-landing-design
 approved: 2026-07-02 (Rafael, artifact v4 "e16b4559")
 scope: >
-  Governs BOTH the marketing surface (pegana.xyz landing) AND the (app) console. The app-era
-  migration (W3a–c + W4) SHIPPED 2026-07-10/11, so every signed-in screen (dashboard, /assets,
-  /asset, /compare, /events, /account, /auth) now runs on this same token/type/motion system —
+  Governs BOTH the marketing surface (pegana.xyz landing) AND the public console. The app-era
+  migration (W3a–c + W4) SHIPPED 2026-07-10/11, so every console screen (dashboard, /assets,
+  /asset, /compare, /events, /heatmap, /systemic) now runs on this same token/type/motion system —
   there is no pre-V5 product surface left. SUPERSEDES brand.md as the implementation spec for all
-  product surfaces (marketing + app).
+  product surfaces (marketing + app). Everything is public and free; no signed-in surface exists. Everything is public and free; no signed-in surface exists.
 reference_implementation: >
   The approved artifact source (self-contained HTML, fonts embedded) is the pixel-truth spec:
   every component, animation and copy string below exists working there. Port it, do not reinvent.
@@ -43,8 +43,8 @@ pegged #5fd3a0 · drift #e2a651 · depeg #e87089 · critical #e0574e · unknown 
 
 **The iridescent gradient** `linear-gradient(100deg,#ff8a5b 0%,#ff7a3d 26%,#fb6fae 55%,#e878d8 78%,#df91f7 100%)`
 appears in EXACTLY five moments per page (hard rule, audit before ship):
-1. Logo (nav + footer lockup; the Telegram-bot avatar and the footer's animated
-   chroma wave `public/brand/pegana-wave-chroma.svg` count as logo instances;
+1. Logo (nav + footer lockup; the footer's animated
+   chroma wave `public/brand/pegana-wave-chroma.svg` counts as a logo instance;
    chroma swaps to the static wave under reduced motion)
 1b. Hero headline accent: the second phrase of the h1 carries the gradient
    (V1 "oracle for Solana." heritage, requested 2026-07-02)
@@ -64,16 +64,19 @@ Ship via `next/font/local` (woff2 in repo). No italics. No serif.
 
 | Role | Family | Size | Weight | Tracking | Notes |
 |---|---|---|---|---|---|
-| display-xl (hero h1) | Switzer | clamp(42px, 6.6vw, 80px) | 500 | -0.025em | line-height 1.02, pure white, max 2 lines |
-| h2 section | Switzer | clamp(30px, 4.2vw, 50px) | 500 | -0.022em | line-height 1.05 |
-| pane h3 | Switzer | 23px | 500 | -0.015em | |
-| lead | Switzer | 17px | 400 | | muted; bold keywords in text color w500 |
-| body | Switzer | 14.5-15.5px | 400 | | |
-| strike-row false claim | Switzer | clamp(19px, 2.6vw, 27px) | 500 | -0.015em | dim color |
-| eyebrow (max 2/page) | Geist Mono | 10.5-12px | 500 | .14-.18em, uppercase | |
-| button label | Geist Mono | 12px | 500 | .09em, UPPERCASE | Rafael's signature |
-| numbers / metadata | Geist Mono | 10.5-13px | 400-500 | tabular-nums | |
-| big stat number | Geist Mono | clamp(26px, 3vw, 34px) | 500 | -0.01em | |
+| display-xl (hero h1) | Switzer | clamp(40px, 4.4vw, 56px) | 500 | -1.4px | line-height 1.04, pure white, measure ≤580px |
+| h2 section | Switzer | clamp(28px, 3vw, 40px) | 500 | -0.8px | line-height 1.1 |
+| h2 punchline (trust) | Switzer | clamp(32px, 4vw, 52px) | 500 | -1.1px | line-height 1.06, section-level type |
+| pane h3 | Switzer | 22px | 500 | -0.4px | |
+| lead | Switzer | 16-17px | 400 | | muted; bold keywords in text color w500 |
+| body | Switzer | 14-17px | 400 | | **marketing floor: body majority ≥14px** |
+| candor claim / correction | Switzer | 14px dim / clamp(19px,2.2vw,24px) full | 400/400 | -0.3px on correction | no strikethrough; hierarchy does the work |
+| eyebrow (max 2/page) | Geist Mono | 12px | 500 | .16em, uppercase | |
+| CTA label (hero/close) | Switzer | 14px | 500 | 0 | solid white, 8px radius, nested arrow |
+| numbers / metadata | Geist Mono | 12-14px | 400-500 | tabular-nums | never below 12px |
+| big stat number | Switzer | clamp(44px, 5vw, 68px) | 500 | -2px | naked numerals, no cards |
+| code | Geist Mono | 14px / 21px line | 400 | | dimmed line-number gutter, 4-5 syntax hues |
+| board th / td / row | Switzer | 14px / 16px / 64px | 500 / 400 | | tokens.xyz scale |
 
 ## 3. Shape & materials
 
@@ -86,9 +89,10 @@ Ship via `next/font/local` (woff2 in repo). No italics. No serif.
   class (`.v2-shadow-board`, `.v2-shadow-receipt`, `.app-tabbar-pill`), never a Tailwind
   arbitrary value: composite shadows die in the v4 production build, and the tab bar shipped a
   transparent one for weeks before anyone read its computed style.
-- Buttons: primary = solid white pill, mono uppercase label, dark text `#141118`, nested
-  arrow-in-circle icon (`.cta-ic`, 22px circle, slides +2px on hover). Secondary = ghost pill.
-  Compact: 11-12px vertical padding. NEVER large/fat CTAs.
+- Buttons (landing, 2026-10-19): primary = solid white rectangle, 8px radius, Switzer 14px
+  w500 label, dark text `#0a0a0b`, plain arrow. Secondary = underlined text link. The mono
+  uppercase pill pair was retired with the July hero. Product-app buttons keep the pill system.
+  Compact: 12px vertical padding. NEVER large/fat CTAs.
 
 ## 4. Motion system (every animation has a stated purpose)
 
@@ -157,19 +161,20 @@ Mobile (<900px): no pinning (static expanded), reveal-mask off (touch has no cur
 
 | Surface | Source |
 |---|---|
-| Hero board rows | `useAssets()` → `/v1/assets` (top rows by class mix; keep UNKNOWN visible) |
-| Numbers grid | `useStats()` → `/v1/stats` (never hardcode) |
-| Latest transition footer | events feed (same source as V1 "Live this week") |
-| Receipt scene | real receipt shape (state, inputs, methodology version, hash) |
+| Board rows | `useAssets()` → `/v1/assets` (worst-first per class group; keep UNKNOWN visible) |
+| Close stat band | `useStats()` → `/v1/stats` for assets; sources = `SOURCE_ITEMS.length`; endpoints = 21 (unique `/v1` paths, verified against the router) |
+| Receipt scene | real sUSD replay bundle (`tests/fixtures/replay-bundle-sample.json`) |
 | Asset-detail pane | `useAsset('jitosol')` or representative live asset |
 | Fallback | existing `MockDataBanner` honest-degradation pattern |
 
 ## 8. Port notes (Next.js, web/)
 
 - Fonts: Switzer 400/500/600 + Geist Mono variable via `next/font/local` (woff2 committed).
-- Motion deps: keep GSAP (already a dep) + add `lenis`. ScrollTrigger drives the pinned scene
-  (scrub); Lenis wraps the landing only. Both OFF under reduced-motion.
-- Canvas components (`reveal-mask`, chart, wave layers) = isolated client leaf components.
+- Motion deps: the landing no longer pins or scrubs, so GSAP ScrollTrigger is not used here.
+  Lenis still wraps the landing for smooth scrolling only; it is OFF under reduced-motion.
+- The hero canvases (`reveal-mask`, distance field) and the wave close were retired with the
+  remake. The topology is a static SVG; the only landing animations are reveals, live pips,
+  the recompute sweep, the nav hide and micro-hovers.
 - CSP: no inline event handlers; scripts through the bundle (nonce handled by existing setup).
 - Reuse: `useAssets/useStats/useAsset` hooks, `MockDataBanner`, `web/public/logos/*.svg`,
   wave path from `brand-mark.tsx`. The old v3 landing organisms are replaced, not edited.

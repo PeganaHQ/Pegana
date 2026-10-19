@@ -23,8 +23,8 @@ Polyglot monorepo. Rust does ingestion + computation + serving; TypeScript does 
 - `xtask` — repo task runner (aliased as `cargo xtask`).
 
 **Typed SDKs** (`sdk/`, published — NOT private):
-- `sdk/typescript` — `@peganahq/sdk-ts` **0.3.1 on npm**; OpenAPI-generated full coverage of all 39 `/v1` endpoints + hand-written `PegFeed` / `connectPegFeed` WebSocket helper.
-- `sdk/python` — `pegana-sdk` **0.3.0**; OpenAPI-generated (43 endpoints / 63 models) + hand-written `peg_feed` async iterator.
+- `sdk/typescript` — `@peganahq/sdk-ts` **0.3.1 on npm**; OpenAPI-generated full coverage of all 21 `/v1` endpoints + hand-written `PegFeed` / `connectPegFeed` WebSocket helper.
+- `sdk/python` — `pegana-sdk` **0.3.0**; OpenAPI-generated (21 `/v1` endpoints (24 incl. health/readiness)) + hand-written `peg_feed` async iterator.
 
 **TypeScript services** (each is Bun + its own `package.json`):
 - `mcp-ts` — MCP server; every tool is free (no payments, no API keys). Tests use vitest.
@@ -100,7 +100,7 @@ cargo run -p indexer-rs & cargo run -p engine-rs & cargo run -p api-rs & cargo r
 - **Receipts / Trust Layer**: state transitions emit a public receipt at `/v1/audit/{id}` with methodology version + frozen inputs, optionally committed on-chain via SPL Memo. Reproducibility is guaranteed *because* `methodology` is pure and shared with `pegana-replay-cli`.
 - **State-reason overrides** are string constants in `crates/methodology/src/lib.rs` (`premium_sanity`, `discount_sanity`, `pyth_confidence_gate`, `stale_source`, `intrinsic_liveness`) and are the source of truth. Only some have a duplicate that must stay byte-identical: `stale_source` (a SQL literal in `api-rs/src/routes/assets.rs`) and `pyth_confidence_gate` (a Rust const in `api-rs/src/oracle_degraded.rs`); `discount_sanity` and `intrinsic_liveness` never appear in api-rs — their DB-side contract lives in `migrations/0062` and `migrations/0068`. Changing a constant means updating every duplicate.
 - **/v1 response envelope (ADR-0043)** is a cross-cutting convention: list endpoints return `{ok, generated_at, count, data}` via `ApiList<T>` (`crates/api-rs/src/response.rs`); single-resource endpoints are served **bare** (unwrapped — `ApiOne<T>` is defined as a ready-but-unused extension point); `/v1/peg/feed`'s `data` is an array with `mint` on each signal. New /v1 routes must follow this shape — the old dual-shape fallbacks were removed (prod == code).
-- **SQL migrations** live in `migrations/` as sequentially numbered files (currently through `0076_*`); apply with `sqlx migrate run --source migrations` (the `cargo xtask migrate` subcommand only prints this, it does not run it). Never edit an already-applied migration — add a new one.
+- **SQL migrations** live in `migrations/` as sequentially numbered files (currently through `0078_*`); apply with `sqlx migrate run --source migrations` (the `cargo xtask migrate` subcommand only prints this, it does not run it). Never edit an already-applied migration — add a new one.
 - **⚠️ Production is NOT sqlx-managed.** Verified against the box 2026-08-10: prod has **no `_sqlx_migrations` table**. `deploy.sh --migrate` detects this and takes its *legacy* branch, which applies only migrations numbered **≥ 71** and records each one in `pegana_migration_ledger` with its **SHA-256**. Two consequences that bite: a local `sqlx migrate run` and a prod deploy are different code paths, so "it applied locally" proves less than it looks; and because the ledger stores a checksum, **editing an already-applied migration makes every subsequent deploy abort** with "Checksum mismatch for recorded migration". Correct a shipped migration downstream (a new migration, or the docs), never in place.
 - **Hylo NAV**: upstream hylo crates conflict with our solana-client 2.0 borsh tree, so PDAs are derived locally in `crates/indexer-rs/src/sources/hylo.rs` (see the note in `Cargo.toml`).
 
