@@ -25,7 +25,7 @@ decided per-asset at 06-10, not as an atomic 5-asset block.
 ## Retraction
 A first-class signal published when a methodology version is marked
 `broken`. Triggers: web banner + on-chain memo + webhook re-fire + RSS
-item + bot message + API field. Defined in
+item + API field. Defined in
 [ADR-0003](docs/adr/0003-methodology-retraction-protocol.md).
 NOT the same as deletion: original alert row is preserved; retraction
 is additive.

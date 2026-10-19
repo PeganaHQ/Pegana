@@ -7,7 +7,7 @@
 [![methodology](https://img.shields.io/badge/methodology-0.7.0-blue.svg)](https://crates.io/crates/pegana-methodology)
 [![cli](https://img.shields.io/badge/pegana--replay-0.5.2-blue.svg)](https://crates.io/crates/pegana-replay)
 
-Pegana is the **specialized peg-risk oracle for Solana**. It monitors the divergence between the **intrinsic value** (what an asset *should* be worth, based on its peg mechanism) and the **market value** (what you'd actually get swapping it right now) for **68 assets on the public peg surface** (72 canon · 69 active · 56 calibrated) on Solana mainnet — the live list is always [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). When the gap exceeds per-asset thresholds, Pegana publishes the transition via REST, WebSocket, MCP, and Webhook, and emits a reproducible audit receipt.
+Pegana is the **specialized peg-risk oracle for Solana**. It monitors the divergence between the **intrinsic value** (what an asset *should* be worth, based on its peg mechanism) and the **market value** (what you'd actually get swapping it right now) for **67 assets on the public peg surface** (72 canon · 70 active · 56 calibrated) on Solana mainnet — the live list is always [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). When the gap exceeds per-asset thresholds, Pegana publishes the transition via REST, WebSocket, MCP, and Webhook, and emits a reproducible audit receipt.
 
 **V1 — live in production since 2026-07-23** (methodology **0.7.0**; product status: **Technical Preview**): every state transition emits a public receipt at `/v1/audit/{id}` with the methodology version, frozen inputs, and an optional on-chain commit via a Solana SPL Memo (see ADR-0004). Receipts are reproducible offline via the [`pegana-replay`](crates/pegana-replay-cli/) CLI (`--json` for machine-readable CI output) — verification is exact-match per ADR-0028, so always install with `--locked`:
 
@@ -32,7 +32,7 @@ pegana-replay --alert-id <uuid>          # recomputes the hash + checks the on-c
 
 Not on the peg surface: **`xSOL`** (Hylo's leveraged junior tranche) is tracked internally but excluded from `/v1/assets`, `/v1/peg/feed`, `/v1/stats` and `/v1/calibration` since 2026-07-23 — a leveraged tranche trades 60–85% away from its own NAV *by design*, so "market vs intrinsic" measures leverage, not peg deviation.
 
-**72 in the canon · 69 active on mainnet · 68 on the public peg surface (the number every user-facing surface reports) · 56 calibrated.** The authoritative, always-current list is [`assets.toml`](assets.toml) and the live [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). Deactivated entries — e.g. `dSOL` (after the 2026-04-01 Drift exploit) and `BRZ` (thin market liquidity) — stay in `assets.toml` with `active = false` for historical snapshots.
+**72 in the canon · 70 active on mainnet · 67 on the public peg surface (the number every user-facing surface reports) · 56 calibrated.** The authoritative, always-current list is [`assets.toml`](assets.toml) and the live [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). Deactivated entries — e.g. `dSOL` (after the 2026-04-01 Drift exploit) and `BRZ` (thin market liquidity) — stay in `assets.toml` with `active = false` for historical snapshots.
 
 Per-asset peg mechanisms drive per-asset intrinsic calculation: fiat-backed assets peg to $1, LSTs read Sanctum's SOL-value calculator, hyUSD computes its collateral ratio from on-chain Hylo Exchange state, and yield-bearing stables consume issuer-attested NAV (Pyth Redemption Rate feeds, or the Token-2022 rebasing rate for `sUSD`).
 
@@ -77,7 +77,7 @@ Read the full spec at `docs/spec.html`.
 # Prereqs: Rust 1.90, Node 22+, Docker, Bun or pnpm
 
 # 1. Clone + setup
-git clone https://github.com/lrafasouza/pegana.git
+git clone https://github.com/PeganaHQ/Pegana.git
 cd pegana
 cp .env.example .env  # edit secrets
 
