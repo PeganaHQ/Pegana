@@ -106,7 +106,7 @@ pub async fn summary(State(state): State<Arc<AppState>>) -> Result<impl IntoResp
     // discount_snapshots — live engine state — and stay public.)
     let alerts_24h: i64 = if state.feature_public_alerts {
         // Beta cohort: monitoring_only assets are now publicly listed in
-        // /v1/alerts + /v1/audit (no longer egress-gated), so this counter
+        // /v1/audit (no longer egress-gated), so this counter
         // includes them too and stays reconciled with those feeds.
         let (n,): (i64,) = sqlx::query_as(
             "SELECT count(*) FROM alerts \

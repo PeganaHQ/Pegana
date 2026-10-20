@@ -58,7 +58,6 @@ Receivers should:
 Reference receivers implementing this model live in:
 
 - `docs/examples/webhook-receivers/typescript-cloudflare-worker/`
-- `docs/examples/webhook-receivers/python-fastapi/`
 - `docs/examples/webhook-receivers/rust-axum/`
 
 ## Verification checklist
@@ -66,7 +65,7 @@ Reference receivers implementing this model live in:
 Before promoting the key:
 
 - `curl -s https://api.pegana.xyz/v1/meta/webhook-keys` returns two keys.
-- The TypeScript, Python, and Rust reference receivers verify a test delivery.
+- The TypeScript and Rust reference receivers verify a test delivery.
 - At least one production dogfood receiver has refreshed its key cache after the
   secondary was published.
 

@@ -233,7 +233,11 @@ export default async function MethodologyPage() {
             <p>
               Replay is <b>byte-exact or it fails loudly</b>. If the recomputed
               receipt hash differs from the published one, the alert does not
-              verify, and that is the point.
+              verify, and that is the point. The CLI matches the receipt&apos;s
+              methodology version exactly: for an older receipt it exits with
+              VERSION_MISMATCH and prints the install command for the matching
+              release (receipts older than 0.4.0 predate every published CLI
+              build and verify by hash only).
             </p>
 
             <h2 id="m-versions">A version has three states</h2>
@@ -271,8 +275,9 @@ export default async function MethodologyPage() {
             <h2 id="m-canon">The canon, hashed into every receipt</h2>
             <p>
               Every receipt hashes the canonical <code>assets.toml</code> as
-              part of its inputs. Replay still works against historical receipts
-              because each one embeds the canon it was produced under.{" "}
+              part of its inputs. Historical receipts stay checkable because
+              each one embeds the canon it was produced under. The CLI re-derives
+              a receipt with the release that matches its methodology version.{" "}
               {canon.length > 0 && (
                 <>
                   {active.length} active assets across{" "}

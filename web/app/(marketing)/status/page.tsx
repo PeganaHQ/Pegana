@@ -194,7 +194,11 @@ function StatusBody() {
     () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
     [],
   );
-  const { data: recentAlerts } = useAlerts({ since: since24h, limit: 500 });
+  const { data: recentAlerts } = useAlerts({
+    since: since24h,
+    limit: 100,
+    excludePegged: true,
+  });
 
   const [now, setNow] = useState<number>(0);
   useEffect(() => {
@@ -406,7 +410,9 @@ function StatusBody() {
         <StatStripV2 items={statItems} />
         {recentAlerts && (
           <p className="mt-3 font-mono text-[12px] text-[var(--v2-muted)]">
-            {recentAlerts.length} alerts fired in the last 24 hours.
+            {recentAlerts.length >= 100 ? "100+" : recentAlerts.length}{" "}
+            {recentAlerts.length === 1 ? "state transition" : "state transitions"}{" "}
+            out of PEGGED in the last 24 hours.
           </p>
         )}
 

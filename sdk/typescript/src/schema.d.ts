@@ -55,26 +55,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/alerts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the global public feed of peg state-transition alerts (all assets)
-         * @description Public, unauthenticated feed of peg state transitions across ALL tracked assets, newest first. For alerts scoped to only the assets YOU subscribe to, use the authenticated `GET /v1/me/alerts` instead.
-         */
-        get: operations["list_alerts"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/assets": {
         parameters: {
             query?: never;
@@ -82,7 +62,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all active assets */
+        /**
+         * List all active assets with their latest peg snapshot
+         * @description Returns every active asset with its latest discount, state, and peg-snapshot. This is the dashboard screener endpoint — for the stream of peg state-transition alerts, use `GET /v1/alerts` instead.
+         */
         get: operations["list_assets"];
         put?: never;
         post?: never;
@@ -302,100 +285,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/auth/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /v1/auth/logout` — revoke the caller's session JWT (by `jti`).
-         *     Accepts even an already-expired token so a stale tab can still log out.
-         */
-        post: operations["logout"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/auth/magic/consume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /v1/auth/magic/consume` — public endpoint the web client calls
-         *     when it lands on `/auth/magic?nonce=…`. Atomically marks the nonce
-         *     consumed AND returns the telegram_id in a single UPDATE … RETURNING
-         *     (race-free; two concurrent consumers can't both succeed). On hit, mints
-         *     a 7-day session JWT — same path as Login Widget.
-         * @description Failure modes:
-         *       - 400 if the body fails to parse.
-         *       - 401 if the nonce is unknown, already consumed, or expired.
-         *       - 500 if the JWT insert fails (DB issue).
-         */
-        post: operations["consume_magic"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/auth/magic/mint": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /v1/auth/magic/mint` — internal endpoint the bot calls when a user
-         *     runs `/web`. Authenticates via `x-internal-secret` (constant-time
-         *     compare against `BOT_INTERNAL_SECRET`). Inserts a fresh nonce row and
-         *     returns it. No JWT is issued here — that happens on consume.
-         * @description Failure modes:
-         *       - 401 if the header is missing or wrong.
-         *       - 400 if the body fails to parse.
-         *       - 500 if the DB insert fails.
-         */
-        post: operations["mint_magic"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/auth/telegram": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /v1/auth/telegram` — exchange a verified Telegram Login Widget
-         *     payload for a 7-day session JWT. Unauthenticated; the HMAC over the
-         *     payload (signed with SHA256(BOT_TOKEN)) is the credential.
-         */
-        post: operations["login"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/calibration": {
         parameters: {
             query?: never;
@@ -407,237 +296,6 @@ export interface paths {
         get: operations["calibration_health"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /v1/me` — the authenticated user's profile + digest preferences. */
-        get: operations["me"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/me/alerts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List alerts for the authenticated user's own subscribed assets
-         * @description Authenticated. Returns only the alerts delivered to the caller's OWN subscriptions, newest first. This is NOT the public feed — for state-transition alerts across all assets, use `GET /v1/alerts`.
-         */
-        get: operations["list_my_alerts"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/me/preferences": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * `PATCH /v1/me/preferences` — update locale (`en` only) and/or daily
-         *     digest settings. Omitted fields are left unchanged.
-         */
-        patch: operations["preferences"];
-        trace?: never;
-    };
-    "/v1/me/subs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /v1/me/subs` — the caller's alert subscriptions (active first). */
-        get: operations["list_subs"];
-        put?: never;
-        /**
-         * `POST /v1/me/subs` — create (or re-activate) an alert subscription for an
-         *     asset at a bps threshold. Idempotent on (asset, threshold, channel).
-         */
-        post: operations["create_sub"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/me/subs/{asset}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Soft-delete by default; hard-delete with `?hard=true`. When `?only_id=N`
-         *     is supplied, scopes to a single row (used by the web console where the UI
-         *     knows which specific row the user clicked). Without `only_id`, all rows
-         *     for this user+asset are affected (mirrors `/unsubscribe <asset>` in bot).
-         */
-        delete: operations["delete_sub"];
-        options?: never;
-        head?: never;
-        /**
-         * `PATCH /v1/me/subs/{asset}` — update threshold / active state for an
-         *     asset's subscription(s). `?only_id=N` scopes to a single row.
-         */
-        patch: operations["patch_sub"];
-        trace?: never;
-    };
-    "/v1/me/webhooks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /v1/me/webhooks` — the caller's active webhook subscriptions. */
-        get: operations["list_webhooks"];
-        put?: never;
-        /**
-         * `POST /v1/me/webhooks` — register an Ed25519-signed webhook for an asset.
-         *     URL is SSRF- and length-checked; idempotent on (url, asset).
-         */
-        post: operations["create_webhook"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/me/webhooks/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * `DELETE /v1/me/webhooks/{id}` — deactivate a webhook subscription
-         *     (soft-delete: is_active=false, keeping its delivery history).
-         */
-        delete: operations["delete_webhook"];
-        options?: never;
-        head?: never;
-        /**
-         * `PATCH /v1/me/webhooks/{id}` — partial update of a subscription
-         *     keeping its `id` (and so its `webhook_deliveries` history) intact.
-         * @description The previous "delete + re-create" workflow orphaned the audit
-         *     trail under a new id. This endpoint keeps continuity for
-         *     dashboards and replay.
-         *
-         *     Returns the full webhook row after the update. 404 if the id
-         *     belongs to a different user (no existence-leak).
-         */
-        patch: operations["patch_webhook"];
-        trace?: never;
-    };
-    "/v1/me/webhooks/{id}/deliveries": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * `GET /v1/me/webhooks/{id}/deliveries?since=&limit=` — paged audit
-         *     trail of every delivery attempt against this subscription, ordered
-         *     newest first. Includes successes (`error = null`), failures, and
-         *     `is_test = true` rows from `/test`.
-         * @description Backed by `webhook_deliveries` (migration 0023). Both the
-         *     production fan-out (`dispatcher-rs`) and the single-shot
-         *     `/test`+`/replay` path write here, so this is the single operator
-         *     view of receiver health.
-         */
-        get: operations["list_deliveries"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/me/webhooks/{id}/replay": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /v1/me/webhooks/{id}/replay?since=<unix_seconds>&limit=<n>` —
-         *     re-attempt delivery of the dead-letter rows for this subscription
-         *     inside the window. Modeled on Svix's "Replay Missing".
-         * @description Successful re-deliveries are NOT removed from `webhook_dead_letter`
-         *     — the audit trail stays put. Repeated success on the same row is
-         *     harmless (the receiver's own dedup on `x-pegana-event-id` makes the
-         *     second delivery a no-op).
-         */
-        post: operations["replay_webhook"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/me/webhooks/{id}/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /v1/me/webhooks/{id}/test` — send a synthetic signed payload
-         *     to the registered URL and return what happened. Mirrors Stripe's
-         *     "Send test webhook" button. The synthetic event carries the
-         *     `x-pegana-test: true` header so subscribers can guard prod handlers
-         *     (e.g. skip downstream order-fill on test deliveries).
-         * @description No retry. One POST. The caller is operator-triggered, not engine-
-         *     triggered, so retries would lie about the receiver's true health.
-         */
-        post: operations["test_webhook"];
         delete?: never;
         options?: never;
         head?: never;
@@ -659,9 +317,8 @@ export interface paths {
          *     they either disable signature-based trust or refuse our deliveries.
          *
          *     Source of truth is the `PEGANA_WEBHOOK_EGRESS_IPS` env var
-         *     (comma-separated). Default falls back to the Hetzner production
-         *     box's static IP. When we add a second box, set the env to
-         *     `<prod-host>,<new-ip>` — no code change required.
+         *     (comma-separated). No hardcoded default: the deployment env supplies
+         *     the egress IP(s), so the public repo never carries infra addresses.
          */
         get: operations["webhook_ips"];
         put?: never;
@@ -793,61 +450,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        AlertDelivery: {
-            ack_reason?: string | null;
-            /** Format: date-time */
-            acknowledged_at?: string | null;
-            /** Format: uuid */
-            alert_id: string;
-            asset: string;
-            /** Format: date-time */
-            attempted_at: string;
-            channel: string;
-            from_state: string;
-            status: string;
-            to_state: string;
-        };
-        AlertRow: {
-            asset: string;
-            /**
-             * @description Consumer-facing calibration label, `provisional` | `calibrated` —
-             *     the self-describing form of `monitoring_only`, in the SAME vocabulary
-             *     the dispatcher puts on the webhook canonical event. `provisional` ⇔
-             *     `monitoring_only=true`.
-             */
-            calibration: components["schemas"]["Calibration"];
-            class: string;
-            /** Format: date-time */
-            detected_at: string;
-            /**
-             * @description Signed discount (spread) captured at detection, as a rust_decimal
-             *     string. Lets the /events feed show each transition's spread magnitude
-             *     without a second per-row lookup. `None` for older rows where the
-             *     `alerts.discount` column is NULL — the client falls back to the asset's
-             *     live spread, so the field is additive (omitted, never `null`).
-             */
-            discount?: string | null;
-            /**
-             * Format: date-time
-             * @description `null` until the dispatcher delivers this alert to its first fan-out
-             *     target (Telegram or a webhook subscriber); stamped once at least one
-             *     delivery succeeds. Stays `null` when the alert matched no subscriber —
-             *     nothing was delivered — so a `null` here means "not delivered", NOT
-             *     "delivery failed". Distinct from `detected_at` (when the engine saw the
-             *     transition) and from on-chain commit (a separate evidence path).
-             */
-            dispatched_at?: string | null;
-            from_state: components["schemas"]["PegState"];
-            /** Format: uuid */
-            id: string;
-            /**
-             * @description True for a released `monitoring_only` (beta) asset — its calibration is
-             *     provisional, so this alert should be read as experimental. Always
-             *     present so public-ledger consumers can label beta rows.
-             */
-            monitoring_only: boolean;
-            to_state: components["schemas"]["PegState"];
-        };
         /**
          * @description Peg anchor tells a consumer how to interpret the asset's fair value WITHOUT
          *     knowing Pegana's internal taxonomy:
@@ -877,56 +479,6 @@ export interface components {
             error: string;
             /** @description Human-readable explanation. NOT stable — for humans/logs; do not parse. */
             message: string;
-        };
-        /** @description List envelope: `{ ok, generated_at, count, data: [...] }`. */
-        ApiList_AlertRow: {
-            /** @description Number of items in `data`. */
-            count: number;
-            data: {
-                asset: string;
-                /**
-                 * @description Consumer-facing calibration label, `provisional` | `calibrated` —
-                 *     the self-describing form of `monitoring_only`, in the SAME vocabulary
-                 *     the dispatcher puts on the webhook canonical event. `provisional` ⇔
-                 *     `monitoring_only=true`.
-                 */
-                calibration: components["schemas"]["Calibration"];
-                class: string;
-                /** Format: date-time */
-                detected_at: string;
-                /**
-                 * @description Signed discount (spread) captured at detection, as a rust_decimal
-                 *     string. Lets the /events feed show each transition's spread magnitude
-                 *     without a second per-row lookup. `None` for older rows where the
-                 *     `alerts.discount` column is NULL — the client falls back to the asset's
-                 *     live spread, so the field is additive (omitted, never `null`).
-                 */
-                discount?: string | null;
-                /**
-                 * Format: date-time
-                 * @description `null` until the dispatcher delivers this alert to its first fan-out
-                 *     target (Telegram or a webhook subscriber); stamped once at least one
-                 *     delivery succeeds. Stays `null` when the alert matched no subscriber —
-                 *     nothing was delivered — so a `null` here means "not delivered", NOT
-                 *     "delivery failed". Distinct from `detected_at` (when the engine saw the
-                 *     transition) and from on-chain commit (a separate evidence path).
-                 */
-                dispatched_at?: string | null;
-                from_state: components["schemas"]["PegState"];
-                /** Format: uuid */
-                id: string;
-                /**
-                 * @description True for a released `monitoring_only` (beta) asset — its calibration is
-                 *     provisional, so this alert should be read as experimental. Always
-                 *     present so public-ledger consumers can label beta rows.
-                 */
-                monitoring_only: boolean;
-                to_state: components["schemas"]["PegState"];
-            }[];
-            /** @description RFC3339 (UTC, millisecond, `Z`) build time of this response. */
-            generated_at: string;
-            /** @description Always `true` on a 2xx; errors use the `{error, message}` envelope instead. */
-            ok: boolean;
         };
         /** @description List envelope: `{ ok, generated_at, count, data: [...] }`. */
         ApiList_AssetCard: {
@@ -982,6 +534,12 @@ export interface components {
                 /** Format: int32 */
                 decimals: number;
                 discount?: string | null;
+                /**
+                 * Format: int64
+                 * @description Unique holder addresses, same source and same caveats as
+                 *     `liquidity_usd`. A distribution/context signal; never a peg signal.
+                 */
+                holder_count?: number | null;
                 intrinsic_usd?: string | null;
                 /**
                  * @description Peg-jitter scalar over the trailing 24h (BSRV-03): peak-to-trough
@@ -994,6 +552,16 @@ export interface components {
                  */
                 jitter_bps_24h?: string | null;
                 /**
+                 * @description Deepest-market USD liquidity, sourced from tokens.xyz's per-variant
+                 *     market snapshot (migration 0075). A SIZE/CONTEXT signal for judging how
+                 *     much size an exit can absorb, NOT a peg-safety signal and NEVER an input
+                 *     to `discount`/`state`/thresholds. `null` when tokens.xyz has no market
+                 *     for the mint (7 of 69 active assets as of 2026-08-10) or it has not been
+                 *     observed yet — `null` NEVER means zero (ADR-0019). Read together with
+                 *     `market_context_at` for freshness.
+                 */
+                liquidity_usd?: string | null;
+                /**
                  * @description Market capitalization in USD = `circulating_supply × market_usd` — a
                  *     SIZE/CONTEXT signal for gauging relative scale across assets, NOT a
                  *     peg-safety signal and NEVER an input to `discount`/`state`/thresholds.
@@ -1002,6 +570,15 @@ export interface components {
                  *     (like `discount`), not omitted.
                  */
                 market_cap?: string | null;
+                /**
+                 * Format: date-time
+                 * @description When the market-context trio above was last observed. These move on a
+                 *     ~30 min cadence, far slower than `updated_at`'s discount pipeline, so
+                 *     they carry their own timestamp rather than borrowing that one. `null`
+                 *     when no observation exists.
+                 */
+                market_context_at?: string | null;
+                market_depth?: null | components["schemas"]["MarketDepth"];
                 market_usd?: string | null;
                 mint: string;
                 /**
@@ -1092,6 +669,11 @@ export interface components {
                 thresholds?: unknown;
                 /** Format: date-time */
                 updated_at?: string | null;
+                /**
+                 * @description Trailing-24h USD trading volume, same source and same caveats as
+                 *     `liquidity_usd`. Context only; never a peg signal.
+                 */
+                volume_24h_usd?: string | null;
                 /**
                  * @description Worst (largest-magnitude) absolute discount observed over the trailing
                  *     24h (BSRV-02), in the same signed-fraction units as `discount`
@@ -1272,6 +854,12 @@ export interface components {
             /** Format: int32 */
             decimals: number;
             discount?: string | null;
+            /**
+             * Format: int64
+             * @description Unique holder addresses, same source and same caveats as
+             *     `liquidity_usd`. A distribution/context signal; never a peg signal.
+             */
+            holder_count?: number | null;
             intrinsic_usd?: string | null;
             /**
              * @description Peg-jitter scalar over the trailing 24h (BSRV-03): peak-to-trough
@@ -1284,6 +872,16 @@ export interface components {
              */
             jitter_bps_24h?: string | null;
             /**
+             * @description Deepest-market USD liquidity, sourced from tokens.xyz's per-variant
+             *     market snapshot (migration 0075). A SIZE/CONTEXT signal for judging how
+             *     much size an exit can absorb, NOT a peg-safety signal and NEVER an input
+             *     to `discount`/`state`/thresholds. `null` when tokens.xyz has no market
+             *     for the mint (7 of 69 active assets as of 2026-08-10) or it has not been
+             *     observed yet — `null` NEVER means zero (ADR-0019). Read together with
+             *     `market_context_at` for freshness.
+             */
+            liquidity_usd?: string | null;
+            /**
              * @description Market capitalization in USD = `circulating_supply × market_usd` — a
              *     SIZE/CONTEXT signal for gauging relative scale across assets, NOT a
              *     peg-safety signal and NEVER an input to `discount`/`state`/thresholds.
@@ -1292,6 +890,15 @@ export interface components {
              *     (like `discount`), not omitted.
              */
             market_cap?: string | null;
+            /**
+             * Format: date-time
+             * @description When the market-context trio above was last observed. These move on a
+             *     ~30 min cadence, far slower than `updated_at`'s discount pipeline, so
+             *     they carry their own timestamp rather than borrowing that one. `null`
+             *     when no observation exists.
+             */
+            market_context_at?: string | null;
+            market_depth?: null | components["schemas"]["MarketDepth"];
             market_usd?: string | null;
             mint: string;
             /**
@@ -1382,6 +989,11 @@ export interface components {
             thresholds?: unknown;
             /** Format: date-time */
             updated_at?: string | null;
+            /**
+             * @description Trailing-24h USD trading volume, same source and same caveats as
+             *     `liquidity_usd`. Context only; never a peg signal.
+             */
+            volume_24h_usd?: string | null;
             /**
              * @description Worst (largest-magnitude) absolute discount observed over the trailing
              *     24h (BSRV-02), in the same signed-fraction units as `discount`
@@ -1612,26 +1224,6 @@ export interface components {
          * @enum {string}
          */
         Confidence: "high" | "medium" | "low" | "unknown";
-        ConsumeMagicRequest: {
-            nonce: string;
-        };
-        CreateSub: {
-            asset: string;
-            channel?: string;
-            /** Format: int32 */
-            threshold_bps: number;
-        };
-        CreateWebhook: {
-            asset: string;
-            /**
-             * @description Optional. When omitted, the server detects it from the URL host
-             *     (`discord.com` → discord, `hooks.slack.com` → slack, else generic).
-             */
-            channel_type?: string | null;
-            /** Format: int32 */
-            threshold_bps: number;
-            url: string;
-        };
         /**
          * @description Delivery-pipeline health rollup. Surfaced so the dashboard can show a
          *     degraded badge when notifications are silently failing — historically
@@ -1649,50 +1241,6 @@ export interface components {
             last_failure_error?: string | null;
             /** Format: int64 */
             sent_24h: number;
-        };
-        /**
-         * @description Result of a single-shot delivery attempt. Returned as JSON to the
-         *     caller so the operator can see exactly what happened.
-         */
-        DeliveryResult: {
-            /** @description Fresh per attempt — correlate with receiver-side logs. */
-            delivery_id: string;
-            /** @description Wall-clock latency from request build to response received. */
-            elapsed_ms: number;
-            /**
-             * @description `Some(error)` when the delivery did not return 2xx OR the
-             *     request layer failed before sending.
-             */
-            error?: string | null;
-            /**
-             * @description Stable id mirroring the body's `alert_id` (or a fresh UUID for
-             *     test-send synthetic events).
-             */
-            event_id: string;
-            /**
-             * Format: int32
-             * @description HTTP status from the receiver. `None` if the request failed
-             *     before getting a response (DNS, timeout, TLS, SSRF guard).
-             */
-            http_status?: number | null;
-        };
-        DeliveryRow: {
-            /** Format: uuid */
-            alert_id: string;
-            /** Format: int32 */
-            attempt: number;
-            /** Format: date-time */
-            attempted_at: string;
-            /** Format: int32 */
-            elapsed_ms: number;
-            error?: string | null;
-            /**
-             * Format: int32
-             * @description `null` when the request never produced an HTTP response
-             *     (DNS, TLS, timeout, SSRF guard rejection).
-             */
-            http_status?: number | null;
-            is_test: boolean;
         };
         HistoryPoint: {
             /** @description EWMA-smoothed discount (the value the state machine uses). */
@@ -1753,23 +1301,6 @@ export interface components {
              */
             uptime_secs: number;
         };
-        LoginPayload: {
-            /** Format: int64 */
-            auth_date: number;
-            first_name?: string | null;
-            hash: string;
-            /** Format: int64 */
-            id: number;
-            last_name?: string | null;
-            photo_url?: string | null;
-            username?: string | null;
-        };
-        LoginResponse: {
-            /** Format: date-time */
-            expires_at: string;
-            token: string;
-            user: components["schemas"]["UserView"];
-        };
         /** @description One protocol's latest leverage rollup for an asset. */
         LoopByProtocol: {
             /** @description Leveraged collateral (USD) — the "loop" exposure to this asset. */
@@ -1806,14 +1337,37 @@ export interface components {
             /** @description RFC3339 of the freshest protocol snapshot (absent when no data). */
             updated_at?: string | null;
         };
-        Me: {
-            digest_enabled: boolean;
-            /** Format: int32 */
-            digest_hour_utc: number;
-            locale: string;
-            /** Format: int64 */
-            telegram_id: number;
-            username?: string | null;
+        /** @description Derived market-depth annotation attached to an `AssetCard`. */
+        MarketDepth: {
+            /** @description Which hard facts capped the score, if any. Empty when nothing capped it. */
+            caps: string[];
+            components: components["schemas"]["MarketDepthComponents"];
+            /** @description Why `score` is `null`. `None` whenever `score` is `Some`. */
+            insufficient_reason?: string | null;
+            /**
+             * Format: int32
+             * @description 0-100, higher = more executable market. `null` when the inputs are too
+             *     sparse to state a number honestly — read `insufficient_reason` then.
+             */
+            score?: number | null;
+        };
+        /** @description Per-component detail, so the UI can explain the number instead of asserting it. */
+        MarketDepthComponents: {
+            /**
+             * Format: int32
+             * @description 0-100 from `holder_count`. `null` when unobserved.
+             */
+            holders?: number | null;
+            /**
+             * Format: int32
+             * @description 0-100 from `liquidity_usd`. `null` when unobserved.
+             */
+            liquidity?: number | null;
+            /**
+             * Format: int32
+             * @description 0-100 from `volume_24h_usd`. `null` when unobserved.
+             */
+            volume?: number | null;
         };
         /**
          * @description Public methodology lifecycle pointer.
@@ -1850,15 +1404,6 @@ export interface components {
             superseded_by?: string | null;
             /** @description Semver version of the currently-active methodology crate. */
             version: string;
-        };
-        MintMagicRequest: {
-            /** Format: int64 */
-            telegram_id: number;
-        };
-        MintMagicResponse: {
-            /** Format: date-time */
-            expires_at: string;
-            nonce: string;
         };
         /** @description On-chain commit pointer. */
         OnchainResponse: {
@@ -1903,34 +1448,6 @@ export interface components {
              *     `market_usd` was absent/non-positive, or the computation overflowed.
              */
             spread_bps?: number | null;
-        };
-        PatchSub: {
-            is_active?: boolean | null;
-            /** Format: int32 */
-            threshold_bps?: number | null;
-        };
-        PatchWebhook: {
-            /**
-             * @description Override the channel flavor (`"generic"`|`"discord"`|`"slack"`) when
-             *     auto-detection guessed wrong. Omit to leave unchanged.
-             */
-            channel_type?: string | null;
-            /**
-             * @description Toggle active state without deleting the row. Useful for
-             *     pause-then-resume during receiver maintenance.
-             */
-            is_active?: boolean | null;
-            /**
-             * Format: int32
-             * @description Replace the alert threshold (1..10000 bps). Omit to leave
-             *     unchanged.
-             */
-            threshold_bps?: number | null;
-            /**
-             * @description Replace the destination URL. SSRF + length guards re-applied;
-             *     omit to leave unchanged.
-             */
-            url?: string | null;
         };
         /**
          * @description Batch envelope: a `data` array of per-asset signals (each carries its own
@@ -2012,12 +1529,6 @@ export interface components {
          * @enum {string}
          */
         PegState: "PEGGED" | "DRIFT" | "DEPEG" | "CRITICAL" | "BLACK_SWAN" | "UNKNOWN";
-        PreferencesPatch: {
-            digest_enabled?: boolean | null;
-            /** Format: int32 */
-            digest_hour_utc?: number | null;
-            locale?: string | null;
-        };
         ReadyResponse: {
             /** @description SELECT 1 on Postgres succeeded. */
             db: boolean;
@@ -2036,12 +1547,6 @@ export interface components {
             sources: components["schemas"]["SourceFreshness"];
             /** @description "ready" if all downstream deps are healthy; "not_ready" otherwise. */
             status: string;
-        };
-        ReplaySummary: {
-            attempted: number;
-            failed: number;
-            results: components["schemas"]["DeliveryResult"][];
-            succeeded: number;
         };
         /**
          * @description Which direction of the signed `discount` is the risk signal for this
@@ -2124,9 +1629,12 @@ export interface components {
             market_usd: string;
             /**
              * Format: date-time
-             * @description Timestamp of the most recent transition into the current state.
-             *     Equals the current snapshot timestamp if the engine has only ever
-             *     observed one state for this asset.
+             * @description Timestamp of the most recent transition into the current state: the
+             *     first snapshot of the current contiguous run. Constant across
+             *     recomputes; it changes ONLY on a real state transition. For an asset
+             *     that has only ever held one state it is that asset's first observed
+             *     snapshot. When `stale` is true it collapses to `updated_at`, the moment
+             *     data stopped.
              */
             since: string;
             /**
@@ -2188,19 +1696,6 @@ export interface components {
             };
             delivery_health: components["schemas"]["DeliveryHealth"];
         };
-        SubView: {
-            asset: string;
-            channel: string;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: int64 */
-            id: number;
-            is_active: boolean;
-            /** Format: date-time */
-            last_fired_at?: string | null;
-            /** Format: int32 */
-            threshold_bps: number;
-        };
         /**
          * @description One asset's systemic-exposure summary. Omitted from the feed when the asset
          *     carries no tracked leverage.
@@ -2218,27 +1713,6 @@ export interface components {
             protocols: string[];
             /** @description RFC3339 of the freshest underlying snapshot. */
             updated_at?: string | null;
-        };
-        UserView: {
-            locale: string;
-            /** Format: int64 */
-            telegram_id: number;
-            username?: string | null;
-        };
-        Webhook: {
-            asset: string;
-            /**
-             * @description `"generic"` | `"discord"` | `"slack"`. Auto-detected from the URL on
-             *     create when omitted; overridable via PATCH. Decides how alerts render
-             *     (Discord embed / Slack attachment / generic signed JSON).
-             */
-            channel_type: string;
-            /** Format: uuid */
-            id: string;
-            is_active: boolean;
-            /** Format: int32 */
-            threshold_bps: number;
-            url: string;
         };
         WebhookIpsResponse: {
             /**
@@ -2326,6 +1800,15 @@ export interface operations {
                     "application/json": components["schemas"]["LiveResponse"];
                 };
             };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     ready: {
@@ -2353,47 +1836,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadyResponse"];
-                };
-            };
-        };
-    };
-    list_alerts: {
-        parameters: {
-            query?: {
-                /** @description Restrict to a single asset symbol. */
-                asset?: string;
-                /** @description Restrict to a single asset class. */
-                class?: string;
-                /**
-                 * @description Page size, must be in `[1, 500]`. Default `50`. Out-of-range
-                 *     values are rejected with 400 rather than silently clamped.
-                 */
-                limit?: number;
-                /** @description Inclusive lower bound on `detected_at`. Defaults to now − 7 days. */
-                since?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Global alert feed, newest first */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiList_AlertRow"];
-                };
-            };
-            /** @description Invalid ?limit= (must be 1..=500) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -2426,6 +1868,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiList_AssetCard"];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description Rate limit exceeded — see Retry-After header */
@@ -2914,171 +2365,6 @@ export interface operations {
             };
         };
     };
-    logout: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Session revoked */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or malformed bearer token */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    consume_magic: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConsumeMagicRequest"];
-            };
-        };
-        responses: {
-            /** @description Session JWT + user view */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginResponse"];
-                };
-            };
-            /** @description Malformed request body */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Nonce invalid, already consumed, or expired */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    mint_magic: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Shared secret (BOT_INTERNAL_SECRET); bot-only, not a user bearer token */
-                "x-internal-secret": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MintMagicRequest"];
-            };
-        };
-        responses: {
-            /** @description Fresh magic-link nonce */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MintMagicResponse"];
-                };
-            };
-            /** @description Malformed request body */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description x-internal-secret missing or wrong */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    login: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginPayload"];
-            };
-        };
-        responses: {
-            /** @description Session JWT + user view */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginResponse"];
-                };
-            };
-            /** @description Malformed request body */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Login Widget HMAC invalid or auth_date too old */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     calibration_health: {
         parameters: {
             query?: never;
@@ -3108,578 +2394,6 @@ export interface operations {
             };
             /** @description Unexpected server error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    me: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Current user */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Me"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    list_my_alerts: {
-        parameters: {
-            query?: {
-                /** @description Filter to a single asset symbol. */
-                asset?: string;
-                /** @description Page size, clamped to `[1, 500]`. Default `50`. */
-                limit?: number;
-                /** @description Inclusive lower bound on `attempted_at` (RFC3339). Default: 30 days ago. */
-                since?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Delivered alerts */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlertDelivery"][];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    preferences: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreferencesPatch"];
-            };
-        };
-        responses: {
-            /** @description Preferences updated */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid locale or digest_hour_utc out of 0..23 */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    list_subs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Subscription list */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubView"][];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    create_sub: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateSub"];
-            };
-        };
-        responses: {
-            /** @description Subscription created or re-activated */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubView"];
-                };
-            };
-            /** @description threshold_bps out of 1..10000 */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    delete_sub: {
-        parameters: {
-            query?: {
-                /** @description true → permanently DELETE; default soft-delete (is_active=false) */
-                hard?: boolean;
-                /** @description Scope the deletion to a single subscription row */
-                only_id?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Asset symbol, e.g. USDC */
-                asset: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Subscription(s) deleted/deactivated */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description No matching subscription */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    patch_sub: {
-        parameters: {
-            query?: {
-                /** @description Scope the update to a single subscription row */
-                only_id?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Asset symbol, e.g. USDC */
-                asset: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PatchSub"];
-            };
-        };
-        responses: {
-            /** @description Subscription(s) updated */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description threshold_bps out of 1..10000 */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description No matching subscription */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    list_webhooks: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Active webhook subscriptions */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Webhook"][];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    create_webhook: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateWebhook"];
-            };
-        };
-        responses: {
-            /** @description Webhook created or re-activated */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Webhook"];
-                };
-            };
-            /** @description URL rejected (SSRF/length), threshold out of range, or webhook limit reached */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Asset symbol unknown */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    delete_webhook: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Webhook subscription id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Webhook deactivated */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    patch_webhook: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Webhook subscription id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PatchWebhook"];
-            };
-        };
-        responses: {
-            /** @description Updated webhook */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Webhook"];
-                };
-            };
-            /** @description Validation error (bad url, threshold out of range) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Webhook subscription not found under caller's user */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    list_deliveries: {
-        parameters: {
-            query?: {
-                /** @description Lower bound unix seconds. Defaults to 7d ago. */
-                since?: number;
-                /** @description Max rows, clamped to 1..1000. Default 100. */
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Webhook subscription id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Delivery attempts newest first */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeliveryRow"][];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Webhook subscription not found under caller's user */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    replay_webhook: {
-        parameters: {
-            query?: {
-                /** @description Lower bound unix seconds. Defaults to 24h ago. */
-                since?: number;
-                /** @description Max DLQ rows to retry, clamped to 1..500. Default 50. */
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Webhook subscription id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Per-row delivery results + tallies */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReplaySummary"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Webhook subscription not found under caller's user */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    test_webhook: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Webhook subscription id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Delivery attempt result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeliveryResult"];
-                };
-            };
-            /** @description Caller is not authenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Webhook subscription not found under caller's user */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };

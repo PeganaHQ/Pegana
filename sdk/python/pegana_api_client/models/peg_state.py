@@ -1,6 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
-class PegState(str, Enum):
+
+class PegState(StrEnum):
     BLACK_SWAN = "BLACK_SWAN"
     CRITICAL = "CRITICAL"
     DEPEG = "DEPEG"

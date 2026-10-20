@@ -32,7 +32,7 @@ export const FAQ: Qa[] = [
   },
   {
     q: "How do I verify a Pegana alert myself?",
-    a: "Every state change emits a receipt containing the frozen inputs and the methodology version that produced it. Install the open-source CLI and re-derive it: `pegana-replay --alert-id <UUID>`. It recomputes the verdict from the same pure functions the live engine ran and compares hashes. If our number is wrong, the CLI says so. You do not have to take our word for it.",
+    a: "Every state change emits a receipt containing the frozen inputs and the methodology version that produced it. Every receipt's hash also checks in your browser. Install the open-source CLI and re-derive it: `pegana-replay --alert-id <UUID>`. The CLI matches the receipt's methodology version exactly, so an older receipt prints the install command for the matching release (receipts older than methodology 0.4.0 predate every published CLI build and verify by hash only). It recomputes the verdict from the same pure functions the live engine ran and compares hashes. If our number is wrong, the CLI says so. You do not have to take our word for it.",
   },
   {
     q: "Does Pegana anchor its receipts on-chain?",

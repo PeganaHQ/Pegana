@@ -1,28 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
 
-from ..types import UNSET, Unset
-from typing import cast
-
-
-
-
-
-
 T = TypeVar("T", bound="OracleDegraded")
-
 
 
 @_attrs_define
 class OracleDegraded:
-    """ Advisory oracle-vs-market divergence annotation for a single asset. Never
+    """Advisory oracle-vs-market divergence annotation for a single asset. Never
     a receipt input; never part of the canonical hash; purely additive on the
     single-asset detail response. Omitted entirely (not `null`) via the
     `Option<OracleDegraded>` field's `skip_serializing_if` on `AssetCard`.
@@ -39,17 +30,13 @@ class OracleDegraded:
                 carried no confidence interval, or the computation overflowed.
             spread_bps (int | None | Unset): `|market_usd - oracle_usd| / oracle_usd`, in bps. `None` when
                 `market_usd` was absent/non-positive, or the computation overflowed.
-     """
+    """
 
     reason: str
     age_secs: int | None | Unset = UNSET
     conf_bps: int | None | Unset = UNSET
     spread_bps: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
-
-
-
-
 
     def to_dict(self) -> dict[str, Any]:
         reason = self.reason
@@ -72,12 +59,13 @@ class OracleDegraded:
         else:
             spread_bps = self.spread_bps
 
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({
-            "reason": reason,
-        })
+        field_dict.update(
+            {
+                "reason": reason,
+            }
+        )
         if age_secs is not UNSET:
             field_dict["age_secs"] = age_secs
         if conf_bps is not UNSET:
@@ -87,10 +75,8 @@ class OracleDegraded:
 
         return field_dict
 
-
-
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         reason = d.pop("reason")
 
@@ -103,7 +89,6 @@ class OracleDegraded:
 
         age_secs = _parse_age_secs(d.pop("age_secs", UNSET))
 
-
         def _parse_conf_bps(data: object) -> int | None | Unset:
             if data is None:
                 return data
@@ -112,7 +97,6 @@ class OracleDegraded:
             return cast(int | None | Unset, data)
 
         conf_bps = _parse_conf_bps(d.pop("conf_bps", UNSET))
-
 
         def _parse_spread_bps(data: object) -> int | None | Unset:
             if data is None:
@@ -123,14 +107,12 @@ class OracleDegraded:
 
         spread_bps = _parse_spread_bps(d.pop("spread_bps", UNSET))
 
-
         oracle_degraded = cls(
             reason=reason,
             age_secs=age_secs,
             conf_bps=conf_bps,
             spread_bps=spread_bps,
         )
-
 
         oracle_degraded.additional_properties = d
         return oracle_degraded

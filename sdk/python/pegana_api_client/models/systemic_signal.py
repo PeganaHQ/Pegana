@@ -1,30 +1,23 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
 
-from ..types import UNSET, Unset
-from typing import cast
-
 if TYPE_CHECKING:
-  from ..models.cascade_rung import CascadeRung
-
-
-
+    from ..models.cascade_rung import CascadeRung
 
 
 T = TypeVar("T", bound="SystemicSignal")
 
 
-
 @_attrs_define
 class SystemicSignal:
-    """ One asset's systemic-exposure summary. Omitted from the feed when the asset
+    """One asset's systemic-exposure summary. Omitted from the feed when the asset
     carries no tracked leverage.
 
         Attributes:
@@ -34,7 +27,7 @@ class SystemicSignal:
             loop_exposure_usd (str): Σ leveraged collateral (USD) across covered lending protocols.
             protocols (list[str]): Covered protocols (e.g. `kamino`, `jupiter_lend`).
             updated_at (None | str | Unset): RFC3339 of the freshest underlying snapshot.
-     """
+    """
 
     advisory_note: str
     cascade: list[CascadeRung]
@@ -44,12 +37,7 @@ class SystemicSignal:
     updated_at: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
-
-
-
-
     def to_dict(self) -> dict[str, Any]:
-        from ..models.cascade_rung import CascadeRung
         advisory_note = self.advisory_note
 
         cascade = []
@@ -57,15 +45,11 @@ class SystemicSignal:
             cascade_item = cascade_item_data.to_dict()
             cascade.append(cascade_item)
 
-
-
         coverage = self.coverage
 
         loop_exposure_usd = self.loop_exposure_usd
 
         protocols = self.protocols
-
-
 
         updated_at: None | str | Unset
         if isinstance(self.updated_at, Unset):
@@ -73,45 +57,41 @@ class SystemicSignal:
         else:
             updated_at = self.updated_at
 
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({
-            "advisory_note": advisory_note,
-            "cascade": cascade,
-            "coverage": coverage,
-            "loop_exposure_usd": loop_exposure_usd,
-            "protocols": protocols,
-        })
+        field_dict.update(
+            {
+                "advisory_note": advisory_note,
+                "cascade": cascade,
+                "coverage": coverage,
+                "loop_exposure_usd": loop_exposure_usd,
+                "protocols": protocols,
+            }
+        )
         if updated_at is not UNSET:
             field_dict["updated_at"] = updated_at
 
         return field_dict
 
-
-
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.cascade_rung import CascadeRung
+
         d = dict(src_dict)
         advisory_note = d.pop("advisory_note")
 
         cascade = []
         _cascade = d.pop("cascade")
-        for cascade_item_data in (_cascade):
+        for cascade_item_data in _cascade:
             cascade_item = CascadeRung.from_dict(cascade_item_data)
 
-
-
             cascade.append(cascade_item)
-
 
         coverage = d.pop("coverage")
 
         loop_exposure_usd = d.pop("loop_exposure_usd")
 
         protocols = cast(list[str], d.pop("protocols"))
-
 
         def _parse_updated_at(data: object) -> None | str | Unset:
             if data is None:
@@ -122,7 +102,6 @@ class SystemicSignal:
 
         updated_at = _parse_updated_at(d.pop("updated_at", UNSET))
 
-
         systemic_signal = cls(
             advisory_note=advisory_note,
             cascade=cascade,
@@ -131,7 +110,6 @@ class SystemicSignal:
             protocols=protocols,
             updated_at=updated_at,
         )
-
 
         systemic_signal.additional_properties = d
         return systemic_signal

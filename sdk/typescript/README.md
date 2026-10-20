@@ -65,9 +65,8 @@ const one = await api.GET("/v1/assets/{symbol}", {
 // Loop-Intelligence cascade, peg feed, methodology, stats, calibration, audit …
 const feed = await api.GET("/v1/peg/feed");
 
-// Authenticated surface (/v1/me/*) — pass a telegram_jwt (POST /v1/auth/telegram):
-const me = createPeganaApi({ token });
-const subs = await me.GET("/v1/me/subs");
+// Receipts ledger (the former /v1/alerts feed):
+const audit = await api.GET("/v1/audit");
 ```
 
 Money fields are exact decimal **strings** (never floats — trailing zeros
@@ -126,7 +125,7 @@ new PeganaClient({
 
 - **v0.2.0** ✅ — OpenAPI-generated full coverage of every `/v1` endpoint via
   `openapi-typescript` + `openapi-fetch`, with the ADR-0043 list-envelope helper
-  and a bearer-auth option for `/v1/me/*`. The v0.1 receipt surface is retained.
+  and an optional bearer-token option (unused by the public API). The v0.1 receipt surface is retained.
 - **v0.3.1** ✅ — published to npm under `@peganahq/sdk-ts`.
 - **v1.0.0** — API stability commitment, semver guarantees.
 

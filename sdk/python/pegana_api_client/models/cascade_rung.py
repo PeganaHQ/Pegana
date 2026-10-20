@@ -1,26 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import Any, Self, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..types import UNSET, Unset
-
-
-
-
-
-
-
 T = TypeVar("T", bound="CascadeRung")
-
 
 
 @_attrs_define
 class CascadeRung:
-    """ One rung of the depeg-cascade at a preset shock — the compact form carried by
+    """One rung of the depeg-cascade at a preset shock — the compact form carried by
     the `/loop-exposure` endpoint and the tokens.xyz feed's `systemic` block so a
     consumer gets the whole escalation ($0 → $Nm as the depeg deepens) in one read.
 
@@ -28,16 +19,12 @@ class CascadeRung:
             liquidatable_usd (str): Collateral (USD) whose bands cross their liquidation threshold at this shock.
             positions (str): Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
             shock_bps (int):
-     """
+    """
 
     liquidatable_usd: str
     positions: str
     shock_bps: int
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
-
-
-
-
 
     def to_dict(self) -> dict[str, Any]:
         liquidatable_usd = self.liquidatable_usd
@@ -46,21 +33,20 @@ class CascadeRung:
 
         shock_bps = self.shock_bps
 
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({
-            "liquidatable_usd": liquidatable_usd,
-            "positions": positions,
-            "shock_bps": shock_bps,
-        })
+        field_dict.update(
+            {
+                "liquidatable_usd": liquidatable_usd,
+                "positions": positions,
+                "shock_bps": shock_bps,
+            }
+        )
 
         return field_dict
 
-
-
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         liquidatable_usd = d.pop("liquidatable_usd")
 
@@ -73,7 +59,6 @@ class CascadeRung:
             positions=positions,
             shock_bps=shock_bps,
         )
-
 
         cascade_rung.additional_properties = d
         return cascade_rung

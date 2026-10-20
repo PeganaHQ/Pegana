@@ -194,11 +194,13 @@ export interface AssetStateResp {
   market_usd: string;
 }
 
-// GET /v1/alerts
+// GET /v1/audit (mapped; /v1/alerts was removed)
 export interface AlertRow {
   id: string;
   asset: string;
-  class: AssetClass;
+  /** `"unknown"` for a receipt whose asset is no longer in `/v1/assets`
+   *  (deactivated): the receipt is kept, never re-classified by guesswork. */
+  class: AssetClass | "unknown";
   from_state: PegState;
   to_state: PegState;
   detected_at: string;

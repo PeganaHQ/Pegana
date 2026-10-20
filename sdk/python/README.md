@@ -51,7 +51,7 @@ pip install ./sdk/python
 ## Full typed client (v0.3.0)
 
 ```python
-from pegana_api_client import Client, AuthenticatedClient
+from pegana_api_client import Client
 from pegana_api_client.api.assets import list_assets
 
 # Public read endpoints (tag-organized under pegana_api_client.api.*)
@@ -61,9 +61,8 @@ with Client(base_url="https://api.pegana.xyz") as client:
         for a in assets.data:                  # list envelope → .data
             print(a.symbol)
 
-# Authenticated surface (/v1/me/*) — token via POST /v1/auth/telegram
-with AuthenticatedClient(base_url="https://api.pegana.xyz", token=token) as client:
-    ...  # e.g. pegana_api_client.api.me.get_me.sync(client=client)
+# Every endpoint is public and read-only; the open-source API has no /v1/me/*
+# or /v1/auth/* surface (receipts live under /v1/audit).
 ```
 
 `sync_detailed()` / `asyncio_detailed()` variants return the full `Response`

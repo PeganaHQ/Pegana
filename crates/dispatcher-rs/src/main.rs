@@ -633,14 +633,15 @@ async fn webhook_fanout(
             // Three write paths fire per attempt — kept separate on purpose:
             //   1. `dispatch_one` → INSERT into `webhook_deliveries`
             //      (one row per ATTEMPT; full audit log; powers
-            //      `GET /v1/me/webhooks/{id}/deliveries`).
+            //      the former `GET /v1/me/webhooks/{id}/deliveries`, removed from the public API).
             //   2. `record_dispatch_result` → UPDATE `webhook_subscriptions`
             //      .last_status / .last_fired_at on terminal success
             //      (single-row "latest" snapshot; powers the inline
             //      health badge in the operator dashboard).
             //   3. `record_dead_letter` → INSERT into `webhook_dead_letter`
             //      on terminal failure (replay source; powers
-            //      `POST /v1/me/webhooks/{id}/replay`).
+            //      the former `POST /v1/me/webhooks/{id}/replay`,
+            //      removed from the public API).
             // The three tables answer three different operator
             // questions; do not collapse them.
             match dispatch_one(
@@ -780,7 +781,7 @@ async fn record_webhook_success_rate(pool: &PgPool, subscription_id: uuid::Uuid)
 /// each other) are cheap no-ops.
 ///
 /// Before this, `dispatched_at` was a declared-but-never-written column: the
-/// public `/v1/alerts` row carried it (and the OpenAPI doc claimed it was
+/// public `/v1/audit` row carried it (and the OpenAPI doc claimed it was
 /// populated) while it stayed `null` forever. Wiring it here makes the public
 /// ledger honest — a non-null timestamp now means "delivered to ≥1 subscriber".
 /// Best-effort: a failure to stamp must never fail the delivery (the delivery

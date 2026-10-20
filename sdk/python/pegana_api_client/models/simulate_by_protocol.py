@@ -1,40 +1,27 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import Any, Self, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..types import UNSET, Unset
-
-
-
-
-
-
-
 T = TypeVar("T", bound="SimulateByProtocol")
-
 
 
 @_attrs_define
 class SimulateByProtocol:
-    """ 
-        Attributes:
-            liquidatable_usd (str):
-            positions (str):
-            protocol (str):
-     """
+    """
+    Attributes:
+        liquidatable_usd (str):
+        positions (str):
+        protocol (str):
+    """
 
     liquidatable_usd: str
     positions: str
     protocol: str
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
-
-
-
-
 
     def to_dict(self) -> dict[str, Any]:
         liquidatable_usd = self.liquidatable_usd
@@ -43,21 +30,20 @@ class SimulateByProtocol:
 
         protocol = self.protocol
 
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({
-            "liquidatable_usd": liquidatable_usd,
-            "positions": positions,
-            "protocol": protocol,
-        })
+        field_dict.update(
+            {
+                "liquidatable_usd": liquidatable_usd,
+                "positions": positions,
+                "protocol": protocol,
+            }
+        )
 
         return field_dict
 
-
-
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         liquidatable_usd = d.pop("liquidatable_usd")
 
@@ -70,7 +56,6 @@ class SimulateByProtocol:
             positions=positions,
             protocol=protocol,
         )
-
 
         simulate_by_protocol.additional_properties = d
         return simulate_by_protocol

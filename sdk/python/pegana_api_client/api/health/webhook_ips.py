@@ -1,50 +1,35 @@
 from http import HTTPStatus
-from typing import Any, cast
-from urllib.parse import quote
+from typing import Any
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response, UNSET
 from ... import errors
-
+from ...client import AuthenticatedClient, Client
 from ...models.api_error import ApiError
 from ...models.webhook_ips_response import WebhookIpsResponse
-from typing import cast
+from ...types import Response
 
 
-
-def _get_kwargs(
-    
-) -> dict[str, Any]:
-    
-
-    
-
-    
+def _get_kwargs() -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/v1/meta/webhook-ips",
     }
 
-
     return _kwargs
 
 
-
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> ApiError | WebhookIpsResponse | None:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> ApiError | WebhookIpsResponse | None:
     if response.status_code == 200:
         response_200 = WebhookIpsResponse.from_dict(response.json())
-
-
 
         return response_200
 
     if response.status_code == 429:
         response_429 = ApiError.from_dict(response.json())
-
-
 
         return response_429
 
@@ -54,7 +39,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
         return None
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[ApiError | WebhookIpsResponse]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[ApiError | WebhookIpsResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -66,9 +53,8 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
-
 ) -> Response[ApiError | WebhookIpsResponse]:
-    """ GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+    """GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
 
      Pattern lifted from Linear (`6 static IPs` page) and GitHub
     (`GET /meta` with `hooks` field). Subscribers behind enterprise
@@ -76,9 +62,8 @@ def sync_detailed(
     they either disable signature-based trust or refuse our deliveries.
 
     Source of truth is the `PEGANA_WEBHOOK_EGRESS_IPS` env var
-    (comma-separated). Default falls back to the Hetzner production
-    box's static IP. When we add a second box, set the env to
-    `<prod-host>,<new-ip>` — no code change required.
+    (comma-separated). No hardcoded default: the deployment env supplies
+    the egress IP(s), so the public repo never carries infra addresses.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -86,12 +71,9 @@ def sync_detailed(
 
     Returns:
         Response[ApiError | WebhookIpsResponse]
-     """
+    """
 
-
-    kwargs = _get_kwargs(
-        
-    )
+    kwargs = _get_kwargs()
 
     response = client.get_httpx_client().request(
         **kwargs,
@@ -99,12 +81,12 @@ def sync_detailed(
 
     return _build_response(client=client, response=response)
 
+
 def sync(
     *,
     client: AuthenticatedClient | Client,
-
 ) -> ApiError | WebhookIpsResponse | None:
-    """ GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+    """GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
 
      Pattern lifted from Linear (`6 static IPs` page) and GitHub
     (`GET /meta` with `hooks` field). Subscribers behind enterprise
@@ -112,9 +94,8 @@ def sync(
     they either disable signature-based trust or refuse our deliveries.
 
     Source of truth is the `PEGANA_WEBHOOK_EGRESS_IPS` env var
-    (comma-separated). Default falls back to the Hetzner production
-    box's static IP. When we add a second box, set the env to
-    `<prod-host>,<new-ip>` — no code change required.
+    (comma-separated). No hardcoded default: the deployment env supplies
+    the egress IP(s), so the public repo never carries infra addresses.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -122,20 +103,18 @@ def sync(
 
     Returns:
         ApiError | WebhookIpsResponse
-     """
-
+    """
 
     return sync_detailed(
         client=client,
-
     ).parsed
+
 
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
-
 ) -> Response[ApiError | WebhookIpsResponse]:
-    """ GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+    """GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
 
      Pattern lifted from Linear (`6 static IPs` page) and GitHub
     (`GET /meta` with `hooks` field). Subscribers behind enterprise
@@ -143,9 +122,8 @@ async def asyncio_detailed(
     they either disable signature-based trust or refuse our deliveries.
 
     Source of truth is the `PEGANA_WEBHOOK_EGRESS_IPS` env var
-    (comma-separated). Default falls back to the Hetzner production
-    box's static IP. When we add a second box, set the env to
-    `<prod-host>,<new-ip>` — no code change required.
+    (comma-separated). No hardcoded default: the deployment env supplies
+    the egress IP(s), so the public repo never carries infra addresses.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -153,25 +131,20 @@ async def asyncio_detailed(
 
     Returns:
         Response[ApiError | WebhookIpsResponse]
-     """
+    """
 
+    kwargs = _get_kwargs()
 
-    kwargs = _get_kwargs(
-        
-    )
-
-    response = await client.get_async_httpx_client().request(
-        **kwargs
-    )
+    response = await client.get_async_httpx_client().request(**kwargs)
 
     return _build_response(client=client, response=response)
+
 
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
-
 ) -> ApiError | WebhookIpsResponse | None:
-    """ GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+    """GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
 
      Pattern lifted from Linear (`6 static IPs` page) and GitHub
     (`GET /meta` with `hooks` field). Subscribers behind enterprise
@@ -179,9 +152,8 @@ async def asyncio(
     they either disable signature-based trust or refuse our deliveries.
 
     Source of truth is the `PEGANA_WEBHOOK_EGRESS_IPS` env var
-    (comma-separated). Default falls back to the Hetzner production
-    box's static IP. When we add a second box, set the env to
-    `<prod-host>,<new-ip>` — no code change required.
+    (comma-separated). No hardcoded default: the deployment env supplies
+    the egress IP(s), so the public repo never carries infra addresses.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -189,10 +161,10 @@ async def asyncio(
 
     Returns:
         ApiError | WebhookIpsResponse
-     """
+    """
 
-
-    return (await asyncio_detailed(
-        client=client,
-
-    )).parsed
+    return (
+        await asyncio_detailed(
+            client=client,
+        )
+    ).parsed

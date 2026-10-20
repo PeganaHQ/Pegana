@@ -116,7 +116,7 @@ const GROUPS: ReadonlyArray<Group> = [
       {
         tag: "one path",
         head: "One verdict, re-derivable three ways",
-        body: "The live engine, the offline replay CLI and the backtest re-derive the same verdict. Byte-for-byte. Every severe alert ships a receipt anyone can reproduce and check against the chain.",
+        body: "The live engine, the offline replay CLI and the backtest re-derive the same verdict. Byte-for-byte, with the CLI release that matches the receipt's methodology version (0.4.0 onward). Every severe alert ships a receipt anyone can reproduce and check against the chain.",
       },
       {
         tag: "staleness",
@@ -307,9 +307,10 @@ function Hero() {
           Pegana watches{" "}
           <b className="font-medium text-[var(--v2-text)]">68 Solana</b>{" "}
           stablecoins, LSTs and yield-bearing tokens for the moment they drift
-          off their peg. Every verdict{" "}
+          off their peg. Every receipt{" "}
           <b className="font-medium text-[var(--v2-text)]">
-            re-derives byte-for-byte, by anyone
+            hash-checks in your browser, and receipts from methodology 0.4.0
+            onward re-derive byte-for-byte with the matching CLI release
           </b>{" "}
           . And severe transitions can be anchored on Solana mainnet, proven
           with a real receipt.
@@ -478,8 +479,9 @@ function Metrics() {
           The whole point of an oracle.
         </h2>
         <p className="mt-4 max-w-[64ch] text-[16px] leading-[1.65] text-[var(--v2-muted)]">
-          Every number above is checkable. The methodology is open, the receipts
-          re-derive to the same bytes, and severe transitions can be anchored on
+          Every number above is checkable. The methodology is open, every receipt
+          hash-checks in your browser, and receipts from methodology 0.4.0
+          onward re-derive to the same bytes with the matching CLI release, and severe transitions can be anchored on
           a chain nobody controls.
         </p>
       </div>

@@ -1,30 +1,21 @@
 from __future__ import annotations
 
+import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import Any, Self, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..types import UNSET, Unset
-
 from ..models.confidence import Confidence
 from ..models.peg_state import PegState
-from typing import cast
-import datetime
-
-
-
-
-
 
 T = TypeVar("T", bound="AuditAlert")
 
 
-
 @_attrs_define
 class AuditAlert:
-    """ The `alert` object inside a 200 receipt body (`GET /v1/audit/{alert_id}`).
+    """The `alert` object inside a 200 receipt body (`GET /v1/audit/{alert_id}`).
     Decimal money fields are JSON strings (preserves precision).
 
         Attributes:
@@ -52,7 +43,7 @@ class AuditAlert:
                 The state is CLASS-AWARE: an LST reading a −1.4% discount (normal unstaking
                 spread) is `PEGGED`, while a fiat stable at far less would be `DRIFT`. Trust
                 this value directly rather than imposing a naive discount cut.
-     """
+    """
 
     asset: str
     class_: str
@@ -65,10 +56,6 @@ class AuditAlert:
     market_usd: str
     to_state: PegState
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
-
-
-
-
 
     def to_dict(self) -> dict[str, Any]:
         asset = self.asset
@@ -91,28 +78,27 @@ class AuditAlert:
 
         to_state = self.to_state.value
 
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({
-            "asset": asset,
-            "class": class_,
-            "confidence": confidence,
-            "detected_at": detected_at,
-            "discount": discount,
-            "from_state": from_state,
-            "id": id,
-            "intrinsic_usd": intrinsic_usd,
-            "market_usd": market_usd,
-            "to_state": to_state,
-        })
+        field_dict.update(
+            {
+                "asset": asset,
+                "class": class_,
+                "confidence": confidence,
+                "detected_at": detected_at,
+                "discount": discount,
+                "from_state": from_state,
+                "id": id,
+                "intrinsic_usd": intrinsic_usd,
+                "market_usd": market_usd,
+                "to_state": to_state,
+            }
+        )
 
         return field_dict
 
-
-
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         asset = d.pop("asset")
 
@@ -120,20 +106,11 @@ class AuditAlert:
 
         confidence = Confidence(d.pop("confidence"))
 
-
-
-
         detected_at = datetime.datetime.fromisoformat(d.pop("detected_at"))
-
-
-
 
         discount = d.pop("discount")
 
         from_state = PegState(d.pop("from_state"))
-
-
-
 
         id = d.pop("id")
 
@@ -142,9 +119,6 @@ class AuditAlert:
         market_usd = d.pop("market_usd")
 
         to_state = PegState(d.pop("to_state"))
-
-
-
 
         audit_alert = cls(
             asset=asset,
@@ -158,7 +132,6 @@ class AuditAlert:
             market_usd=market_usd,
             to_state=to_state,
         )
-
 
         audit_alert.additional_properties = d
         return audit_alert

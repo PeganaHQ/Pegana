@@ -19,8 +19,8 @@ export interface PeganaApiOptions {
   /** API base URL. Defaults to the public hosted endpoint. */
   baseUrl?: string;
   /**
-   * Bearer token — a `telegram_jwt`, issued via `POST /v1/auth/telegram` — for
-   * the authenticated `/v1/me/*` surface. Omit for the public read endpoints.
+   * Optional bearer token sent as `Authorization: Bearer ...`. The public
+   * read-only API needs none; omit it.
    */
   token?: string;
   /** Custom fetch (e.g. undici); defaults to `globalThis.fetch`. */
@@ -41,8 +41,7 @@ const DEFAULT_BASE = "https://api.pegana.xyz";
  *   params: { path: { symbol: "USDC" } },
  * });                                                          // single → bare
  *
- * const me = createPeganaApi({ token });                       // authenticated
- * const subs = await me.GET("/v1/me/subs");
+ * const audit = await api.GET("/v1/audit");                    // receipts ledger
  * ```
  *
  * Conventions (ADR-0043): LIST endpoints return the envelope
@@ -70,7 +69,7 @@ export function createPeganaApi(opts: PeganaApiOptions = {}): Client<paths> {
 
 /**
  * Unwrap the ADR-0043 list envelope to its `data` array (empty array when the
- * envelope is null/undefined). List endpoints (`/v1/assets`, `/v1/alerts`,
+ * envelope is null/undefined). List endpoints (`/v1/assets`, `/v1/audit`,
  * `/v1/calibration`, `/v1/peg/feed`, `…/history`) return the envelope; single
  * resources are bare and need no unwrap.
  */

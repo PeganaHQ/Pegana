@@ -42,7 +42,8 @@ or collateral ratio, read directly from the protocol's own program state — aga
 
 Every Pegana verdict ships a **byte-exact, re-derivable receipt**. Anyone — you, your
 auditor, a counterparty in a dispute — can recompute the exact classification from the
-frozen inputs and confirm the hash matches, with an optional on-chain SPL-Memo anchor.
+frozen inputs and confirm the hash matches, with an optional on-chain SPL-Memo anchor. The CLI uses the
+release matching the receipt's methodology version (0.4.0 onward; older receipts verify by hash only).
 See [Honesty](/methodology/honesty) and the [audit endpoint](/guides/rest-api).
 
 For an **insurer or a lender in a dispute**, this is the difference between a screenshot

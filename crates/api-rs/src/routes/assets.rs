@@ -323,7 +323,8 @@ pub struct AssetCard {
     summary = "List all active assets with their latest peg snapshot",
     description = "Returns every active asset with its latest discount, state, and \
                    peg-snapshot. This is the dashboard screener endpoint — for the \
-                   stream of peg state-transition alerts, use `GET /v1/alerts` instead.",
+                   public receipt ledger of peg state-transition alerts, use `GET /v1/audit` \
+                   instead.",
     params(ListQuery),
     responses(
         (status = 200, description = "All active assets with their latest snapshot", body = crate::response::ApiList<AssetCard>),
