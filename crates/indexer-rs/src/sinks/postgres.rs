@@ -4,6 +4,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use std::collections::HashMap;
 
 pub async fn insert_intrinsic(
     pg: &PgPool,
@@ -60,6 +61,61 @@ pub async fn upsert_intrinsic_liveness(
     .bind(stale)
     .bind(reason)
     .bind(detail)
+    .execute(pg)
+    .await?;
+    Ok(())
+}
+
+/// OR-merge rule for the single-row-per-asset `intrinsic_liveness` table: a
+/// writer may touch the row only if it is absent, not currently stale, or already
+/// owned by the same `reason`. A stale row owned by ANOTHER detector is never
+/// overwritten (neither by a stale=false nor by a different stale=true).
+pub fn liveness_write_allowed(existing: Option<(bool, &str)>, new_reason: &str) -> bool {
+    match existing {
+        None => true,
+        Some((stale, reason)) => !stale || reason == new_reason,
+    }
+}
+
+/// [`upsert_intrinsic_liveness`] honoring [`liveness_write_allowed`]. Returns
+/// whether the row was written.
+pub async fn upsert_intrinsic_liveness_guarded(
+    pg: &PgPool,
+    asset: &str,
+    stale: bool,
+    reason: &str,
+    detail: serde_json::Value,
+) -> Result<bool> {
+    let existing: Option<(bool, String)> =
+        sqlx::query_as("SELECT stale, reason FROM intrinsic_liveness WHERE asset = $1")
+            .bind(asset)
+            .fetch_optional(pg)
+            .await?;
+    if !liveness_write_allowed(existing.as_ref().map(|(s, r)| (*s, r.as_str())), reason) {
+        return Ok(false);
+    }
+    upsert_intrinsic_liveness(pg, asset, stale, reason, detail).await?;
+    Ok(true)
+}
+
+/// Clear an intrinsic-liveness stale flag, but ONLY if the row still carries one
+/// of `reasons` — so a recovery in one detector never erases the stale signal
+/// another detector (directory_stale, epoch_lag, nav_accrual_stall) wrote.
+pub async fn clear_intrinsic_liveness_if_reasons(
+    pg: &PgPool,
+    asset: &str,
+    reasons: &[&str],
+) -> Result<()> {
+    let reasons: Vec<String> = reasons.iter().map(|r| r.to_string()).collect();
+    sqlx::query(
+        r#"
+        UPDATE intrinsic_liveness
+        SET stale = FALSE, updated_at = now()
+        WHERE asset = $1 AND reason = ANY($2) AND stale
+        "#,
+    )
+    .bind(asset)
+    .bind(&reasons)
     .execute(pg)
     .await?;
     Ok(())
@@ -219,6 +275,32 @@ pub async fn latest_intrinsic_usd(
     Ok(row)
 }
 
+/// Latest market `value_usd` per asset, for a batch of assets, within a fresh
+/// window. One query for the whole set — the Sanctum NAV drift guard needs a
+/// market reference for every LST on each poll, and a per-asset query would be
+/// 39 round-trips. Assets with no fresh market row are simply absent from the
+/// map (the caller then cannot run the guard and fails open).
+pub async fn latest_market_usd_batch(
+    pg: &PgPool,
+    assets: &[String],
+    within_secs: i64,
+) -> Result<HashMap<String, Decimal>> {
+    let rows: Vec<(String, Decimal)> = sqlx::query_as(
+        r#"
+        SELECT DISTINCT ON (asset) asset, value_usd
+        FROM market_snapshots
+        WHERE asset = ANY($1)
+          AND ts > now() - make_interval(secs => $2)
+        ORDER BY asset, ts DESC
+        "#,
+    )
+    .bind(assets)
+    .bind(within_secs as f64)
+    .fetch_all(pg)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_market(
     pg: &PgPool,
@@ -337,4 +419,21 @@ pub async fn insert_hylo_state(
     .execute(pg)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod liveness_tests {
+    use super::liveness_write_allowed as ok;
+
+    #[test]
+    fn or_merge_semantics() {
+        // absent row, or a healthy row of any reason: writable
+        assert!(ok(None, "a"));
+        assert!(ok(Some((false, "b")), "a"));
+        // stale row owned by someone else: protected from stale=true AND stale=false
+        assert!(!ok(Some((true, "directory_stale")), "sanctum_nav_drift"));
+        assert!(!ok(Some((true, "sanctum_nav_drift")), "directory_stale"));
+        // stale row owned by the same reason: owner may refresh/clear it
+        assert!(ok(Some((true, "directory_stale")), "directory_stale"));
+    }
 }

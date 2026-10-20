@@ -21,6 +21,7 @@ type SnapshotRow = (
     Option<DateTime<Utc>>,
     String,
     Option<DateTime<Utc>>, // band_since
+    Option<DateTime<Utc>>, // state_since
 );
 
 /// Inverse of `crate::peg_state_label` — parse a stored DB label back into
@@ -161,6 +162,31 @@ pub struct AssetRuntime {
     /// engine_state_snapshot; NOT a receipt input (ADR-0010). None = duration
     /// unknown (pre-first-transition / pre-migration row) → never `sustained`.
     pub band_since: Option<DateTime<Utc>>,
+    /// Timestamp of the first snapshot of the current PUBLISHED-state run
+    /// (`discount_snapshots.state`). Unlike `band_since` it follows the
+    /// published stream and is never reset by `force_unknown`. Persisted in
+    /// engine_state_snapshot (migration 0079) so GET /state `since` is a PK
+    /// read. NOT a receipt input (ADR-0010).
+    pub state_since: Option<DateTime<Utc>>,
+}
+
+/// Next value of `AssetRuntime::state_since` after publishing `new` at `ts`.
+/// Moves only on a real published-state change observed in-process
+/// (`prev_published` known and different); otherwise it holds. It never
+/// fabricates a start from "no prior state": after a restore failure or a
+/// deliberate TRUNCATE (migration 0035) both inputs are None and the value
+/// stays None until `seed_state_since_from_history` derives the exact run
+/// start from `discount_snapshots`. Pure for unit testing.
+pub fn next_state_since(
+    prev_published: Option<PegState>,
+    new: PegState,
+    current: Option<DateTime<Utc>>,
+    ts: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    match prev_published {
+        Some(p) if p != new => Some(ts),
+        _ => current,
+    }
 }
 
 /// Read-only freshness buckets for the H12b observability sweep.
@@ -776,6 +802,56 @@ impl EngineState {
         g.last_published_state
     }
 
+    /// Current `state_since` (None until hydrated, derived, or stamped).
+    pub async fn state_since(&self, sym: &str) -> Option<DateTime<Utc>> {
+        let rt = self.rt(sym).await;
+        let g = rt.read().await;
+        g.state_since
+    }
+
+    /// One-off exact derivation of `state_since` from `discount_snapshots` for
+    /// an asset whose value is None (new asset, TRUNCATEd cache, pre-backfill
+    /// row): the first snapshot after the most recent row of a DIFFERENT state
+    /// than the latest snapshot, else the asset's first snapshot. Call AFTER
+    /// the tick's snapshot is persisted so a brand-new asset resolves to this
+    /// tick. Returns without changing anything on error or no history (retried
+    /// next tick); never overwrites an existing value.
+    pub async fn seed_state_since_from_history(&self, pg: &sqlx::PgPool, sym: &str) {
+        let derived: Result<Option<DateTime<Utc>>, sqlx::Error> = sqlx::query_scalar(
+            "SELECT min(d.ts) FROM discount_snapshots d \
+             WHERE d.asset = $1 AND d.ts > COALESCE( \
+                 (SELECT max(x.ts) FROM discount_snapshots x \
+                  WHERE x.asset = $1 AND x.state IS DISTINCT FROM \
+                      (SELECT l.state FROM discount_snapshots l \
+                       WHERE l.asset = $1 ORDER BY l.ts DESC LIMIT 1)), \
+                 '-infinity'::timestamptz)",
+        )
+        .bind(sym)
+        .fetch_one(pg)
+        .await;
+        match derived {
+            Ok(Some(t)) => {
+                let rt = self.rt(sym).await;
+                let mut g = rt.write().await;
+                if g.state_since.is_none() {
+                    g.state_since = Some(t);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                warn!(asset = sym, error = %e, "state_since history seed failed (will retry)")
+            }
+        }
+    }
+
+    /// Stamp `state_since` for a state about to be published at `ts`. Call
+    /// BEFORE `set_last_published_state` (it reads the prior published state).
+    pub async fn stamp_state_since(&self, sym: &str, new: PegState, ts: DateTime<Utc>) {
+        let rt = self.rt(sym).await;
+        let mut g = rt.write().await;
+        g.state_since = next_state_since(g.last_published_state, new, g.state_since, ts);
+    }
+
     pub async fn set_last_published_state(&self, sym: &str, s: PegState) {
         let rt = self.rt(sym).await;
         let mut g = rt.write().await;
@@ -850,7 +926,7 @@ impl EngineState {
     /// restored (rows whose `asset` is still in the active config).
     pub async fn load_from_pg(&self, pg: &sqlx::PgPool) -> anyhow::Result<usize> {
         let rows: Vec<SnapshotRow> = sqlx::query_as(
-            "SELECT asset, ewma_discount, candidate_state, candidate_since, last_state, band_since \
+            "SELECT asset, ewma_discount, candidate_state, candidate_since, last_state, band_since, state_since \
              FROM engine_state_snapshot",
         )
         .fetch_all(pg)
@@ -858,7 +934,7 @@ impl EngineState {
         .context("load engine_state_snapshot")?;
 
         let mut restored = 0usize;
-        for (asset, ewma, candidate, candidate_since, last, band_since) in rows {
+        for (asset, ewma, candidate, candidate_since, last, band_since, state_since) in rows {
             // Skip if the asset is no longer in our active config (e.g.
             // removed between deploys). The DB row stays as forensic record.
             if !self.has_asset(&asset) {
@@ -870,6 +946,7 @@ impl EngineState {
             g.candidate_state = candidate.as_deref().and_then(parse_peg_state);
             g.candidate_since = candidate_since;
             g.band_since = band_since;
+            g.state_since = state_since;
             let last_st = parse_peg_state(&last).unwrap_or(PegState::Pegged);
             g.last_state = last_st;
             // Re-seed last_published_state from the snapshot's last_state.
@@ -949,14 +1026,15 @@ impl EngineState {
         let candidate_str = g.candidate_state.map(crate::peg_state_label);
         sqlx::query(
             "INSERT INTO engine_state_snapshot \
-                 (asset, ewma_discount, candidate_state, candidate_since, last_state, band_since, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, NOW()) \
+                 (asset, ewma_discount, candidate_state, candidate_since, last_state, band_since, state_since, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) \
              ON CONFLICT (asset) DO UPDATE SET \
                  ewma_discount   = EXCLUDED.ewma_discount, \
                  candidate_state = EXCLUDED.candidate_state, \
                  candidate_since = EXCLUDED.candidate_since, \
                  last_state      = EXCLUDED.last_state, \
                  band_since      = EXCLUDED.band_since, \
+                 state_since     = EXCLUDED.state_since, \
                  updated_at      = EXCLUDED.updated_at",
         )
         .bind(sym)
@@ -965,6 +1043,7 @@ impl EngineState {
         .bind(g.candidate_since)
         .bind(last_state_str)
         .bind(g.band_since)
+        .bind(g.state_since)
         .execute(pg)
         .await
         .with_context(|| format!("upsert engine_state_snapshot for {sym}"))?;
@@ -1025,6 +1104,26 @@ mod integration_tests {
         let raw = include_str!("../../../assets.toml");
         let canonical = toml::to_string(&toml::from_str::<toml::Value>(raw).unwrap()).unwrap();
         EngineState::new(&fixture_assets(), canonical, 30)
+    }
+
+    fn ts(m: i64) -> DateTime<Utc> {
+        use chrono::TimeZone;
+        Utc.timestamp_opt(1_800_000_000 + m * 60, 0).unwrap()
+    }
+
+    #[tokio::test]
+    async fn stamp_state_since_uses_prior_published_state() {
+        let e = fresh_engine();
+        // No prior state, no stored value: never fabricated.
+        e.stamp_state_since("USDC", PegState::Pegged, ts(0)).await;
+        assert_eq!(e.state_since("USDC").await, None);
+        e.set_last_published_state("USDC", PegState::Pegged).await;
+        e.stamp_state_since("USDC", PegState::Pegged, ts(1)).await;
+        assert_eq!(e.state_since("USDC").await, None);
+        e.set_last_published_state("USDC", PegState::Pegged).await;
+        e.stamp_state_since("USDC", PegState::Drift, ts(2)).await;
+        let rt = e.rt("USDC").await;
+        assert_eq!(rt.read().await.state_since, Some(ts(2)));
     }
 
     async fn test_engine_with_asset(sym: &str) -> EngineState {
@@ -2071,6 +2170,55 @@ mod latency_tests {
             e.market_observed_at("USDC").await,
             Some(t(25)),
             "SOL leg is newer → wins"
+        );
+    }
+}
+
+#[cfg(test)]
+mod state_since_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn t(m: i64) -> DateTime<Utc> {
+        Utc.timestamp_opt(1_800_000_000 + m * 60, 0).unwrap()
+    }
+
+    #[test]
+    fn state_since_holds_within_a_state_and_moves_on_transition() {
+        // Hydrated value holds across ticks in the same state.
+        let mut cur = Some(t(0));
+        for m in 1..5 {
+            cur = next_state_since(Some(PegState::Pegged), PegState::Pegged, cur, t(m));
+            assert_eq!(cur, Some(t(0)));
+        }
+        // Transition moves it; re-entry restarts it.
+        cur = next_state_since(Some(PegState::Pegged), PegState::Drift, cur, t(5));
+        assert_eq!(cur, Some(t(5)));
+        cur = next_state_since(Some(PegState::Drift), PegState::Drift, cur, t(6));
+        assert_eq!(cur, Some(t(5)));
+        cur = next_state_since(Some(PegState::Drift), PegState::Pegged, cur, t(7));
+        assert_eq!(cur, Some(t(7)));
+    }
+
+    #[test]
+    fn state_since_is_never_fabricated_without_a_prior_state() {
+        // Restart after TRUNCATE / restore failure: no prior published state and
+        // no stored value -> stay None (API falls back / history seed derives it).
+        assert_eq!(next_state_since(None, PegState::Pegged, None, t(9)), None);
+        // Same state with a missing value also stays None (seeded from history).
+        assert_eq!(
+            next_state_since(Some(PegState::Pegged), PegState::Pegged, None, t(9)),
+            None
+        );
+        // A stored value survives a no-prior-state tick untouched.
+        assert_eq!(
+            next_state_since(None, PegState::Pegged, Some(t(1)), t(9)),
+            Some(t(1))
+        );
+        // A real observed transition is stamped even if the value was missing.
+        assert_eq!(
+            next_state_since(Some(PegState::Pegged), PegState::Drift, None, t(9)),
+            Some(t(9))
         );
     }
 }

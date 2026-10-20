@@ -280,19 +280,20 @@ async fn poll_once(
         }
     }
 
-    // 4. SOL/USD from Pyth cache — must be present, non-zero, AND FRESH.
-    // Skip the whole tick when SOL/USD is missing, zero, or STALE. Every hylo
-    // intrinsic (hyUSD CR, xSOL NAV, sHYUSD rate) needs it for USD conversion, so
-    // with sol_usd=0 the hyUSD branch below computes cr=0 → intrinsic $0 and writes
-    // a GARBAGE $0 row for a live, publicly-alerting asset (the engine's own H8
-    // guard skips the verdict, but the poisoned row still lands in
-    // intrinsic_snapshots). A STALE (frozen-publisher) SOL/USD is just as poisonous
-    // — a fresh-looking intrinsic computed off a stale numéraire — and the engine
-    // can't see it (indexer re-stamps ts=now()); `fresh_numeraire` closes that.
-    // Matches spl_stake_pool / sanctum, and this file's own xSOL is_zero() guard.
-    let Some(sol_usd) = crate::state::fresh_numeraire(&state.pyth, "SOL/USD").await else {
+    // 4. SOL/USD — fresh Pyth, else the Jupiter-derived last resort. Skip the
+    // whole tick when both are unavailable. Every hylo intrinsic (hyUSD CR,
+    // xSOL NAV, sHYUSD rate) needs it for USD conversion, so with sol_usd=0 the
+    // hyUSD branch below computes cr=0 → intrinsic $0 and writes a GARBAGE $0
+    // row for a live, publicly-alerting asset (the engine's own H8 guard skips
+    // the verdict, but the poisoned row still lands in intrinsic_snapshots). A
+    // STALE (frozen-publisher) SOL/USD is just as poisonous — a fresh-looking
+    // intrinsic computed off a stale numéraire — and the engine can't see it
+    // (indexer re-stamps ts=now()); `numeraire_usd` closes that. Matches
+    // spl_stake_pool / sanctum, and this file's own xSOL is_zero() guard.
+    let Some(sol_usd) = crate::sources::jupiter::numeraire_usd(state, "SOL/USD").await else {
         info!(
-            "SOL/USD missing/zero/stale from Pyth cache — skipping hylo tick (no USD conversion)"
+            "SOL/USD missing/zero/stale from Pyth and Jupiter unavailable — skipping hylo tick \
+             (no USD conversion)"
         );
         return Ok(());
     };

@@ -7,6 +7,7 @@
 use crate::sinks;
 use crate::state::AppState;
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use futures::stream::{FuturesUnordered, StreamExt};
 use pegana_common::{AssetConfig, MarketStrategy};
 use rust_decimal::Decimal;
@@ -143,6 +144,245 @@ fn numeraire_meta(numeraire: &str) -> Option<(&'static str, u32)> {
 /// to (defense-in-depth, not an economic filter).
 fn is_plausible_market_usd(value_usd: Decimal) -> bool {
     value_usd >= Decimal::new(1, 3) && value_usd <= Decimal::from(1_000_000u32)
+}
+
+// ---------------------------------------------------------------------------
+// Last-resort numéraire (Jupiter-derived)
+// ---------------------------------------------------------------------------
+//
+// Incident 2026-10-19: a dead Hermes key (403) left the on-chain Pyth fallback
+// frozen (relayers stopped), so every `SOL/USD` / `USDC/USD` numéraire print
+// aged past `state::PYTH_NUMERAIRE_STALE_SECS`. The anti-poison guard then
+// skipped USD conversion for every SOL-numéraire source and the board collapsed
+// from 57 live assets to 1. This tier keeps USD conversion alive without
+// resurrecting the poisoned print:
+//
+//   1. fresh Pyth (Hermes, else on-chain — both land in the same cache),
+//   2. Jupiter-derived (`SOL/USD` from a SOL→USDC quote, `USDC/USD` = 1.0),
+//   3. `None` → the caller skips (UNKNOWN beats a poisoned USD).
+
+/// Maximum age of a Jupiter-derived numéraire quote. Deliberately the SAME
+/// bound as the Pyth guard (`state::PYTH_NUMERAIRE_STALE_SECS`): the
+/// substitution path must meet the anti-poison standard of the source it
+/// replaces, or a frozen Jupiter quote would poison USD intrinsics exactly
+/// like a frozen Pyth publisher.
+pub const JUPITER_NUMERAIRE_MAX_AGE_SECS: i64 = crate::state::PYTH_NUMERAIRE_STALE_SECS;
+
+/// How often the derived SOL/USD quote is refreshed while Pyth's numéraire is
+/// stale. Comfortably inside the max-age bound; one quote per window keeps the
+/// keyless Jupiter rate budget intact during a Pyth outage.
+const JUPITER_NUMERAIRE_REFRESH_SECS: i64 = 30;
+
+/// Last-good Jupiter-derived SOL/USD and the instant it was quoted.
+#[derive(Debug, Clone)]
+struct JupiterNumeraire {
+    sol_usd: Decimal,
+    fetched_at: DateTime<Utc>,
+}
+
+/// Derived-numéraire cache. `last_attempt` is tracked separately from
+/// `quote.fetched_at` so a FAILED quote is also throttled: gating on the last
+/// success alone would let every caller retry during a Jupiter outage, turning
+/// the one-quote-per-window coalescing into one-quote-per-caller exactly when
+/// Jupiter is already rate-limiting.
+#[derive(Debug, Default)]
+struct NumeraireCache {
+    last_attempt: Option<DateTime<Utc>>,
+    quote: Option<JupiterNumeraire>,
+}
+
+static JUPITER_NUMERAIRE: LazyLock<tokio::sync::Mutex<NumeraireCache>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(NumeraireCache::default()));
+
+/// Which tier supplied a numéraire price.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumeraireSource {
+    /// Fresh Pyth print (the cache already prefers whichever of Hermes /
+    /// on-chain is freshest).
+    Pyth,
+    /// Last-resort Jupiter-derived price.
+    JupiterDerived,
+}
+
+/// Resolve a numéraire/USD price through the incident fallback ladder.
+///
+/// This is the drop-in replacement for `state::fresh_numeraire` at every
+/// SOL/USD consumer: it returns the same `Option<Decimal>` and still returns
+/// `None` when BOTH tiers are stale/unavailable, so the callers' skip paths
+/// (and the anti-poison guarantee) are unchanged.
+pub async fn numeraire_usd(state: &AppState, feed: &str) -> Option<Decimal> {
+    let pyth = crate::state::fresh_numeraire(&state.pyth, feed).await;
+    // Only touch the network when the Pyth tier failed.
+    let derived = if pyth.is_some() {
+        None
+    } else {
+        jupiter_derived_numeraire(state, feed).await
+    };
+    match select_numeraire(pyth, derived) {
+        Some((price, NumeraireSource::Pyth)) => Some(price),
+        Some((price, NumeraireSource::JupiterDerived)) => {
+            log_numeraire_substitution(feed, price);
+            Some(price)
+        }
+        None => None,
+    }
+}
+
+/// Pure tier decision — pyth wins, then the derived value, else skip.
+fn select_numeraire(
+    pyth: Option<Decimal>,
+    jupiter: Option<Decimal>,
+) -> Option<(Decimal, NumeraireSource)> {
+    match (pyth, jupiter) {
+        (Some(p), _) => Some((p, NumeraireSource::Pyth)),
+        (None, Some(j)) => Some((j, NumeraireSource::JupiterDerived)),
+        (None, None) => None,
+    }
+}
+
+/// Make the substitution visible: an operator must be able to tell that USD
+/// values are being derived from Jupiter rather than Pyth.
+fn log_numeraire_substitution(feed: &str, price: Decimal) {
+    warn!(
+        feed,
+        price = %price,
+        "Pyth numéraire stale — substituting Jupiter-derived price so USD \
+         conversion continues (last resort, same anti-poison age bound)"
+    );
+    metrics::counter!(
+        "pegana_numeraire_jupiter_substitution_total",
+        "feed" => feed.to_string()
+    )
+    .increment(1);
+}
+
+async fn jupiter_derived_numeraire(state: &AppState, feed: &str) -> Option<Decimal> {
+    match feed {
+        // USDC is the unit of account for the USD leg: quoting USDC/USD would
+        // be circular. $1 by construction.
+        "USDC/USD" => Some(Decimal::ONE),
+        "SOL/USD" => sol_usd_from_jupiter(state).await,
+        // No Jupiter construction exists for any other numéraire — skip.
+        _ => None,
+    }
+}
+
+async fn sol_usd_from_jupiter(state: &AppState) -> Option<Decimal> {
+    // Coalesce concurrent callers (every SOL-numéraire asset poll, plus
+    // sanctum/hylo/spl): one quote attempt per refresh window, not one per
+    // caller — including when the attempt fails.
+    let mut cache = JUPITER_NUMERAIRE.lock().await;
+    let now = Utc::now();
+
+    match numeraire_decision(cache.last_attempt, cache.quote.as_ref(), now) {
+        NumeraireDecision::Cached(price) => Some(price),
+        NumeraireDecision::Unavailable => {
+            debug!(
+                "Jupiter-derived SOL/USD unavailable and the retry window has not \
+                 elapsed — skipping USD conversion"
+            );
+            None
+        }
+        NumeraireDecision::Fetch => {
+            cache.last_attempt = Some(now);
+            match quote_sol_usd(state).await {
+                Some(sol_usd) => {
+                    cache.quote = Some(JupiterNumeraire {
+                        sol_usd,
+                        fetched_at: now,
+                    });
+                    Some(sol_usd)
+                }
+                None => {
+                    // A failed refresh may still serve the last-good quote
+                    // while it is inside the anti-poison bound; past it, skip.
+                    let usable = jupiter_cache_price(cache.quote.as_ref(), Utc::now());
+                    if usable.is_none() {
+                        warn!(
+                            "Jupiter-derived SOL/USD unavailable and no quote inside the \
+                             age bound — skipping USD conversion"
+                        );
+                    }
+                    usable
+                }
+            }
+        }
+    }
+}
+
+/// Quote 1 SOL → USDC and read it as USD/SOL. USDC/USD is $1 by construction.
+async fn quote_sol_usd(state: &AppState) -> Option<Decimal> {
+    const ONE_SOL_LAMPORTS: u128 = 1_000_000_000;
+    const USDC_DECIMALS: u32 = 6;
+
+    let quote = match quote_exact_in(state, "SOL/USD", SOL_MINT, USDC_MINT, ONE_SOL_LAMPORTS).await
+    {
+        Ok(q) => q,
+        Err(e) => {
+            warn!(error = %e, "Jupiter SOL→USDC numéraire quote failed");
+            metrics::counter!("pegana_jupiter_numeraire_quote_errors_total").increment(1);
+            return None;
+        }
+    };
+    let Ok(out_amt) = Decimal::from_str(&quote.out_amount) else {
+        warn!(out_amount = %quote.out_amount, "Jupiter SOL→USDC numéraire quote unparseable");
+        metrics::counter!("pegana_jupiter_numeraire_quote_errors_total").increment(1);
+        return None;
+    };
+    let sol_usd = out_amt / Decimal::from(10u64.pow(USDC_DECIMALS));
+    if !is_plausible_market_usd(sol_usd) {
+        warn!(
+            %sol_usd,
+            out_amount = %quote.out_amount,
+            "Jupiter SOL→USDC numéraire implausible — rejecting"
+        );
+        metrics::counter!("pegana_jupiter_numeraire_quote_errors_total").increment(1);
+        return None;
+    }
+    Some(sol_usd)
+}
+
+/// What a caller should do with the derived-numéraire cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NumeraireDecision {
+    /// Serve the cached quote.
+    Cached(Decimal),
+    /// The refresh window elapsed — attempt a quote.
+    Fetch,
+    /// Inside the window with no usable quote (the last attempt failed).
+    Unavailable,
+}
+
+/// Decide whether to serve, fetch, or skip — gated on the last ATTEMPT (success
+/// or failure) so an outage cannot amplify requests.
+fn numeraire_decision(
+    last_attempt: Option<DateTime<Utc>>,
+    quote: Option<&JupiterNumeraire>,
+    now: DateTime<Utc>,
+) -> NumeraireDecision {
+    if refresh_due(last_attempt, now) {
+        return NumeraireDecision::Fetch;
+    }
+    match jupiter_cache_price(quote, now) {
+        Some(price) => NumeraireDecision::Cached(price),
+        None => NumeraireDecision::Unavailable,
+    }
+}
+
+/// Whether a quote attempt is due, measured from the last attempt (not the
+/// last success).
+fn refresh_due(last_attempt: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
+    match last_attempt {
+        None => true,
+        Some(at) => (now - at).num_seconds() >= JUPITER_NUMERAIRE_REFRESH_SECS,
+    }
+}
+
+/// The cached derived quote, but only while it is inside the anti-poison bound.
+fn jupiter_cache_price(entry: Option<&JupiterNumeraire>, now: DateTime<Utc>) -> Option<Decimal> {
+    entry
+        .filter(|e| (now - e.fetched_at).num_seconds() <= JUPITER_NUMERAIRE_MAX_AGE_SECS)
+        .map(|e| e.sol_usd)
 }
 
 fn probe_units(price_usd: f64, decimals: u32, one_unit: u128) -> u128 {
@@ -447,13 +687,13 @@ async fn poll_one(state: &AppState, asset: &AssetConfig) -> Result<()> {
     let numeraire_unit = Decimal::from(10u64.pow(numeraire_decimals));
     let rate_in_numeraire = out_amt / numeraire_unit; // numeraire per 1 asset
 
-    // numeraire/USD from Pyth cache — present, non-zero, AND fresh. A stalled
-    // publisher's frozen numéraire would otherwise poison a fresh-looking market
-    // value (see state::fresh_numeraire).
-    let numeraire_usd = match crate::state::fresh_numeraire(&state.pyth, &numeraire_feed).await {
+    // numeraire/USD: fresh Pyth, else the Jupiter-derived last resort. Both
+    // stale/unavailable → skip, so a frozen numéraire never poisons a
+    // fresh-looking market value (see `numeraire_usd`).
+    let numeraire_usd = match self::numeraire_usd(state, &numeraire_feed).await {
         Some(v) => v,
         None => {
-            debug!(asset = %asset.symbol, %numeraire_feed, "no fresh pyth numeraire — skip USD calc");
+            debug!(asset = %asset.symbol, %numeraire_feed, "no fresh or derived numeraire — skip USD calc");
             return Ok(());
         }
     };
@@ -537,9 +777,21 @@ async fn poll_one(state: &AppState, asset: &AssetConfig) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_plausible_market_usd, probe_units, should_probe, DEPTH_PROBE_INTERVAL};
+    use super::{
+        is_plausible_market_usd, jupiter_cache_price, log_numeraire_substitution,
+        numeraire_decision, probe_units, refresh_due, select_numeraire, should_probe,
+        JupiterNumeraire, NumeraireDecision, NumeraireSource, DEPTH_PROBE_INTERVAL,
+        JUPITER_NUMERAIRE_MAX_AGE_SECS, JUPITER_NUMERAIRE_REFRESH_SECS,
+    };
+    use chrono::{Duration as ChronoDuration, Utc};
+    use metrics::{
+        Counter, Gauge, Histogram, Key, KeyName, Metadata, Recorder, SharedString, Unit,
+    };
     use rust_decimal::Decimal;
+    use std::collections::HashMap;
     use std::str::FromStr;
+    use std::sync::atomic::Ordering;
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
     fn d(s: &str) -> Decimal {
@@ -627,5 +879,219 @@ mod tests {
             .checked_sub(Duration::from_secs(1800))
             .expect("time subtraction");
         assert!(should_probe(Some(last), now, DEPTH_PROBE_INTERVAL));
+    }
+
+    // ── last-resort numéraire (incident 2026-10-19) ─────────────────────────
+
+    /// Tier ladder: fresh Pyth (Hermes or on-chain — both share the cache)
+    /// beats the Jupiter-derived last resort, which beats skipping.
+    #[test]
+    fn numeraire_tiers_are_pyth_then_jupiter_then_skip() {
+        let pyth = d("151.25");
+        let derived = d("149.90");
+
+        assert_eq!(
+            select_numeraire(Some(pyth), Some(derived)),
+            Some((pyth, NumeraireSource::Pyth)),
+            "a fresh Pyth print must always win over the derived price"
+        );
+        assert_eq!(
+            select_numeraire(Some(pyth), None),
+            Some((pyth, NumeraireSource::Pyth))
+        );
+        assert_eq!(
+            select_numeraire(None, Some(derived)),
+            Some((derived, NumeraireSource::JupiterDerived)),
+            "a stale Pyth numéraire must fall through to the Jupiter-derived price"
+        );
+        assert_eq!(
+            select_numeraire(None, None),
+            None,
+            "both tiers unavailable → the caller must skip"
+        );
+    }
+
+    /// Substitution must be observable: a WARN and a per-feed counter, so an
+    /// operator can tell the board is running on Jupiter rather than Pyth.
+    #[test]
+    fn substitution_emits_a_warn_and_a_metric() {
+        let rec = CounterRecorder::default();
+        let buffer = SharedBuffer::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::WARN)
+            .with_ansi(false)
+            .with_writer({
+                let buffer = buffer.clone();
+                move || buffer.clone()
+            })
+            .finish();
+
+        tracing::subscriber::with_default(subscriber, || {
+            metrics::with_local_recorder(&rec, || {
+                log_numeraire_substitution("SOL/USD", d("149.9"));
+            });
+        });
+
+        let logs = String::from_utf8(buffer.0.lock().unwrap().clone()).unwrap();
+        assert!(
+            logs.contains("substituting Jupiter-derived"),
+            "substitution WARN not captured: {logs}"
+        );
+
+        let counters = rec.counters.lock().unwrap();
+        let count = counters
+            .get("pegana_numeraire_jupiter_substitution_total")
+            .expect("substitution counter must be registered")
+            .load(Ordering::Relaxed);
+        assert_eq!(count, 1, "substitution counter must increment once");
+    }
+
+    /// Both tiers stale → still skip. The derived quote is held to the SAME
+    /// anti-poison age bound as Pyth, so an old Jupiter quote cannot silently
+    /// replace a stale Pyth print.
+    #[test]
+    fn both_tiers_stale_still_skips() {
+        let now = Utc::now();
+
+        // Pyth stale (fresh_numeraire → None) and no derived price at all.
+        assert_eq!(select_numeraire(None, None), None);
+
+        // A derived quote past the age bound is not a usable last resort.
+        let expired = JupiterNumeraire {
+            sol_usd: d("150"),
+            fetched_at: now - ChronoDuration::seconds(JUPITER_NUMERAIRE_MAX_AGE_SECS + 1),
+        };
+        assert_eq!(
+            jupiter_cache_price(Some(&expired), now),
+            None,
+            "an expired Jupiter quote must not be substituted"
+        );
+        assert_eq!(jupiter_cache_price(None, now), None);
+    }
+
+    #[test]
+    fn derived_cache_refreshes_inside_the_anti_poison_bound() {
+        let now = Utc::now();
+
+        let fresh = JupiterNumeraire {
+            sol_usd: d("150"),
+            fetched_at: now - ChronoDuration::seconds(JUPITER_NUMERAIRE_REFRESH_SECS - 1),
+        };
+        let attempt = Some(fresh.fetched_at);
+        assert!(!refresh_due(attempt, now));
+        assert_eq!(
+            numeraire_decision(attempt, Some(&fresh), now),
+            NumeraireDecision::Cached(d("150"))
+        );
+
+        let due = JupiterNumeraire {
+            sol_usd: d("150"),
+            fetched_at: now - ChronoDuration::seconds(JUPITER_NUMERAIRE_REFRESH_SECS),
+        };
+        assert!(
+            refresh_due(Some(due.fetched_at), now),
+            "refresh is due at the interval"
+        );
+
+        // Exactly at the max-age bound is still usable (inclusive), one second
+        // past it is not.
+        let at_bound = JupiterNumeraire {
+            sol_usd: d("150"),
+            fetched_at: now - ChronoDuration::seconds(JUPITER_NUMERAIRE_MAX_AGE_SECS),
+        };
+        assert_eq!(jupiter_cache_price(Some(&at_bound), now), Some(d("150")));
+    }
+
+    /// A FAILED attempt must also throttle: the gate is the last attempt, not
+    /// the last success, or every caller would retry during a Jupiter outage
+    /// and blow the keyless rate budget exactly when it is already limiting.
+    #[test]
+    fn failed_refresh_is_throttled_to_one_attempt_per_window() {
+        let now = Utc::now();
+        let last_attempt = Some(now - ChronoDuration::seconds(5));
+
+        // Attempt failed 5s ago and no quote is cached → no retry, no price.
+        assert_eq!(
+            numeraire_decision(last_attempt, None, now),
+            NumeraireDecision::Unavailable
+        );
+
+        // Attempt failed 5s ago but the last-good quote is still inside the
+        // anti-poison bound → serve it rather than hammering Jupiter.
+        let last_good = JupiterNumeraire {
+            sol_usd: d("149.5"),
+            fetched_at: now - ChronoDuration::seconds(90),
+        };
+        assert_eq!(
+            numeraire_decision(last_attempt, Some(&last_good), now),
+            NumeraireDecision::Cached(d("149.5"))
+        );
+
+        // The window elapsed → exactly one caller may attempt a quote; the
+        // others are serialized behind the mutex and see the new last_attempt.
+        let elapsed = Some(now - ChronoDuration::seconds(JUPITER_NUMERAIRE_REFRESH_SECS));
+        assert_eq!(
+            numeraire_decision(elapsed, Some(&last_good), now),
+            NumeraireDecision::Fetch
+        );
+
+        // Failed attempt older than the anti-poison bound, no usable quote →
+        // skip entirely (the caller's both-stale path).
+        let stale_attempt = Some(now - ChronoDuration::seconds(JUPITER_NUMERAIRE_MAX_AGE_SECS + 1));
+        let stale_quote = JupiterNumeraire {
+            sol_usd: d("149.5"),
+            fetched_at: now - ChronoDuration::seconds(JUPITER_NUMERAIRE_MAX_AGE_SECS + 1),
+        };
+        assert_eq!(
+            numeraire_decision(stale_attempt, Some(&stale_quote), now),
+            NumeraireDecision::Fetch,
+            "an expired quote must trigger a fetch, never be served"
+        );
+    }
+
+    /// Minimal recorder that counts `counter!` increments per metric name.
+    #[derive(Default)]
+    struct CounterRecorder {
+        counters: Mutex<HashMap<String, Arc<metrics::atomics::AtomicU64>>>,
+    }
+
+    impl Recorder for CounterRecorder {
+        fn describe_counter(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+        fn describe_gauge(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+        fn describe_histogram(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+
+        fn register_counter(&self, key: &Key, _: &Metadata<'_>) -> Counter {
+            let atomic = self
+                .counters
+                .lock()
+                .unwrap()
+                .entry(key.name().to_string())
+                .or_default()
+                .clone();
+            Counter::from_arc(atomic)
+        }
+
+        fn register_gauge(&self, _: &Key, _: &Metadata<'_>) -> Gauge {
+            Gauge::noop()
+        }
+
+        fn register_histogram(&self, _: &Key, _: &Metadata<'_>) -> Histogram {
+            Histogram::noop()
+        }
+    }
+
+    /// In-memory writer so the substitution WARN can be asserted.
+    #[derive(Clone, Default)]
+    struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for SharedBuffer {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 }

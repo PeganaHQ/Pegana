@@ -37,6 +37,8 @@ enum Shape {
     PegFeed,
     /// A bare JSON object (single-resource routes are unwrapped by ADR-0043).
     JsonObject,
+    /// A bare JSON array (`/v1/audit` returns the receipts list unwrapped).
+    JsonArray,
 }
 
 struct Probe {
@@ -94,10 +96,10 @@ fn probes() -> Vec<Probe> {
             tolerate_404: false,
         },
         Probe {
-            name: "alerts",
-            path: "/v1/alerts?limit=1",
+            name: "audit",
+            path: "/v1/audit",
             budget: Duration::from_millis(4_000),
-            shape: Shape::ApiList,
+            shape: Shape::JsonArray,
             tolerate_404: false,
         },
         Probe {
@@ -176,6 +178,13 @@ fn assert_shape(shape: Shape, body: &Value) -> Result<()> {
                 Ok(())
             } else {
                 bail!("expected a JSON object, got {}", kind_of(body))
+            }
+        }
+        Shape::JsonArray => {
+            if body.is_array() {
+                Ok(())
+            } else {
+                bail!("expected a JSON array, got {}", kind_of(body))
             }
         }
         Shape::ApiList => {

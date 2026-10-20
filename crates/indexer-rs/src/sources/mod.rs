@@ -6,6 +6,7 @@ pub mod perena;
 pub mod piggybank_pb;
 pub mod pyth;
 pub mod sanctum;
+pub mod sanctum_nav;
 pub mod solayer_susd;
 pub mod spl_stake_pool;
 pub mod token_supply;

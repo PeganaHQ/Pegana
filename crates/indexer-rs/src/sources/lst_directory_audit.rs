@@ -340,7 +340,9 @@ async fn poll_once(state: &AppState, covered: &[CoveredLst], tolerance_bps: u32)
         // RAW flag (that's the advisory truth); only the GATE signal is
         // corroborated. Observe-only until INTRINSIC_LIVENESS_GATE is enabled.
         let gate_stale = directory_gate_stale(s.flags.stale, s.rate_advancing);
-        if let Err(e) = crate::sinks::postgres::upsert_intrinsic_liveness(
+        // Guarded: never wipe/replace a stale row another detector owns (e.g. the
+        // Sanctum NAV drift/unverified flag) — the table has one row per asset.
+        if let Err(e) = crate::sinks::postgres::upsert_intrinsic_liveness_guarded(
             &state.pg,
             &s.asset_symbol,
             gate_stale,
