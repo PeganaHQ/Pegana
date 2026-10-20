@@ -1,6 +1,6 @@
 ---
 title: "API Reference"
-description: "Pegana's live OpenAPI reference covers the annotated HTTP surface, including webhook operations, health checks, and metadata endpoints."
+description: "Pegana's live OpenAPI reference covers the annotated HTTP surface, including health checks, audit receipts, and metadata endpoints."
 ---
 
 The endpoints listed in this tab are generated from the live OpenAPI spec at
@@ -9,7 +9,7 @@ Use the **try-it-now** panel on each endpoint to send a real request.
 
 <Note>
   The OpenAPI spec is assembled from utoipa annotations on the axum handlers and
-  covers the full `/v1` surface (39 paths, enforced in CI). It's the source of
+  covers the full `/v1` surface (24 paths, enforced in CI). It's the source of
   truth the first-party TypeScript and Python SDKs are generated from.
 </Note>
 
@@ -21,16 +21,15 @@ https://api.pegana.xyz
 
 ## Authentication
 
-Most endpoints are **public** — no `Authorization` header required. The user-scoped
-routes (anything under `/v1/me/*`, plus `/v1/auth/logout`) require a JWT obtained via
-Telegram Login. See [authentication](/authentication).
+Every endpoint is **public** — no `Authorization` header, no API key. See
+[authentication](/authentication).
 
 ## Rate limit
 
-Soft sliding window: **300 req/min per IP** on REST. WebSocket allows **5 concurrent
+Per-IP sliding window: currently **60 req/min** on REST (see the `RateLimit-Limit` header). WebSocket allows **5 concurrent
 connections per IP**. Liveness / readiness probes are exempt.
 
-Hit the limit? Email `rafael@pegana.xyz`.
+Need more? Email `rafael@pegana.xyz`.
 
 ## Cross-origin
 

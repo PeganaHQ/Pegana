@@ -52,7 +52,7 @@ deliberate constraint — we do not "blend" prices.
 | `PEGGED` | Spread inside the calm band | No |
 | `DRIFT` | Spread crossed the per-asset drift threshold | Yes |
 | `DEPEG` | Spread crossed depeg (2.00 – 5.00%) | Yes, urgent framing |
-| `CRITICAL` | Spread > 5.00% (up to 2× critical) | Yes, Telegram urgent |
+| `CRITICAL` | Spread > 5.00% (up to 2× critical) | Yes, urgent |
 | `BLACK_SWAN` | Spread beyond `2× critical`, or hyUSD CR < 100% — terminal-grade break | Yes, terminal-grade |
 
 `BLACK_SWAN` is reachable from **both** the spread path (a discount beyond `2× critical`
@@ -71,12 +71,12 @@ decoder-drift input it instead **holds the last published state** rather than fl
 - **Pyth** pushes via SSE — sub-second arrivals
 - **Engine** recomputes on every source event, publishes to Redis + Postgres
 - **API** snapshots are `<1s` old; the WebSocket pushes within ~200ms of the engine
-- **Alert delivery** (Telegram / Webhook) fires within 1–3s of the state transition
+- **Transition feed** (WebSocket, `/v1/audit`) updates within seconds of the state transition
 
 ## How to verify
 
 Every parameter — threshold, dwell time, EWMA α, source endpoint — is committed in
-[`assets.toml`](https://github.com/PeganaHQ/ReplayCLI/blob/main/assets.toml) and
+[`assets.toml`](https://github.com/PeganaHQ/Pegana/blob/main/assets.toml) and
 `crates/engine-rs/src/main.rs`.
 The methodology is reproducible from raw inputs.
 

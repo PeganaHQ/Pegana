@@ -8,7 +8,7 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 <Accordion title="What chains does Pegana support?">
   Solana mainnet only, today. Other chains are not on the roadmap until we close the
   Solana coverage to >90% of the addressable peg-bearing supply. See
-  [project competitive landscape](https://github.com/PeganaHQ/ReplayCLI) for context.
+  the [source repository](https://github.com/PeganaHQ/Pegana) for context.
 </Accordion>
 
 <Accordion title="How is Pegana different from Pyth or Switchboard?">
@@ -40,7 +40,7 @@ description: "Common questions about scope, sources, pricing, reliability, and h
   [stableguard.org](https://stableguard.org) covers fiat stables across multiple
   chains. Their coverage of Solana is a sub-set of ours; we cover 8 fiat stables
   (USDC, USDT, PYUSD, USDG, USD1, USDu, CASH, AUSD) plus EURC (EUR) on Solana.
-  Pegana also covers 44 LSTs, 10 yield-bearing assets, CDPs (`hyUSD`), and
+  Pegana also covers 43 LSTs, 10 yield-bearing assets, CDPs (`hyUSD`), and
   delta-neutral synthetics (`USDe`, `USX`), which stableguard does not.
 
   Both products are valid; choose by audience. If you operate cross-chain, use
@@ -51,8 +51,7 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 <Accordion title="Is Pegana production-ready?">
   Pegana Trust Layer went **live and public on 2026-06-11**, after calibration
   v1 passed (verdict computed 2026-06-10). The read paths (REST, WebSocket, MCP) and
-  the public alert channels (Telegram bot, webhooks) are all live, in production on
-  Hetzner CPX32. The initial post-launch stability lock has since closed and the
+  the state-transition feed (`/v1/audit`, `subscribe_peg_events`) are all live in production. The initial post-launch stability lock has since closed and the
   methodology has continued to harden (Pyth confidence-gate and NAV-sanity fixes are
   live; an intrinsic-liveness gate is shipped but opt-in, off by default). **Versioning:** the API is additive-only — new fields may appear
   on responses/payloads but existing fields never change type or disappear without a
@@ -62,27 +61,22 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 </Accordion>
 
 <Accordion title="What's the rate limit?">
-  Soft sliding window on the REST API — **~300 req/min per IP in production (repo
-  default 60/min)**; `/v1/audit.csv` is stricter at **10/min**. WebSocket allows
-  **5 concurrent connections per IP**. No limit on MCP free tools or Telegram bot.
-  Handle `429` and back off.
+  Per-IP sliding window on the REST API, currently **60 req/min** (the live
+  `RateLimit-Limit` header); `/v1/audit.csv` is stricter at **10/min**. WebSocket allows
+  **5 concurrent connections per IP**. MCP calls are rate-limited per agent.
+  Handle `429` and back off on `Retry-After`.
 
-  Hit the limit? Contact `rafael@pegana.xyz` — production callers get bumped.
+  Hit the limit? Contact `rafael@pegana.xyz`.
 </Accordion>
 
 <Accordion title="Do I need an API key?">
-  **No** for any read path (REST, WebSocket, Embed, MCP free tools, Telegram).
-  **No** for MCP paid tools — they settle in USDC via x402 instead of a key.
-  **Yes** (a JWT, obtained via Telegram Login or the magic-link flow) for user-scoped
-  endpoints — your subscriptions, your webhook configuration, your delivery history.
+  **No.** There are no API keys, accounts or sign-in. REST, WebSocket, Embed and all MCP
+  tools are public and free.
 </Accordion>
 
-<Accordion title="How are alerts paid for?">
-  Public read paths (REST, WebSocket, Embed, Telegram bot) are **free**. Webhooks
-  are free during the dogfood window. MCP paid tools settle in **USDC on Solana via
-  x402**, $0.001 – $0.0005 per call.
-
-  See [pricing](/pricing) for the full table.
+<Accordion title="Is it free?">
+  Yes, everything. There are no paid tiers and no per-call payments. See
+  [pricing](/pricing).
 </Accordion>
 
 <Accordion title="What happens during a Solana network outage?">
@@ -112,9 +106,9 @@ description: "Common questions about scope, sources, pricing, reliability, and h
     exploit are frozen (e.g., `dSOL` after Drift 2026-04-01, now removed entirely).
     Frozen assets stay in `assets.toml` with `active = false` for historical
     continuity — the engine no longer polls them and they don't count toward the
-    active 69.
+    active set.
 
-  Add requests via [GitHub Issues](https://github.com/PeganaHQ/ReplayCLI/issues).
+  Add requests via [GitHub Issues](https://github.com/PeganaHQ/Pegana/issues).
 </Accordion>
 
 <Accordion title="What's the confidence label?">
@@ -126,30 +120,30 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 
 <Accordion title="Where's the changelog?">
   [/changelog](/changelog) is the canonical developer changelog — API contracts, MCP
-  tools, webhook schema, SDK and CLI releases. For the verdict logic specifically, the
+  tools, SDK and CLI releases. For the verdict logic specifically, the
   [methodology version history](https://pegana.xyz/methodology) records every release and
   the ADR behind it; that's what a receipt's `methodology_version` points at.
 </Accordion>
 
 <Accordion title="What's open source?">
-  The **methodology and the verifier** are fully open (MIT) and public: the math
-  behind every threshold, plus the `pegana-replay` CLI that reproduces and checks any
-  alert receipt — at
-  [`github.com/PeganaHQ/ReplayCLI`](https://github.com/PeganaHQ/ReplayCLI).
-  So you can independently re-derive and audit any Pegana verdict without trusting our
-  infrastructure. The operational services (engine, indexer, API, dispatcher, bot, MCP,
-  web) run from a separate repository.
+  All of it. The full product (indexer, engine, API, dispatcher, MCP server, web app,
+  methodology and the `pegana-replay` verifier) is MIT-licensed at
+  [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). The
+  `pegana-replay` CLI is also mirrored on its own at
+  [`github.com/PeganaHQ/ReplayCLI`](https://github.com/PeganaHQ/ReplayCLI), so you can
+  independently re-derive and audit any Pegana verdict without trusting our
+  infrastructure.
 </Accordion>
 
 <Accordion title="Can I self-host Pegana?">
-  The operational stack (engine, indexer, API, dispatcher, bot) is not currently
-  published, so you can't stand up your own full Pegana instance today. What you
-  **can** run independently is the public
-  [`pegana-replay`](https://github.com/PeganaHQ/ReplayCLI) verifier: reproduce
-  and cryptographically check any alert receipt yourself, against the public
-  methodology, without trusting our compute (you re-derive the verdict from the
-  recorded inputs; anchored severe transitions add on-chain input verification). If self-hosting the full stack
-  matters for your use case, reach `rafael@pegana.xyz`.
+  Yes. The repository ships a `docker-compose.yml` for the full stack (Postgres with
+  TimescaleDB, Redis, indexer, engine, API, dispatcher, MCP server) and a
+  `docker-compose.dev.yml` for local development; see the README at
+  [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). Separately, the
+  [`pegana-replay`](https://github.com/PeganaHQ/ReplayCLI) verifier lets you reproduce
+  and check any alert receipt against the public methodology (you re-derive the verdict
+  from the recorded inputs; anchored severe transitions add on-chain input
+  verification). Questions: `rafael@pegana.xyz`.
 </Accordion>
 
 <Accordion title="How accurate is the methodology?">
@@ -177,5 +171,5 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 ## Still have a question?
 
 Open an issue at
-[github.com/PeganaHQ/ReplayCLI/issues](https://github.com/PeganaHQ/ReplayCLI/issues),
+[github.com/PeganaHQ/Pegana/issues](https://github.com/PeganaHQ/Pegana/issues),
 or email `rafael@pegana.xyz`.

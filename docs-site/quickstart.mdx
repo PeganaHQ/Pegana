@@ -35,23 +35,26 @@ println!("{state:#}");
 
 </CodeGroup>
 
-You get back:
+You get back (captured live on 2026-10-20):
 
 ```json
 {
   "asset": "USDC",
   "state": "PEGGED",
-  "since": "2026-05-29T19:26:24Z",
-  "discount": "0.000298",
-  "intrinsic_usd": "1.000000000000000000",
-  "market_usd": "0.999712360000000000"
+  "since": "2026-10-17T09:20:24.939Z",
+  "discount": "0.000185",
+  "intrinsic_usd": "1",
+  "market_usd": "0.99980022",
+  "updated_at": "2026-10-20T11:22:31.361Z",
+  "stale": false,
+  "confidence": "high"
 }
 ```
 
 Numeric fields are returned as strings to preserve full on-chain precision —
 parse them with your language's decimal type, not a float.
 
-That's it. No auth and no rate-limit headers to parse for casual use, and no SDK required — though typed TypeScript (`@peganahq/sdk-ts`, published) and Python (`pegana-sdk`, `pip install pegana-sdk`) clients are generated from the OpenAPI spec if you want them.
+That's it. No auth, and no SDK required (requests are rate-limited per IP; see [rate limits](/guides/rate-limits)) — though typed TypeScript (`@peganahq/sdk-ts`, published) and Python (`pegana-sdk`, `pip install pegana-sdk`) clients are generated from the OpenAPI spec if you want them.
 
 ## Stream every state change
 
@@ -106,24 +109,15 @@ no install, no clone:
 for hosts that don't yet support HTTP natively (most as of 2026-05). It auto-installs
 via npx the first time it runs. Restart your MCP host and the Pegana tools appear.
 
-Free tools (7): `ping`, `get_assets`, `get_asset_state`, `get_methodology`,
-`get_loop_exposure`, `simulate_depeg_impact`, `verify_alert`. Paid tools (3):
-`ping_paid` ($0.001), `get_asset_history` ($0.001), `subscribe_peg_events`
-($0.0005) — settle via [x402 in USDC](/guides/mcp-paid-tools-x402).
-
-## Get alerts on Telegram
-
-No code, no integration. Open the bot:
-
-<Card title="@PeganaWatchBot" icon="telegram" href="https://t.me/PeganaWatchBot">
-  Subscribe to any asset · custom thresholds · English.
-</Card>
+All 10 tools are free: `ping`, `ping_paid`, `get_assets`, `get_asset_state`,
+`get_methodology`, `get_loop_exposure`, `simulate_depeg_impact`, `verify_alert`,
+`get_asset_history`, `subscribe_peg_events`. See [MCP tools](/guides/mcp-free-tools).
 
 ## Next
 
 <CardGroup cols={2}>
   <Card title="Pick your channel" icon="list-tree" href="/guides/rest-api">
-    Full reference for REST, WebSocket, MCP, Webhook, Embed, Telegram.
+    Full reference for REST, WebSocket, MCP and Embed.
   </Card>
   <Card title="How peg state is computed" icon="equals" href="/methodology/overview">
     The formula, sources and FSM thresholds.

@@ -5,7 +5,7 @@ description: "Soft per-IP limit with RateLimit-* headers on every response, so y
 
 Public read endpoints require no API key but **are** rate-limited per IP:
 
-- **~300 requests/min** globally per IP (repo default is 60/min).
+- **60 requests/min** globally per IP (the live `RateLimit-Limit` value; always read the header rather than hard-coding it).
 - **10 requests/min** on `GET /v1/audit.csv` (the bulk export, per ADR-0014).
 - `GET /healthz` and `GET /readyz` are exempt, so uptime monitors can poll freely.
 
@@ -19,15 +19,15 @@ IETF standards-track `RateLimit-*` fields (mirrored as `X-RateLimit-*` for older
 
 | Header | Meaning |
 | --- | --- |
-| `RateLimit-Limit` | Your ceiling for the window (e.g. `300`). |
+| `RateLimit-Limit` | Your ceiling for the window (currently `60`). |
 | `RateLimit-Remaining` | Requests left before you're throttled. |
 | `RateLimit-Reset` | Seconds until the window rolls. |
 
 ```bash
 curl -sS -D - -o /dev/null https://api.pegana.xyz/v1/stats | grep -i ratelimit
-# ratelimit-limit: 300
-# ratelimit-remaining: 287
-# ratelimit-reset: 42
+# ratelimit-limit: 60
+# ratelimit-remaining: 57
+# ratelimit-reset: 39
 ```
 
 <Note>

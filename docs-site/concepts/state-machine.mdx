@@ -13,7 +13,7 @@ persists, and clears once when it actually resolves.
 | State | Meaning | Alert? |
 | --- | --- | --- |
 | `PEGGED` | Spread inside the calm band for this asset | No |
-| `DRIFT` | Spread crossed the per-asset drift threshold; subscribers notified | Yes |
+| `DRIFT` | Spread crossed the per-asset drift threshold; WebSocket / MCP subscribers notified | Yes |
 | `DEPEG` | Spread crossed depeg threshold; urgent framing | Yes |
 | `CRITICAL` | Spread crossed critical threshold; system tags the asset as actively breaking | Yes |
 | `BLACK_SWAN` | Spread beyond `2× critical` (or hyUSD CR < 100%); terminal-grade break | Yes, terminal-grade |
@@ -97,8 +97,8 @@ Every transition produces:
 }
 ```
 
-This payload is what `/v1/alerts` returns, what `/v1/me/webhooks` POSTs, and what
-the Telegram bot formats into a human-readable message.
+The same transition is published as an audit receipt in `/v1/audit`, and as an event
+from the MCP `subscribe_peg_events` tool.
 
 ## What does NOT get emitted
 
@@ -109,8 +109,7 @@ the Telegram bot formats into a human-readable message.
 - Counts of "ticks since last alert" or similar accumulator state. Each transition
   is independent; we don't publish "USDC has spent 47 minutes in DRIFT today."
 
-For accumulator metrics, use `/v1/me/alerts` (per-user delivery history) or
-`/v1/alerts` (global feed).
+For accumulator metrics, use the transition ledger at `/v1/audit`.
 
 ## Next
 

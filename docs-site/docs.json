@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "maple",
   "name": "Pegana",
-  "description": "The peg-risk oracle for Solana. Real-time monitoring of LSTs, stablecoins, yield-bearing assets and synthetics. Read via REST, WebSocket, MCP, Webhook, Telegram.",
+  "description": "The peg-risk oracle for Solana. Real-time monitoring of LSTs, stablecoins, yield-bearing assets and synthetics. Read via REST, WebSocket and MCP. Free and open source.",
   "colors": {
     "primary": "#ff8a5b",
     "light": "#fb6fae",
@@ -45,8 +45,7 @@
   "footer": {
     "socials": {
       "github": "https://github.com/PeganaHQ",
-      "x": "https://x.com/PeganaHQ",
-      "telegram": "https://t.me/PeganaWatchBot"
+      "x": "https://x.com/PeganaHQ"
     },
     "links": [
       {
@@ -62,8 +61,7 @@
         "items": [
           { "label": "REST API", "href": "/guides/rest-api" },
           { "label": "WebSocket", "href": "/guides/websocket" },
-          { "label": "MCP", "href": "/guides/mcp" },
-          { "label": "Webhooks", "href": "/guides/webhooks" }
+          { "label": "MCP", "href": "/guides/mcp" }
         ]
       },
       {
@@ -79,7 +77,7 @@
         "items": [
           { "label": "Privacy", "href": "https://www.pegana.xyz/privacy" },
           { "label": "Terms", "href": "https://www.pegana.xyz/terms" },
-          { "label": "License (MIT)", "href": "https://github.com/PeganaHQ/ReplayCLI/blob/main/LICENSE" }
+          { "label": "License (MIT)", "href": "https://github.com/PeganaHQ/Pegana/blob/main/LICENSE" }
         ]
       }
     ]
@@ -143,23 +141,10 @@
                 "pages": [
                   "guides/mcp",
                   "guides/mcp-free-tools",
-                  "guides/mcp-paid-tools-x402",
                   "guides/mcp-setup-claude"
                 ]
               },
-              {
-                "group": "Webhooks",
-                "pages": [
-                  "guides/webhooks",
-                  "guides/webhooks-signing",
-                  "guides/webhooks-retry-policy",
-                  "guides/webhooks-examples-typescript",
-                  "guides/webhooks-examples-rust",
-                  "guides/webhooks-examples-python"
-                ]
-              },
-              "guides/embed-widget",
-              "guides/telegram-bot"
+              "guides/embed-widget"
             ]
           },
           {
@@ -193,11 +178,6 @@
           "anchor": "Dashboard",
           "icon": "chart-line",
           "href": "https://www.pegana.xyz/dashboard"
-        },
-        {
-          "anchor": "Telegram bot",
-          "icon": "telegram",
-          "href": "https://t.me/PeganaWatchBot"
         },
         {
           "anchor": "GitHub",

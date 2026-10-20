@@ -99,19 +99,17 @@ if (state.state === "DEPEG" && state.confidence === "high") {
 }
 ```
 
-In a webhook receiver, you should still verify the Ed25519 signature on the payload,
-then check the `confidence` label before acting. A signed-but-low-confidence webhook is a
+Before acting on any consumed signal, check the `confidence` label. A low-confidence signal is a
 hint to act conservatively, not an immediate trigger.
 
 ## Confidence label per use case
 
 | Use case | Minimum label to act |
 | --- | --- |
-| Telegram bot display | any (we show everything, including `unknown`) |
 | Dashboard chart | `low` (we render with a low-confidence indicator) |
-| Webhook to a notifier | `medium` |
-| Webhook to a liquidation pause | `high` |
-| Webhook to a payout | `high` + additional verification (human or multi-sig) |
+| Notifier / alerting agent | `medium` |
+| Liquidation pause | `high` |
+| Payout | `high` + additional verification (human or multi-sig) |
 
 There is no universal answer. Calibrate against your downstream's blast radius.
 

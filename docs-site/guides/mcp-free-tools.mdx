@@ -1,58 +1,55 @@
 ---
-title: "Seven MCP tools"
-description: "Seven MCP tools available with no payment, no API key. ping, get_assets, get_asset_state, get_methodology, get_loop_exposure, simulate_depeg_impact, verify_alert."
+title: "MCP tools"
+description: "All 10 MCP tools are free, with no payment and no API key: ping, ping_paid, get_assets, get_asset_state, get_methodology, get_loop_exposure, simulate_depeg_impact, verify_alert, get_asset_history, subscribe_peg_events."
 ---
 
-These tools require no settlement and no API key. Call them from any MCP host
-configured against `https://mcp.pegana.xyz` (see [setup](/guides/mcp-setup-claude)).
+All ten tools are free and need no API key. Call them from any MCP host configured
+against `https://mcp.pegana.xyz` (see [setup](/guides/mcp-setup-claude)). Calls are
+rate-limited per agent. Example outputs below were captured from the live server on
+2026-10-20; values change continuously.
 
 ## `ping`
 
-Liveness check. Returns server version and timestamp.
+Liveness check. Returns `pong (Ns)` where N is the server uptime in seconds.
 
 ```json
 // → ping()
-{
-  "ok": true,
-  "version": "0.1.0",
-  "ts": "2026-05-26T14:32:11Z"
-}
+{ "message": "pong", "uptime_sec": 38296 }
 ```
 
 Use this to verify the MCP connection is healthy before relying on other tools.
 
+## `ping_paid`
+
+Kept under its old name so existing agents keep working. It is **free**, and returns
+`paid pong` in `structuredContent.message`. It is only a smoke test of the MCP call path;
+use `ping` for plain liveness.
+
 ## `get_assets`
 
-Lists every tracked asset with the latest snapshot.
+Lists every asset that currently has a live snapshot in the MCP server's cache. This can differ slightly from `GET /v1/assets`: assets still UNKNOWN (no snapshot yet) are omitted, and the leveraged synth xSOL, hidden from the REST list, appears. Use `GET /v1/assets` as the canonical list.
 
 ```json
 // → get_assets()
 {
-  "count": 26,
+  "count": 58,
   "assets": [
     {
       "asset": "USDC",
       "state": "PEGGED",
-      "discount": "-0.0002",
-      "intrinsic_usd": "1.0000",
-      "market_usd": "0.9998",
-      "ts": 1748269920
-    },
-    {
-      "asset": "jitoSOL",
-      "state": "PEGGED",
-      "discount": "-0.0034",
-      "intrinsic_usd": "213.42",
-      "market_usd": "212.69",
-      "ts": 1748269928
+      "discount": "0.0001749124876908659876369684",
+      "intrinsic_usd": "1",
+      "market_usd": "0.99982122",
+      "ts": 1792495242
     }
   ]
 }
 ```
 
-The full list is 69 active assets (plus inactive entries kept for history — see
-[`assets.toml`](https://github.com/PeganaHQ/ReplayCLI/blob/main/assets.toml)). No
-filtering parameter in v1 — filter client-side or in the model's reasoning.
+The live list is also [`GET /v1/assets`](https://api.pegana.xyz/v1/assets); the
+asset registry is
+[`assets.toml`](https://github.com/PeganaHQ/Pegana/blob/main/assets.toml). No
+filtering parameter — filter client-side or in the model's reasoning.
 
 ## `get_asset_state`
 
@@ -63,55 +60,41 @@ Current state for one asset.
 {
   "asset": "USDC",
   "state": "PEGGED",
-  "since": "2026-05-26T14:32:11Z",
-  "discount": -0.0002,
-  "intrinsic_usd": 1.0000,
-  "market_usd": 0.9998,
-  "confidence": "high"
+  "discount": "0.0001749124876908659876369684",
+  "intrinsic_usd": "1",
+  "market_usd": "0.99982122",
+  "updated_at": "2026-10-20T11:20:42.909198066Z",
+  "ts": 1792495242
 }
 ```
 
-If the asset is unknown, returns:
-
-```json
-{ "error": "asset_not_found", "asset": "XYZ" }
-```
+If the asset is unknown the call returns an MCP error result (`isError: true`) with the
+text `Error: asset 'XYZ' not tracked. Use get_assets() to list tracked symbols.`
 
 ## `get_methodology`
 
-Returns the formula, sources, and thresholds the asset uses. Static content vendored
-at build time — safe for the model to read as authoritative.
+Returns how the asset's intrinsic value and discount are computed. Static content
+vendored at build time, so it is safe for the model to read as authoritative.
 
 ```json
 // → get_methodology({ symbol: "USDC" })
 {
   "symbol": "USDC",
-  "explanation": "USDC is a fiat-backed stablecoin. Pegana computes intrinsic_usd from the Pyth USDC/USD reference and market_usd from a Jupiter routed quote; the discount is the signed gap between them. ...",
+  "explanation": "Asset 'USDC' (stable_fiat):\n\nFiat-backed stables (USDC, USDT, PYUSD, USDS) are pegged to $1 — intrinsic is hardcoded; market is Jupiter quote vs USDC.\n\nFull methodology + state machine: https://pegana.xyz/methodology",
   "methodology_url": "https://pegana.xyz/methodology"
 }
 ```
 
-Methodology resolves to the asset's class, so any LST symbol (e.g.
-`{ symbol: "jitoSOL" }`) returns the shared LST explainer.
+Methodology resolves to the asset's class, so any LST symbol returns the shared LST
+explainer.
 
 ## `get_loop_exposure`
 
 Returns anonymous, aggregate cross-protocol leverage exposure for Kamino and
 Jupiter Lend positions collateralized by the given asset. No per-wallet
-information is exposed.
-
-```json
-// → get_loop_exposure({ symbol: "jitoSOL" })
-{
-  "asset": "jitoSOL",
-  "loop_exposure_usd": "18420000.00",
-  "collateral_usd": "24600000.00",
-  "debt_usd": "6180000.00",
-  "coverage": "full",
-  "by_protocol": [],
-  "advisory_note": "Advisory model estimate"
-}
-```
+information is exposed. The output has the same shape as
+[`GET /v1/assets/{symbol}/loop-exposure`](/guides/rest-api#systemic-impact-loop-intelligence),
+which includes a live example.
 
 Use this when an agent needs to assess whether a peg break on this asset would
 cascade into liquidations across lending protocols.
@@ -122,16 +105,18 @@ Estimates the cross-protocol liquidation cascade caused by a hypothetical depeg
 shock. `shock_bps` must be one of `100`, `250`, `500`, `1000`, or `2000`.
 
 ```json
-// → simulate_depeg_impact({ symbol: "USDC", shock_bps: 500 })
+// → simulate_depeg_impact({ symbol: "JupSOL", shock_bps: 500 })
 {
-  "asset": "USDC",
+  "asset": "JupSOL",
   "shock_bps": 500,
-  "loop_exposure_usd": "18420000.00",
-  "liquidatable_usd": "4200000.00",
-  "positions": "25–49",
-  "coverage": "full",
-  "by_protocol": [],
-  "advisory_note": "Advisory model estimate"
+  "loop_exposure_usd": "278071119.92",
+  "liquidatable_usd": "39885555",
+  "positions": ">50",
+  "coverage": "partial",
+  "by_protocol": [
+    { "protocol": "jupiter_lend", "liquidatable_usd": "39885555", "positions": ">50" }
+  ],
+  "advisory_note": "advisory model estimate — not a verifiable receipt; risky bands may be suppressed for privacy, and bad-debt/slippage is not yet modelled"
 }
 ```
 
@@ -183,11 +168,46 @@ contract and omit the `evidence` object.
 Use this when a user pastes an alert ID and the model needs to confirm it corresponds
 to a real, on-chain-anchored transition before acting on it.
 
+## `get_asset_history`
+
+Bucketed time-series of the intrinsic-vs-market discount for one asset. Inputs:
+`symbol`, `bucket` (`1m`, `5m`, `15m` or `1h`, default `1m`) and `limit` (1 to 50,000,
+default 1000). Rows are most-recent first; the lookback window is 30 days.
+
+```json
+// → get_asset_history({ symbol: "USDC", bucket: "1h", limit: 2 })
+{
+  "symbol": "USDC",
+  "bucket": "1h",
+  "count": 2,
+  "rows": [
+    { "ts": "2026-10-20 11:00:00+00", "discount": "0.00017687500000000000", "intrinsic_usd": "1.00000000000000000000", "market_usd": "0.99982274500000000000" },
+    { "ts": "2026-10-20 10:00:00+00", "discount": "0.00018153731343283582", "intrinsic_usd": "1.00000000000000000000", "market_usd": "0.99981885447761194030" }
+  ]
+}
+```
+
+## `subscribe_peg_events`
+
+Pull-based batch of peg state-transition events. Inputs: `symbols` (1 to 20),
+`since_ts` (cursor, unix seconds, pass `0` on the first call) and optional
+`threshold_bps`. Returns up to 1000 events ascending by time, plus a `next_cursor` to
+pass back as `since_ts` on the next call so you walk the stream without gaps.
+
+```json
+// → subscribe_peg_events({ symbols: ["USDC"], since_ts: 0 })
+{ "count": 0, "next_cursor": 0, "events": [] }
+```
+
+Each event carries `id`, `asset`, `from_state`, `to_state`, `discount`, `ts` and an
+`evidence_url` pointing at its audit receipt. The empty result above is real: no
+tracked asset had a recorded transition for USDC at the time of capture.
+
 ## Typical agent flow
 
 ```text
 1. ping() — verify connection
-2. get_assets() — read all 26 (caches in agent context)
+2. get_assets() — read the tracked set (cache in agent context)
 3. For each user request involving asset X:
    - get_asset_state({ symbol: X })
    - if state != "PEGGED" and not user-acknowledged:
@@ -203,6 +223,6 @@ context ("INF's drift threshold is wide because its 24h p99 is wide").
 
 ## Next
 
-<Card title="Paid tools — ping_paid + get_asset_history + subscribe_peg_events" icon="coins" href="/guides/mcp-paid-tools-x402">
-  Settlement flow for the three paid tools.
+<Card title="Set up your MCP host" icon="rocket" href="/guides/mcp-setup-claude">
+  Per-host configuration for Claude, Cursor, Cline and Continue.
 </Card>

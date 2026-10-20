@@ -1,56 +1,29 @@
 ---
 title: "Pricing"
-description: "Free for reads. From $0.001 per call for agent tools — settled in USDC on Solana via x402."
+description: "Pegana is free and open source. REST, WebSocket, MCP and the embed widget need no API key, no signup and no payment."
 ---
 
-Pegana does not have tiers. There is a public free read surface and a small set of
-agent-targeted paid tools.
+Pegana has no tiers and no paid surface. Every read path is free.
 
-## Free — public reads
+## What is free
 
 | Surface | Limit | What you get |
 | --- | --- | --- |
-| REST API | ~300 req/min/IP in production (repo default 60/min; soft) | All `/v1/assets/*`, `/v1/alerts`, `/v1/stats`, asset history, `/v1/calibration`, `/v1/methodology/current`, `/v1/audit*`, `/v1/meta/*`. (`/v1/audit.csv` is stricter at 10/min.) |
-| WebSocket | 5 connections/IP | Sub-second push for every state change. |
-| Embed widget | unlimited | `<iframe>` per asset. ~3 KB HTML, server-rendered 60s cache. |
-| Telegram bot | unlimited | `@PeganaWatchBot`, custom thresholds, English. |
-| MCP free tools | unlimited | `get_assets`, `get_asset_state`, `get_methodology`. |
+| REST API | Per-IP rate limit; currently `60` req/min (read the `RateLimit-Limit` header). `/v1/audit.csv` is stricter at 10/min. | All `/v1/assets/*`, `/v1/stats`, `/v1/calibration`, `/v1/methodology/current`, `/v1/audit*`, `/v1/peg/feed`, `/v1/meta/*`. |
+| WebSocket | 5 connections per IP | Push for every state change at `/v1/ws`. |
+| Embed widget | Public | `<iframe>` badge per asset. |
+| MCP server | Per-agent rate limit | All 10 tools at `https://mcp.pegana.xyz`, including `get_asset_history` and `subscribe_peg_events`. |
 
-Free means free. No API key. No signup. MIT licensed code, infrastructure self-funded.
+No API key. No signup. No wallet. No per-call fee. The code is open source at
+[github.com/PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana); you can also run
+the whole stack yourself.
 
-## Paid — MCP agent tools (x402)
+## What does not exist
 
-Two MCP tools cost USDC per call, settled on-chain via [x402](https://x402.org) on Solana mainnet:
+- **Paid tiers or API keys.** There is nothing to buy and nothing to authenticate.
+- **x402 / per-call payments.** The MCP tools that were once metered are now free.
+- **SLA contracts.** None. Live status is at
+  [pegana.xyz/status](https://www.pegana.xyz/status). For production discussions,
+  reach the operator at `rafael@pegana.xyz`.
 
-| Tool | Price | Use |
-| --- | --- | --- |
-| `get_asset_history` | **$0.001 / call** | Historical discount points beyond 24h, 1m / 5m / 15m / 1h buckets. |
-| `subscribe_peg_events` | **$0.0005 / call** | Replay state transitions since a timestamp. |
-
-Settlement uses [Coinbase Developer Platform](https://www.coinbase.com/developer-platform)
-for the facilitator side and is signed with the wallet you configure in the MCP host.
-No subscription, no minimum, no top-up — your wallet is debited per call.
-
-See [MCP paid tools — x402](/guides/mcp-paid-tools-x402) for the full setup, including
-how to point your MCP client at a Coinbase CDP wallet.
-
-## What is NOT priced
-
-- **Webhook deliveries** — free during the dogfood window. Once volume justifies, we
-  will price by event count, not subscription. Always with the free tier preserved
-  for individual / read-only use.
-- **Tier names** — we will not invent "Pro / Team / Enterprise" tiers. Pricing exists
-  for paid tools; everything else stays free.
-- **SLA contracts** — none in v1. Status page at
-  [pegana.xyz/status](https://pegana.xyz/status). Reach the operator at
-  `rafael@pegana.xyz` for production discussions.
-
-## Why x402 and not API keys
-
-x402 settles in USDC, on Solana, with the wallet you already trust. There is no
-new auth surface to manage, no key rotation, no per-vendor portal. Each call is its
-own payment — perfect fit for agent-issued reads where the agent already has a
-wallet.
-
-If you want API keys for a server-side workflow, open an issue
-([github.com/PeganaHQ/ReplayCLI/issues](https://github.com/PeganaHQ/ReplayCLI/issues)).
+See [rate limits](/guides/rate-limits) for the exact limits and headers.
