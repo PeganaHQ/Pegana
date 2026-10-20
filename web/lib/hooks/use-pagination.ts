@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { replaceQuery } from "@/lib/url/replace-query";
 import { withViewTransition } from "@/lib/motion/view-transitions";
 
 /**
@@ -14,8 +14,9 @@ import { withViewTransition } from "@/lib/motion/view-transitions";
  *     separate `sr-only role="status"` twin;
  *   - two clamped the page, two trusted it;
  *   - two reset on filter change, /events never did;
- *   - none put the page in the URL, so a page was unshareable and survived
- *     neither a reload nor a back button;
+ *   - (the page deliberately lives in React state only: mirroring it into
+ *     `?page=` with router.replace cost an RSC round-trip and a re-render per
+ *     click, which read as a page reload, so there is no URL state at all);
  *   - none moved the viewport, so paging a table you had scrolled past
  *     silently changed rows you could not see.
  *
@@ -38,14 +39,6 @@ export interface UsePaginationOptions<T> {
    * from the same values the list is derived from.
    */
   resetKey?: string;
-  /**
-   * Mirror the page into `?page=` so it survives a reload, a share and the back
-   * button. Off for surfaces that are embedded in a page owning its own query
-   * string. Default true.
-   */
-  syncToUrl?: boolean;
-  /** Query-string key. Default "page". */
-  paramName?: string;
   /** Noun for the announcement, e.g. "asset". Default "item". */
   itemNoun?: string;
 }
@@ -79,21 +72,9 @@ export function usePagination<T>({
   items,
   pageSize,
   resetKey,
-  syncToUrl = true,
-  paramName = "page",
   itemNoun = "item",
 }: UsePaginationOptions<T>): Pagination<T> {
-  const router = useRouter();
-  const pathname = usePathname();
-  const params = useSearchParams();
-
-  const urlPage = (() => {
-    if (!syncToUrl) return 1;
-    const raw = Number(params?.get(paramName));
-    return Number.isInteger(raw) && raw > 0 ? raw : 1;
-  })();
-
-  const [page, setPage] = useState(urlPage);
+  const [page, setPage] = useState(1);
   const [direction, setDirection] = useState<PageDirection>("next");
   const anchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -113,27 +94,15 @@ export function usePagination<T>({
     setPage(1);
   }, [resetKey]);
 
-  // Mirror into the URL. `scroll: false` because this hook does its own,
-  // more precise scrolling (to the table, not to the top of the document).
+  // Legacy links may still carry `?page=N`. It is no longer read; strip it with
+  // the native History API (no router call, so no RSC round-trip).
   useEffect(() => {
-    if (!syncToUrl || !pathname) return;
-    // Nothing to page yet. `items` is [] on the first render of every consumer
-    // (useAssets has keepPreviousData but no fallbackData), so totalPages is 1,
-    // `current` clamps to 1, and this effect would "correct" the URL by
-    // STRIPPING a perfectly good ?page=3 the user arrived with, then put it
-    // back a few hundred ms later once the fetch lands. Anyone who copies the
-    // address bar in that window shares a link to page 1, which is precisely
-    // the failure this URL sync exists to prevent.
-    if (total === 0) return;
-    const sp = new URLSearchParams(params?.toString() ?? "");
-    const currentParam = sp.get(paramName);
-    const want = current > 1 ? String(current) : null;
-    if (currentParam === want) return;
-    if (want) sp.set(paramName, want);
-    else sp.delete(paramName);
-    const qs = sp.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [current, total, pathname, params, paramName, router, syncToUrl]);
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    if (!sp.has("page")) return;
+    sp.delete("page");
+    replaceQuery(sp);
+  }, []);
 
   const goToPage = useCallback(
     (next: number) => {

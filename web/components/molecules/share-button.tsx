@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { displaySymbol } from "@/lib/asset/display-symbol";
+import { holderSignedPct } from "@/lib/api/format";
 
 const SITE = "https://www.pegana.xyz";
 
@@ -55,75 +56,63 @@ export function assetShareCardUrl(symbol: string): string {
   return `${SITE}/asset/${encodeURIComponent(symbol)}/share-card`;
 }
 
-/** X (Twitter) web-intent href, pre-filled with the asset + its current state. */
-export function assetTweetHref(symbol: string, state?: string | null): string {
+/**
+ * Tweet copy: the live read, in the same holder-signed convention the page
+ * prints (`holderSignedPct` negates the raw `reconcileBps` bps, so a discount
+ * reads as `−`). Degrades to whatever is known: state only, spread only, or the
+ * neutral fallback. Never invents a number.
+ */
+export function assetTweetText(
+  symbol: string,
+  state?: string | null,
+  bps?: number | null,
+): string {
   const shown = displaySymbol(symbol);
   const pretty = state ? state.replace("_", " ").toLowerCase() : null;
-  const text = pretty
-    ? `${shown} is ${pretty}; live peg-risk read`
-    : `${shown}; live peg-risk read`;
+  const spread = bps == null ? null : holderSignedPct(bps);
+  if (pretty && spread) return `${shown} is ${pretty}. Spread ${spread}.`;
+  if (pretty) return `${shown} is ${pretty}.`;
+  if (spread) return `${shown}. Spread ${spread}.`;
+  return `${shown}; live peg-risk read`;
+}
+
+/**
+ * X (Twitter) web-intent href. The permalink rides the `url` param (X appends
+ * it after the text), so the copy itself stays short and readable.
+ */
+export function assetTweetHref(
+  symbol: string,
+  state?: string | null,
+  bps?: number | null,
+): string {
   const p = new URLSearchParams({
-    text,
+    text: assetTweetText(symbol, state, bps),
     url: assetShareUrl(symbol),
     via: "PeganaHQ",
   });
   return `https://x.com/intent/tweet?${p.toString()}`;
 }
 
-// Two ghost pills (brand.md: rounded-full for actions, ease-default hover). "Share
-// on X" opens the web intent; "Copy link" copies the permalink — the OG card +
-// per-asset metadata (layout.tsx) make either unfurl into a branded peg-state card.
+// Three ghost pills (brand.md: rounded-full for actions, ease-default hover).
+// "Share on X" is a plain intent link: one click, no side effect. It used to
+// try `navigator.share` with the PNG first, which on desktop (no file Web Share)
+// silently downloaded an image and THEN opened the intent, and left the user to
+// re-attach the file in X. The "Card" pill is the honest download; "Copy link"
+// copies the permalink. The OG card + per-asset metadata (layout.tsx) make the
+// permalink unfurl into a branded peg-state card.
 export function ShareButton({
   symbol,
   state,
+  bps,
   className,
 }: {
   symbol: string;
   state?: string | null;
+  /** Raw `reconcileBps`-convention bps; negated for display by the helpers. */
+  bps?: number | null;
   className?: string;
 }) {
   const { copied, copy } = useCopyPermalink(symbol);
-  const [sharing, setSharing] = useState(false);
-
-  async function shareCard() {
-    if (sharing) return;
-    setSharing(true);
-
-    try {
-      const response = await fetch(assetShareCardUrl(symbol));
-      if (!response.ok) throw new Error("share card unavailable");
-
-      const blob = await response.blob();
-      const file = new File([blob], `pegana-${displaySymbol(symbol)}.png`, {
-        type: "image/png",
-      });
-      const payload = {
-        files: [file],
-        title: `${displaySymbol(symbol)} peg-risk read`,
-        text: state
-          ? `${displaySymbol(symbol)} is ${state.replace("_", " ").toLowerCase()}; live peg-risk read`
-          : `${displaySymbol(symbol)}; live peg-risk read`,
-        url: assetShareUrl(symbol),
-      };
-
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share(payload);
-        return;
-      }
-
-      const download = document.createElement("a");
-      download.href = URL.createObjectURL(blob);
-      download.download = file.name;
-      download.click();
-      URL.revokeObjectURL(download.href);
-      window.open(assetTweetHref(symbol, state), "_blank", "noopener,noreferrer");
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      window.open(assetTweetHref(symbol, state), "_blank", "noopener,noreferrer");
-    } finally {
-      setSharing(false);
-    }
-  }
 
   const pill =
     "inline-flex items-center gap-2 rounded-full border border-outline px-4 py-2 text-[13px] " +
@@ -132,15 +121,15 @@ export function ShareButton({
 
   return (
     <div className={`flex items-center gap-2 ${className ?? ""}`}>
-      <button
-        type="button"
-        onClick={shareCard}
-        disabled={sharing}
+      <a
+        href={assetTweetHref(symbol, state, bps)}
+        target="_blank"
+        rel="noopener noreferrer"
         aria-label="Share on X"
-        className={`${pill} text-text disabled:cursor-wait disabled:opacity-60`}
+        className={`${pill} text-text`}
       >
-        <span aria-hidden="true">{sharing ? "Preparing" : "Share on X"}</span>
-      </button>
+        <span aria-hidden="true">Share on X</span>
+      </a>
       <a
         href={assetShareCardUrl(symbol)}
         download

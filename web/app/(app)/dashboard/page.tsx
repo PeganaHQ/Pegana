@@ -10,7 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { MarketFeed } from "@/components/organisms/market-feed";
 import { OnboardingModal } from "@/components/organisms/onboarding-modal";
 import { LiveStateAnnouncer } from "@/components/atoms/live-state-announcer";
@@ -25,6 +25,7 @@ import {
 } from "@/components/organisms/dashboard-board-row";
 import { PillTabs } from "@/components/molecules/pill-tabs";
 import { Pagination } from "@/components/molecules/pagination";
+import { replaceQuery } from "@/lib/url/replace-query";
 import { usePagination } from "@/lib/hooks/use-pagination";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useStats } from "@/lib/hooks/use-stats";
@@ -211,8 +212,6 @@ function compareBoard(
 
 function DashboardBoard() {
   const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const { data: assets, isLoading, error, mutate } = useAssets();
   const { data: stats } = useStats();
   const { data: alerts } = useAlerts({ limit: 15 });
@@ -307,16 +306,8 @@ function DashboardBoard() {
     }
     const sp = new URLSearchParams(params?.toString() ?? "");
     sp.delete("watch");
-    router.replace(`${pathname}${sp.toString() ? `?${sp.toString()}` : ""}`);
-  }, [
-    params,
-    assets,
-    isLoading,
-    resolveWatchSymbols,
-    importSymbols,
-    router,
-    pathname,
-  ]);
+    replaceQuery(sp);
+  }, [params, assets, isLoading, resolveWatchSymbols, importSymbols]);
 
   // Distinguishes "backend unreachable" from "filter matched nothing" — a
   // hard API failure has no cached `data`, so this must be checked before
@@ -540,9 +531,9 @@ function DashboardBoard() {
       const sp = new URLSearchParams(params?.toString() ?? "");
       sp.set("sort", k);
       sp.set("dir", nextDir);
-      router.replace(`${pathname}?${sp.toString()}`, { scroll: false });
+      replaceQuery(sp);
     },
-    [sortKey, sortDir, params, pathname, router],
+    [sortKey, sortDir, params],
   );
 
   // Table-first pagination (tokens.xyz DNA) — the board is worst-first and

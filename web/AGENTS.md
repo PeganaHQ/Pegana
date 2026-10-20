@@ -169,9 +169,12 @@ Four distinct share surfaces exist:
    on-demand PNG download. Richer than the OG image: sparkline, band-proximity
    gauge, timestamp. 1200x630 via satori. Linked from `ShareButton` ("Card" pill).
 4. **ShareButton** (`components/molecules/share-button.tsx`) — ghost pills on
-   the asset detail page: "Share on X" (web intent), "Card" (download PNG from
-   `share-card/route.tsx`), "Copy link" (clipboard). Compact `ShareIconButton`
-   (copy-link only) on mobile sticky header.
+   the asset detail page: "Share on X" (a plain intent link carrying the live
+   state + holder-signed spread, one click and no side effects), "Card"
+   (download PNG from `share-card/route.tsx`), "Copy link" (clipboard). Compact
+   `ShareIconButton` (copy-link only) on mobile sticky header. The X entry must
+   never route through `navigator.share`/blob download first: on desktop that
+   silently downloaded a PNG and then opened the intent.
 
 **Shared helpers** (`lib/og/shared.ts`): all satori constants + utilities
 (`IRIDESCENT_GRADIENT`, `SATORI_CANVAS`, `STATE_COLOR`, `STATE_LABEL`,

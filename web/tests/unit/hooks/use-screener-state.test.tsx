@@ -5,13 +5,13 @@ import type { AssetCardData } from "@/lib/api/types";
 // -- next/navigation: a controllable URL, so setSort()'s ?sort=&dir= contract
 // and the URL -> state round trip are both directly assertable. --
 let mockSearch = "";
-const replaceMock = vi.fn();
-const pathnameMock = "/assets";
+const routerMock = { replace: vi.fn(), push: vi.fn() };
+const replaceStateSpy = vi.spyOn(window.history, "replaceState");
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(mockSearch),
-  useRouter: () => ({ replace: replaceMock }),
-  usePathname: () => pathnameMock,
+  useRouter: () => routerMock,
+  usePathname: () => "/assets",
 }));
 
 let mockAssets: AssetCardData[] | undefined = [];
@@ -57,7 +57,10 @@ function asset(overrides: Partial<AssetCardData>): AssetCardData {
 
 beforeEach(() => {
   mockSearch = "";
-  replaceMock.mockClear();
+  routerMock.replace.mockClear();
+  replaceStateSpy.mockClear();
+  window.history.replaceState(null, "", "/assets");
+  replaceStateSpy.mockClear();
   mutateMock.mockClear();
   mockAssets = [];
 });
@@ -128,7 +131,12 @@ describe("useScreenerState — URL sort contract", () => {
 
     act(() => result.current.setSort("safety"));
 
-    expect(replaceMock).toHaveBeenCalledWith("/assets?sort=safety&dir=desc");
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      null,
+      "",
+      "/assets?sort=safety&dir=desc",
+    );
+    expect(routerMock.replace).not.toHaveBeenCalled();
   });
 
   it("setSort() toggles direction when re-clicking the active column", () => {
@@ -137,7 +145,11 @@ describe("useScreenerState — URL sort contract", () => {
 
     act(() => result.current.setSort("jitter"));
 
-    expect(replaceMock).toHaveBeenCalledWith("/assets?sort=jitter&dir=asc");
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      null,
+      "",
+      "/assets?sort=jitter&dir=asc",
+    );
   });
 
   it("announces the new sort for the sr-only live region", () => {

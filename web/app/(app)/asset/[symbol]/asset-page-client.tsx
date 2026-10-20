@@ -489,6 +489,7 @@ function AssetPageInner({ fallbackAsset }: { fallbackAsset?: AssetCardData }) {
           <ShareButton
             symbol={asset.symbol}
             state={state}
+            bps={bps}
             className="hidden shrink-0 sm:flex"
           />
         </div>

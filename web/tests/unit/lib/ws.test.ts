@@ -7,6 +7,7 @@ class MockWS {
   onmessage: ((e: MessageEvent) => void) | null = null;
   onclose: ((e: CloseEvent) => void) | null = null;
   onerror: ((e: Event) => void) | null = null;
+  readyState = 0;
   send = vi.fn();
   close = vi.fn();
   constructor(public url: string) {
@@ -99,5 +100,34 @@ describe("createWsClient", () => {
     vi.advanceTimersByTime(800); // 800ms since the heartbeat → still inside the window
     expect(onStale).not.toHaveBeenCalled();
     client.disconnect();
+  });
+
+  it("connect() is idempotent while a socket is live", () => {
+    const client = createWsClient("ws://x", { onUpdate: vi.fn() });
+    client.connect();
+    MockWS.instances[0].readyState = 1;
+    client.connect();
+    expect(MockWS.instances.length).toBe(1);
+    client.disconnect();
+  });
+
+  it("reconnect closes the previous socket and leaves exactly one live", () => {
+    vi.useFakeTimers();
+    const client = createWsClient("ws://x", {
+      onUpdate: vi.fn(),
+      initialBackoffMs: 100,
+    });
+    client.connect();
+    const first = MockWS.instances[0];
+    first.onclose?.(new CloseEvent("close"));
+    vi.advanceTimersByTime(100);
+    expect(MockWS.instances.length).toBe(2);
+    expect(first.close).toHaveBeenCalled();
+    // A late event from the retired socket must not schedule another reconnect.
+    expect(first.onclose).toBeNull();
+    vi.advanceTimersByTime(60_000);
+    expect(MockWS.instances.length).toBe(2);
+    client.disconnect();
+    expect(MockWS.instances[1].close).toHaveBeenCalled();
   });
 });

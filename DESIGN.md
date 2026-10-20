@@ -7,7 +7,7 @@ scope: >
   migration (W3a–c + W4) SHIPPED 2026-07-10/11, so every console screen (dashboard, /assets,
   /asset, /compare, /events, /heatmap, /systemic) now runs on this same token/type/motion system —
   there is no pre-V5 product surface left. SUPERSEDES brand.md as the implementation spec for all
-  product surfaces (marketing + app). Everything is public and free; no signed-in surface exists. Everything is public and free; no signed-in surface exists.
+  product surfaces (marketing + app). Everything is public and free; no signed-in surface exists.
 reference_implementation: >
   The approved artifact source (self-contained HTML, fonts embedded) is the pixel-truth spec:
   every component, animation and copy string below exists working there. Port it, do not reinvent.
@@ -110,45 +110,52 @@ to `{duration: 0}` under reduced motion.
 |---|---|---|
 | Hero entrance | orientation | staggered on LOAD (not scroll): 100ms + i*110ms; fade + translateY(18px) + blur(5px) → 0 |
 | Scroll reveals (.rv) | hierarchy | IntersectionObserver once, threshold .1, stagger i%6*70ms, same fade/blur |
-| Reveal-mask hero bg | THESIS ("market price is only half the story") | canvas 2D: faint market-noise ticks always visible; offscreen layer (26px grid + dashed `intrinsic 1.0000` baseline + mono micro-values) masked by radial spotlight r=230 at lerped cursor (.07); no mouse → Lissajous drift; the spotlight reveals what's underneath |
-| Board float | product is alive | translateY ±5px, 9s loop |
-| Arc glow breathe | signature moment | opacity .8↔1, 9s |
 | Live pips pulse | real state semantics | 2.2s opacity blink, only on non-pegged states |
-| Sources marquee | breadth | translateX -50%, 48s linear infinite, mask-fade 8%/92% edges (max ONE marquee per page) |
-| Pinned trust scene | storytelling (how a verdict is made) | wrapper 340vh, sticky 100vh; scroll progress lights steps 01-04 (left 2px white bar + color) and builds the receipt row-by-row; artifact uses a scroll handler, PRODUCTION USES Lenis + GSAP ScrollTrigger (scrub) |
-| Candor strike | the false claim "depegs" | rose 2px line scaleX 0→1, origin left, .9s physical ease, on view (threshold .55) |
-| Chart draw-in | data arriving | line draws over ~1.2s when visible, then slow phase drift; endpoint glow dot |
-| Wave close | brand scenario | two blurred (46/64px) wave-logo SVG layers, sine float + pointer-lerped parallax (opposite factors, ±46px/±30px, rotate ±2.2°) |
+| Recompute sweep | "the same lines, re-derived" | one 2.8s gradient sweep across the step-02 card; decorative only |
+| Nav hide/show | keep the fixed pill off content | translateY(-110%) after 160px of downward scroll, restore on upward; 200ms |
+| Micro-hovers | affordance | links, rows and cards change border/background in ≤200ms; no transforms beyond 1px |
 
-**Reduced-motion matrix (mandatory):** canvas layers OFF · pinned scene unrolls static with all
-steps/rows visible · strikes pre-drawn · marquee stopped · floats/breathe off · reveals instant.
-Mobile (<900px): no pinning (static expanded), reveal-mask off (touch has no cursor).
+**Reduced-motion matrix (mandatory):** recompute sweep OFF · reveals instant · nav hide snaps ·
+no marquee, no pinning, no scroll-jacking anywhere on the landing (all three were retired
+2026-10-19). Mobile: the hero stacks, the board hides four of seven columns, the topology
+scales, and every section remains static.
 
-## 5. Page architecture (locked — 5 sections + chrome)
+## 5. Page architecture (landing remake 2026-10-19 — 8 sections + chrome)
 
-1. **Nav** — floating glass pill, links Product/Methodology/Verify/Developers/Docs,
-   CTAs: `ASSETS API` (ghost) + `OPEN DASHBOARD` (white). Height ≤72px, one line.
-2. **Hero** — centered. H1 "Prove the peg of every asset you hold." (pure white) · sub ≤21 words
-   with bold keywords · CTAs `OPEN THE DASHBOARD →` (white, nested icon) + `ASSETS API` (ghost) ·
-   mono trust line · **live board** full-width rising under the arc (real-fidelity table:
-   Asset/State/Market/Intrinsic/Spread/Band-proximity/Updated; amber row-tint on drift;
-   UNKNOWN row shows honest "no verified source"; footer = latest real transition + receipt).
-3. **Sources** — numbers grid (63/14/5/byte-exact, mono, vertical hairlines, transparent bg)
-   + V1 logo marquee (14 real protocol SVGs from `web/public/logos/`, mono uppercase names).
-   NOTE: Rafael still wants a future redesign of this section (backlog).
-4. **Product** — pill tabs `ASSET DETAIL / ALERTS / API` (mono uppercase) → split panes
-   (checklist left, real-fidelity visual right: chart+strip30 / telegram+webhook / JSON).
-5. **Trust (pinned scene)** — "Don't trust the score. Replay it." Steps 01 Ingest → 02 Measure →
-   03 Judge → 04 Receipt light with scroll while the sUSD receipt builds (inputs → formula with
-   real numbers `spread = 1 − 0.9772/1.0006 → +2.34%` → verdict → hash + `pegana-replay` +
-   "byte-identical, or it fails loudly" + verify link). Below: **candor strike rows**
-   (eyebrow-pill "what pegana does not claim" + 3 rows: struck false claim | truth).
-6. **Close** — statement h2 + 3 ICP sentences + CTAs + wave scenario. 7. **Footer** — logo+tagline,
-   3 link columns, hairline, `© 2026 Pegana. All rights reserved.` + real X/GitHub SVG icons.
+Canonical numbers live in `docs/landing-remake-spec.md`; this is the map. Container **1280px**.
+Every section boundary is a **background-temperature change** (`v2-band-1..5`, all neutral zinc),
+never a divider. Total page height ≤ 6 viewports at 1440×900.
+
+1. **Nav** — floating glass pill, links Product/Methodology/Verify/Developers/Docs, one
+   `OPEN DASHBOARD` CTA. Hides on downward scroll, restores on upward (≤200ms).
+2. **Hero** — two columns. Left: h1 "Prove the peg of every asset you hold." (48-56px, w500,
+   ls -1.4px, measure ≤580), sub ≤21 words, one solid-white CTA + one underlined text link,
+   "free and open source" line. No gradient phrase, no uppercase-mono pill pair, no caption
+   duplication. Right: **topology node-graph** (13 sources → intrinsic − market → EWMA →
+   state machine → receipt) over a dotted grid, one accented node.
+3. **Board** (`#board`) — asserting headline "Every peg on Solana, measured live." Real
+   `<table>`: th 14px / td 16px / rows 64px; two groups (Stablecoins & synthetics, Liquid
+   staking tokens); ONE encoding and ONE legend (band proximity); no in-card dashboard CTA.
+4. **Sources** — static grid of the **13 ingestion tasks**, each card = name + contribution +
+   cadence. No marquee.
+5. **Product** — two-level chrome: four glyph squares (REST/WS/MCP/CLI) outside; text+icon
+   variant tabs inside the panel. Code 14/21 Geist Mono with a dimmed line-number gutter and
+   4-5 syntax hues. COPY copies the visible variant. Equal panel heights. Bold lead-in bullets,
+   not green ticks.
+6. **Trust** — STATIC three-step band (no pin, no scroll-jack). Each step visually encodes its
+   verb: frozen receipt card / re-derived lines with a sweep / diff view where the hashes lock.
+   Punchline "Byte-identical, or it fails loudly." is section-level type.
+7. **Candor** — eyebrow "what pegana does not claim" + 3 rows. Claim dimmed at 14px, correction
+   full-weight at 20-24px. No strikethrough.
+8. **Close** — naked-numeral stat band (assets / sources / endpoints / free), one receipt line,
+   ONE CTA. No glow orb. **Footer** — logo+tagline, PRODUCT collapsed to 2 links, DEVELOPERS,
+   PROJECT, legal line, real X/GitHub icons.
 
 ## 6. Copy guardrails (taste-skill hard rules, audited at 0 violations)
 
 - **ZERO em-dashes** anywhere visible. Use period, comma or colon. (Data-null cells use `-`.)
+- **Marketing type floor:** no text below 12px, and body type (≥14px) must be the majority of
+  sized text. Enforced by `web/tests/unit/design/marketing-type-floor.test.ts`.
 - Middle-dot `·` max 1 per line.
 - Max 2 eyebrows on the page (currently: trust section + candor pill).
 - Hero sub ≤ 21 words. Section headlines ≤ 8 words.
