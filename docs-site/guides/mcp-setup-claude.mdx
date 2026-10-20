@@ -45,12 +45,7 @@ Edit `claude_desktop_config.json`:
 Restart Claude Desktop. The Pegana tools appear in the tool list (hammer icon):
 `ping`, `get_assets`, `get_asset_state`, `get_methodology`, `get_loop_exposure`,
 `simulate_depeg_impact`, `verify_alert`, `ping_paid`, `get_asset_history`,
-`subscribe_peg_events`.
-
-To enable paid tools, point `mcp-remote` at a CDP wallet you control. The wallet
-signs USDC payments per call. See
-[paid tools + x402](/guides/mcp-paid-tools-x402) for the wallet setup; once your
-wallet is configured at the host level, paid tools work transparently.
+`subscribe_peg_events`. All ten are free; there is nothing to pay or configure.
 
 ## Cursor
 
@@ -143,9 +138,6 @@ log to a file like `~/Library/Logs/Claude/mcp.log`.
 doesn't yet support Streamable HTTP. Update the host. The Pegana server uses
 `WebStandardStreamableHTTPServerTransport` from `@modelcontextprotocol/sdk@^1.29`.
 
-**Paid tool returns 402 unhandled** — your wallet isn't configured. See
-[paid tools + x402](/guides/mcp-paid-tools-x402).
-
 **"unable to verify the first certificate"** — corporate proxy strips TLS. Set
 `NODE_EXTRA_CA_CERTS` env var to your corporate CA bundle.
 
@@ -154,15 +146,12 @@ doesn't yet support Streamable HTTP. Update the host. The Pegana server uses
 The server is hosted at `mcp.pegana.xyz` — no clone needed; see
 [pegana.xyz/developers](https://pegana.xyz/developers). Just point your MCP host at
 the URL. The runtime (`mcp-ts/`) is TypeScript on Bun + Hono, configured via env vars
-(`PEGANA_API_BASE`, `REDIS_URL`, `DATABASE_URL`, plus the CDP block for paid tools).
+(`PEGANA_API_BASE`, `REDIS_URL`, `DATABASE_URL`).
 
 ## Next
 
-<CardGroup cols={2}>
+<CardGroup cols={1}>
   <Card title="What each tool does" icon="code" href="/guides/mcp-free-tools">
-    Schemas + example calls for the 7 free tools.
-  </Card>
-  <Card title="Paid tools + x402" icon="coins" href="/guides/mcp-paid-tools-x402">
-    Wallet setup for ping_paid + get_asset_history + subscribe_peg_events.
+    Schemas + example calls for all 10 tools.
   </Card>
 </CardGroup>

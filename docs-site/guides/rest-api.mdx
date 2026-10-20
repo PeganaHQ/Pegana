@@ -3,9 +3,8 @@ title: "REST API"
 description: "JSON over HTTPS. No API key. Soft rate limit. The canonical read path for Pegana state."
 ---
 
-The REST API is the default integration path. Public, no auth, soft per-IP rate limit
-(~300 req/min in production; repo default is 60/min). Every dashboard, embed widget,
-and the Telegram bot read through it.
+The REST API is the default integration path. Public, no auth, per-IP rate limit
+(currently 60 req/min). The dashboard and embed widget read through it.
 
 **Base URL:** `https://api.pegana.xyz`
 
@@ -19,7 +18,7 @@ and the Telegram bot read through it.
 | GET | `/v1/assets/{symbol}/history` | Discount history (raw or 1-minute aggregate) |
 | GET | `/v1/assets/{symbol}/loop-exposure` | Cross-protocol leverage exposure + depeg cascade (advisory) |
 | GET | `/v1/assets/{symbol}/simulate-depeg` | Liquidation-cascade estimate at a preset shock (advisory) |
-| GET | `/v1/alerts` | Global feed of state transitions |
+| GET | `/v1/audit` | Recent audit receipts (state transitions), newest first; also `/v1/audit.csv`, `/v1/audit/{alert_id}` |
 | GET | `/v1/stats` | Aggregate counters + delivery health |
 | GET | `/v1/peg/feed` | Batch peg signal — `data` array, each signal keyed by its `mint` (partner/embed feed) |
 | GET | `/healthz` | Liveness probe |
@@ -44,8 +43,8 @@ See the [changelog](/changelog) for the migration. The additive-only promise abo
 that point on.
 </Note>
 
-Poll `/v1/assets/{symbol}/state` as often as your logic needs (soft
-~300 req/min per IP); it is the **same object** the dashboard, embed widget and bot read,
+Poll `/v1/assets/{symbol}/state` as often as your logic needs (limit:
+60 req/min per IP); it is the **same object** the dashboard and embed widget read,
 so it never disagrees with what a human sees on the site.
 
 <Note>
@@ -74,12 +73,12 @@ values never change form in a breaking way.
   single form; parse with any RFC3339/`Date` parser. Resource freshness is always
   `updated_at`; the response's own build time is `generated_at`.
 - **Lists are enveloped; single resources are bare.** Every endpoint that returns a
-  collection (`/v1/assets`, `/v1/alerts`, `/v1/calibration`, `/v1/assets/{s}/history`,
+  collection (`/v1/assets`, `/v1/calibration`, `/v1/assets/{s}/history`,
   `/v1/peg/feed`) wraps its rows in a uniform envelope so you always branch on the same
   shape and new top-level fields never break you:
 
   ```json
-  { "ok": true, "generated_at": "2026-07-24T15:33:14.545Z", "count": 68, "data": [ /* rows */ ] }
+  { "ok": true, "generated_at": "2026-07-24T15:33:14.545Z", "count": 67, "data": [ /* rows */ ] }
   ```
 
   Read the rows from `data`. Single-resource endpoints (`/v1/assets/{s}`,
@@ -102,11 +101,13 @@ curl https://api.pegana.xyz/v1/assets/USDC/state
 {
   "asset": "USDC",
   "state": "PEGGED",
-  "since": "2026-05-26T14:32:11Z",
-  "discount": "-0.0002",
-  "risk_score": 2,
-  "intrinsic_usd": "1.0000",
-  "market_usd": "0.9998"
+  "since": "2026-10-17T09:20:24.939Z",
+  "discount": "0.000185",
+  "intrinsic_usd": "1",
+  "market_usd": "0.99980022",
+  "updated_at": "2026-10-20T11:22:31.361Z",
+  "stale": false,
+  "confidence": "high"
 }
 ```
 
@@ -115,7 +116,7 @@ two underlying values. Use it for dashboards, pre-flight checks, automation gate
 
 ### `risk_score` — one number to branch on
 
-`risk_score` is a derived **0–100** integer for integrators who want a single
+`risk_score` (present on `/v1/assets`, `/v1/assets/{symbol}` and `/v1/peg/feed`, not on `/state`) is a derived **0–100** integer for integrators who want a single
 sortable / thresholdable value — `if risk_score >= 75 { gate_market() }` — **alongside**
 (never replacing) the authoritative `state`. It is **anchored to the committed `state`**,
 so it can never disagree with the classification:
@@ -147,7 +148,7 @@ Returns the list envelope `{ ok, generated_at, count, data }` where `data` is an
 array of `AssetCard` objects with optional `series_24h` (hourly avg discount).
 Filter by `class` or `peg` query params. `class` is a case-sensitive exact match —
 valid values are `lst`, `stable_fiat`, `stable_dn`, `stable_cdp`, `stable_yield`,
-`stable_fx`, and `synth_lev`. An unknown value (e.g. `stablecoin`) returns an empty
+and `stable_fx`. An unknown value (e.g. `stablecoin`) returns an empty
 `data` array with HTTP 200.
 
 ## Asset history
@@ -183,23 +184,28 @@ numbers as an honest floor, not a ceiling.
 curl https://api.pegana.xyz/v1/assets/JupSOL/loop-exposure
 ```
 
+Example response, fetched live on 2026-10-20 (the numbers change continuously; treat
+them as illustrative):
+
 ```json
 {
   "asset": "JupSOL",
-  "loop_exposure_usd": "224648067",
+  "loop_exposure_usd": "278071119.92",
+  "collateral_usd": "315779143.09",
   "debt_usd": "0",
   "coverage": "partial",
   "by_protocol": [
-    { "protocol": "jupiter_lend", "collateral_lev_usd": "211093663", "debt_usd": "0" },
-    { "protocol": "kamino", "collateral_lev_usd": "13554403", "debt_usd": "0" }
+    { "protocol": "jupiter_lend", "collateral_lev_usd": "266230139.47", "collateral_usd": "266230139.47", "debt_usd": "0", "positions": ">50", "coverage": "full", "ts": "2026-10-20T11:18:00.213Z" },
+    { "protocol": "kamino", "collateral_lev_usd": "11840980.45", "collateral_usd": "49549003.62", "debt_usd": "0", "positions": ">50", "coverage": "full", "ts": "2026-10-20T11:17:59.450Z" }
   ],
   "cascade": [
     { "shock_bps": 100,  "liquidatable_usd": "0",        "positions": "<5" },
-    { "shock_bps": 250,  "liquidatable_usd": "0",        "positions": "<5" },
-    { "shock_bps": 500,  "liquidatable_usd": "0",        "positions": "<5" },
-    { "shock_bps": 1000, "liquidatable_usd": "4746255",  "positions": ">50" },
-    { "shock_bps": 2000, "liquidatable_usd": "11329387", "positions": ">50" }
+    { "shock_bps": 250,  "liquidatable_usd": "39885555", "positions": ">50" },
+    { "shock_bps": 500,  "liquidatable_usd": "39885555", "positions": ">50" },
+    { "shock_bps": 1000, "liquidatable_usd": "55709495.23", "positions": ">50" },
+    { "shock_bps": 2000, "liquidatable_usd": "61398320.67", "positions": ">50" }
   ],
+  "updated_at": "2026-10-20T11:18:00.213Z",
   "advisory_note": "advisory model estimate — not a verifiable receipt"
 }
 ```
@@ -232,7 +238,7 @@ once on the envelope, not on every signal:
   "ok": true,
   "methodology": "0.7.0",
   "generated_at": "2026-07-24T11:30:31.402Z",
-  "count": 68,
+  "count": 67,
   "data": [
     {
       "mint": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
@@ -261,7 +267,7 @@ carries no tracked leverage, and it never mixes into the verifiable peg fields (
 
 ## Pagination
 
-We do not paginate `/v1/assets` (a few dozen rows). For `/v1/alerts` and `/history`, use the
+We do not paginate `/v1/assets` (a few dozen rows). For `/v1/audit` (`limit`, max 100) and `/history`, use the
 `since` / `from` + `limit` parameters and walk forward by adjusting the lower bound.
 
 ## Errors
@@ -273,7 +279,7 @@ We return standard HTTP status codes:
 | `200` | Success |
 | `400` | Bad request (invalid query param) |
 | `404` | Asset not found, or no snapshots yet |
-| `429` | Rate-limited (per-IP; ~300 req/min in production, repo default 60/min) |
+| `429` | Rate-limited (per-IP; currently 60 req/min) |
 | `500` | Server error — open a Sentry-style report |
 | `503` | Not ready (readiness probe only) |
 
@@ -287,22 +293,18 @@ self-hosted instances.
 
 ## Rate limit
 
-Soft per-IP sliding-window: **~300 req/min in production** (the repo default is
-**60 req/min** — the production host raises it). The limit resets on a 60-second
-sliding window. `/v1/audit.csv` is stricter at **10 req/min**. `/healthz` and
-`/readyz` are exempt.
+Per-IP sliding-window: currently **60 req/min** (the live `RateLimit-Limit`
+header; check it rather than hard-coding). The window is 60 seconds.
+`/v1/audit.csv` is stricter at **10 req/min**. `/healthz` and `/readyz` are exempt.
 
-The `429` response includes a `Retry-After: 60` header (the sliding-window upper
-bound) so clients know when to retry, but the API does **not** emit `X-RateLimit-*`
-headers — your remaining budget is not client-discoverable, so handle `429`
-defensively and back off. If you hit `429`, slow down or contact
-`rafael@pegana.xyz` for a higher limit.
+Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`
+(mirrored as `X-RateLimit-*`), and a `429` adds `Retry-After`. See
+[rate limits](/guides/rate-limits). Need more? Contact `rafael@pegana.xyz`.
 
-## What about authenticated routes?
+## Authentication
 
-The `/v1/me/*`, `/v1/auth/*`, and webhook management endpoints require a JWT — see
-[authentication](/authentication). These are user-scoped routes (your subscriptions,
-your delivery history, your webhook configuration).
+None. The API is public: no key, no sign-in, no token. See
+[authentication](/authentication).
 
 ## Next
 

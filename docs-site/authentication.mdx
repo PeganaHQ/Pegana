@@ -1,101 +1,45 @@
 ---
 title: "Authentication"
-description: "Most Pegana endpoints are public — no API key, no signup. Authenticated routes use a JWT issued from Telegram Login."
+description: "There is none. The Pegana API is public: no API key, no signup, no token. Requests are rate-limited per IP."
 ---
 
-## Public reads — no auth
+## Public API — no auth
 
-The asset state, history, alerts and stats endpoints are **public**:
+Every endpoint is public. Send no `Authorization` header:
+
+```bash
+curl https://api.pegana.xyz/v1/assets/USDC/state
+```
 
 ```
 GET /v1/assets
 GET /v1/assets/:symbol
 GET /v1/assets/:symbol/state
 GET /v1/assets/:symbol/history
-GET /v1/alerts
+GET /v1/audit
 GET /v1/stats
 GET /v1/ws         (WebSocket)
 ```
 
-No `Authorization` header required. There is a soft per-IP rate limit (~300 req/min in
-production; repo default 60/min). The embed widget, the Telegram bot and the public
-dashboard all read through these endpoints.
+The full list is in the [API reference](/api-reference/introduction).
 
-## Authenticated routes — JWT
+## Rate limiting
 
-User-scoped routes (subscriptions, webhooks, preferences, delivery history) require
-a JWT in the `Authorization: Bearer <token>` header:
+The only control is a per-IP sliding-window limit: currently **60 requests/min**,
+reported on every response in the `RateLimit-Limit` header. See
+[rate limits](/guides/rate-limits).
 
-```
-GET    /v1/me
-PATCH  /v1/me/preferences
-GET    /v1/me/subs        POST /v1/me/subs       PATCH /v1/me/subs/:asset    DELETE /v1/me/subs/:asset
-GET    /v1/me/alerts
-GET    /v1/me/webhooks    POST /v1/me/webhooks   PATCH /v1/me/webhooks/:id   DELETE /v1/me/webhooks/:id
-POST   /v1/me/webhooks/:id/test
-POST   /v1/me/webhooks/:id/replay
-GET    /v1/me/webhooks/:id/deliveries
-POST   /v1/auth/logout
+```bash
+curl -sI https://api.pegana.xyz/v1/assets | grep -i ratelimit-limit
+# ratelimit-limit: 60
 ```
 
-The token is **HS256, 7-day lifetime**, with revocation tracked server-side in
-`web_sessions`.
+## No API keys, no accounts
 
-## How to obtain a JWT
+There are no API keys, no sign-in and no user accounts. If a use case needs a higher
+limit, contact `rafael@pegana.xyz`.
 
-There are two ways to get a JWT in v1: the **Telegram Login Widget** and the
-**magic-link flow**.
+## MCP
 
-The Telegram Login Widget is the primary path. Reasons:
-
-- Telegram is already the identity for the alert bot (`@PeganaWatchBot`).
-- No password storage, no email verification, no captcha.
-- One account links Telegram subscriptions, web dashboard sessions, and webhook
-  ownership.
-
-The magic-link flow is the alternative: `POST /v1/auth/magic/mint` issues a
-single-use link, and `POST /v1/auth/magic/consume` exchanges it for a JWT.
-
-```http POST /v1/auth/telegram
-Content-Type: application/json
-
-{
-  "id": 12345678,
-  "first_name": "Rafael",
-  "username": "raffx",
-  "auth_date": 1779889253,
-  "hash": "<HMAC-SHA256(bot_token, payload)>"
-}
-```
-
-Response:
-
-```json
-{
-  "token": "eyJhbGciOi...",
-  "expires_at": "2026-06-03T14:32:11Z",
-  "user": {
-    "telegram_id": 12345678,
-    "username": "raffx",
-    "locale": "en"
-  }
-}
-```
-
-In practice you do not call this endpoint directly. The Pegana web app embeds the
-[Telegram Login Widget](https://core.telegram.org/widgets/login) which produces and
-posts the signed payload.
-
-## API keys
-
-There are **no API keys in v1**. If your use case needs them (server-to-server reads
-under a quota, key rotation, scoped permissions), open an issue:
-[github.com/PeganaHQ/ReplayCLI/issues](https://github.com/PeganaHQ/ReplayCLI/issues).
-
-## x402 — payment, not auth
-
-The MCP paid tools (`get_asset_history`, `subscribe_peg_events`) use **x402** instead
-of JWT. The MCP client opens an HTTP 402 challenge, signs a USDC transfer (via
-Coinbase CDP), and replays the request. No persistent credentials, no API key.
-
-See [MCP paid tools — x402](/guides/mcp-paid-tools-x402) for the full flow.
+The hosted MCP server at `https://mcp.pegana.xyz` is also unauthenticated and all of
+its tools are free. See [MCP](/guides/mcp).

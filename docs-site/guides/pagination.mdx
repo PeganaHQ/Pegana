@@ -9,7 +9,7 @@ exception: they're windowed with query parameters.
 
 ## Full-set endpoints
 
-`GET /v1/assets`, `GET /v1/alerts`, `GET /v1/calibration`, and `GET /v1/peg/feed` return
+`GET /v1/assets`, `GET /v1/calibration`, and `GET /v1/peg/feed` return
 every currently-tracked row (dozens, not millions). Poll them as often as your logic needs,
 within the [rate limit](/guides/rate-limits).
 
@@ -33,11 +33,12 @@ Max rows returned. History defaults to 500. The audit ledger (`GET /v1/audit`) a
 export (`GET /v1/audit.csv`) are capped per ADR-0014 (100-row page / 50k CSV rows).
 </ParamField>
 
-<ParamField query="since" type="string (RFC3339)">
-Lower time bound for `GET /v1/alerts` (newest first).
+<ParamField query="exclude_pegged / state" type="boolean / string">
+`GET /v1/audit` returns the newest receipts first (`limit` default 50, max 100). Narrow it
+with `state` (`PEGGED`, `DRIFT`, `DEPEG`, `CRITICAL`, `BLACK_SWAN`) or `exclude_pegged`
+(default `true`). The bulk export `GET /v1/audit.csv` takes `from`, `to` and `asset`.
 </ParamField>
 
 <Note>
-The audit ledger is append-only and time-ordered — walk it by advancing `to`/`since` across
-windows. History is returned **newest-first**.
+The audit ledger is append-only and time-ordered — for older data use the `from`/`to` window on `GET /v1/audit.csv`. History is returned **newest-first**.
 </Note>

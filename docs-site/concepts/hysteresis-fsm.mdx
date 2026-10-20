@@ -18,7 +18,7 @@ that gap, the heater clicks on and off every few seconds.
 Pegana has five peg states for every monitored asset:
 
 - `PEGGED` — spread inside the calm band; no alert.
-- `DRIFT` — spread crossed the per-asset drift threshold; subscribers are notified.
+- `DRIFT` — spread crossed the per-asset drift threshold; WebSocket / MCP subscribers are notified.
 - `DEPEG` — spread crossed depeg; more urgent alert framing.
 - `CRITICAL` — spread crossed critical; the system explicitly tags the asset as
   actively breaking.
@@ -50,7 +50,7 @@ heals**.
 
 ## Why the exit dwell is longer than the entry dwell
 
-Entering a stressed state is something subscribers want fast — a 30-second
+Entering a stressed state is something WebSocket / MCP subscribers want fast — a 30-second
 confirmation is plenty. Exiting back to `PEGGED` is something subscribers want to
 **trust** — a single tick at 29 bps after a 200 bps spike is not the same as a
 sustained recovery. Extending the exit dwell to 120s is a small cost (a couple extra
@@ -75,7 +75,7 @@ seconds and loose enough that a single bad Jupiter quote doesn't trip the alert.
 
 ## What this means for downstream consumers
 
-If you're consuming Pegana's WebSocket stream as an event source — webhook trigger,
+If you're consuming Pegana's WebSocket stream as an event source — automation trigger,
 prediction-market settlement, insurance payout — **you want hysteresis**. Without it,
 you'd see a 1-second `DRIFT → PEGGED → DRIFT` roundtrip as two separate transitions,
 and your downstream automation would react twice.
@@ -88,8 +88,7 @@ won't reverse in the next breath.
 ## Reading the parameters
 
 Every threshold and dwell timer lives in `assets.toml` and is exposed via
-`/v1/assets/<symbol>/extra`. The `/thresholds <symbol>` command in `@PeganaWatchBot`
-returns the same numbers in chat. Reproduce the FSM yourself from raw discount ticks
+the `thresholds` field of `/v1/assets/<symbol>`. Reproduce the FSM yourself from raw discount ticks
 if you want — the parameters are open.
 
 ## Read next

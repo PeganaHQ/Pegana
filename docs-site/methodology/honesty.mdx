@@ -59,12 +59,10 @@ when an anchor is detectably broken.
 
 ## Best-effort delivery
 
-Alerts are best-effort. Telegram delivery is rate-limited by Telegram's own API; in a
-burst (e.g., dozens of assets transitioning at once during a market-wide event), delivery
-may take 10–30 seconds. Webhook delivery has 6 attempts with 5s / 30s / 5m / 30m /
-2h backoff. If your endpoint is unreachable for the full retry envelope, the
-attempts are visible in `/v1/me/webhooks/:id/deliveries` and the event can be
-replayed.
+Alerts are best-effort. In a burst (e.g., dozens of assets transitioning at once during
+a market-wide event), propagation to consumers may lag. Transitions are always recorded
+in the `/v1/audit` ledger, so a consumer that missed a push can catch up from there or
+via the MCP `subscribe_peg_events` cursor.
 
 **For mission-critical automation, poll `/v1/assets/:symbol/state` as a safety
 net** — that endpoint is the source of truth and is always reachable.
@@ -92,7 +90,7 @@ different product. Pegana is the *state* oracle, not the *price* oracle.
 ## Frozen / dropped assets
 
 When an asset's mechanism becomes untrustworthy, we freeze it. A frozen entry
-remains in [`assets.toml`](https://github.com/PeganaHQ/ReplayCLI/blob/main/assets.toml)
+remains in [`assets.toml`](https://github.com/PeganaHQ/Pegana/blob/main/assets.toml)
 for historical continuity but the engine no longer polls it. `dSOL` (Drift's LST)
 was soft-deactivated on 2026-05-26 after the 2026-04-01 exploit — no live counterparty
 for redemption. Rather than an `active = false` entry, its definition is preserved as a

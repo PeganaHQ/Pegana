@@ -1,9 +1,9 @@
 ---
 title: "Changelog"
-description: "The canonical developer changelog for the Pegana API, MCP server, webhook contract, SDKs, and verifier CLI."
+description: "The canonical developer changelog for the Pegana API, MCP server, SDKs, and verifier CLI."
 ---
 
-**This is the canonical developer changelog** — API contracts, MCP tools, webhook payload schema,
+**This is the canonical developer changelog** — API contracts, MCP tools,
 SDK and verifier releases, and breaking config changes.
 
 Two related surfaces, for different questions:
@@ -13,6 +13,23 @@ Two related surfaces, for different questions:
   `methodology_version` refers to.
 - [What's new](https://pegana.xyz/whats-new) — the product story, written for humans rather than
   integrators.
+
+---
+
+## 2026-10-20 — Open-source release: all-free, no accounts
+
+- **Pegana is open source and free.** The full product is public at
+  [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). The paid and
+  authenticated surfaces were removed: there is no sign-in, no JWT, no API keys, no x402
+  payments, no Telegram bot and no `/account` area. Entries below describe those surfaces as
+  they were at the time and are kept for history only.
+- **MCP:** all 10 tools are free, including `get_asset_history` and `subscribe_peg_events`.
+  `ping_paid` keeps its name for compatibility, is free, and returns `paid pong`.
+- **REST:** `GET /v1/alerts` and the `/v1/me/*` and `/v1/auth/*` routes no longer exist. The
+  transition ledger is `GET /v1/audit` (and `/v1/audit.csv`). The per-IP rate limit is
+  currently 60 req/min, reported in the `RateLimit-Limit` header.
+- **Webhook registration** is no longer offered, so the webhook guides were removed. The
+  Ed25519 verification keys remain published at `GET /v1/meta/webhook-keys` (list currently empty).
 
 ---
 

@@ -15,13 +15,13 @@ docs-site/
 ├── docs.json                # Mintlify config — navigation, theme, integrations
 ├── introduction.mdx         # Landing page
 ├── quickstart.mdx           # 5-minute integration
-├── authentication.mdx       # JWT + public reads
-├── pricing.mdx              # Free + x402 paid
+├── authentication.mdx       # Public API, no auth
+├── pricing.mdx              # All free
 ├── faq.mdx
 ├── changelog.mdx            # Canonical developer changelog
 ├── concepts/                # 8 concept primers
 ├── methodology/             # 5 methodology pages (overview, intrinsic, market, spread, honesty)
-├── guides/                  # 14 integration guides (REST, WS, MCP, Webhooks, Embed, Telegram)
+├── guides/                  # integration guides (REST, WS, MCP, Embed, API essentials)
 ├── case-studies/            # 6 retrospectives (USDC-SVB, UST, mSOL, DAI, GHO)
 ├── api-reference/
 │   ├── openapi.yaml         # Historical fallback; live spec comes from api.pegana.xyz/openapi.json
@@ -49,7 +49,7 @@ need to restart (`Ctrl+C`, `mintlify dev`).
 ## Deployment
 
 Mintlify deploys via GitHub integration. Install the Mintlify GitHub app on
-[`github.com/PeganaHQ/ReplayCLI`](https://github.com/PeganaHQ/ReplayCLI) and point it
+[`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana) and point it
 at this `docs-site/` directory.
 
 - Pushes to `main` → publish to `docs.pegana.xyz`
@@ -113,5 +113,5 @@ The old hand-written `api-reference/openapi.yaml` has been removed.
 
 ## Contact
 
-Issues / suggestions: [github.com/PeganaHQ/ReplayCLI/issues](https://github.com/PeganaHQ/ReplayCLI/issues)
+Issues / suggestions: [github.com/PeganaHQ/Pegana/issues](https://github.com/PeganaHQ/Pegana/issues)
 Operator: `rafael@pegana.xyz`
