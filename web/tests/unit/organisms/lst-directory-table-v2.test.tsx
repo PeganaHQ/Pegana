@@ -4,10 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { LstDirectoryTableV2 } from "@/components/organisms/lst/lst-directory-table-v2";
 import type { LstDirectoryRow } from "@/lib/lst/types";
 
-// The table now paginates through the shared `usePagination`, which mirrors the
-// page into `?page=` and therefore needs the app-router hooks. `useRouter`
-// throws outside a mounted router, and this suite renders the table bare.
-// Same mocking shape as use-screener-state.test.tsx and command-palette.test.tsx.
+// Paging is client-side state only (usePagination never calls the router); the
+// mock just keeps other app-router consumers from throwing in a bare render.
 const routerReplace = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: routerReplace, push: vi.fn() }),

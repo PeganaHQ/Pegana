@@ -5,6 +5,7 @@ import {
   assetShareUrl,
   assetShareCardUrl,
   assetTweetHref,
+  assetTweetText,
   ShareButton,
 } from "@/components/molecules/share-button";
 
@@ -29,62 +30,91 @@ describe("share-button helpers", () => {
     );
   });
 
-  it("builds an X intent href: state in the text, permalink as the url param", () => {
-    const u = new URL(assetTweetHref("hyUSD", "DRIFT"));
-    expect(u.origin + u.pathname).toBe("https://x.com/intent/tweet");
-    expect(u.searchParams.get("text")).toBe(
-      "hyUSD is drift; live peg-risk read",
+  it("puts the state and the holder-signed spread in the tweet text", () => {
+    // raw bps = intrinsic - market, so +40 is a 0.40% DISCOUNT for a holder.
+    expect(assetTweetText("jitoSOL", "PEGGED", 40)).toBe(
+      "jitoSOL is pegged. Spread −0.40%.",
     );
-    expect(u.searchParams.get("url")).toBe(
-      "https://www.pegana.xyz/asset/hyUSD",
+    expect(assetTweetText("hyUSD", "DRIFT", -152)).toBe(
+      "hyUSD is drift. Spread +1.52%.",
     );
-    expect(u.searchParams.get("via")).toBe("PeganaHQ");
   });
 
-  it("omits state from the text when null/unknown", () => {
-    expect(new URL(assetTweetHref("USDC", null)).searchParams.get("text")).toBe(
+  it("degrades honestly when the spread or state is missing", () => {
+    expect(assetTweetText("hyUSD", "DRIFT", null)).toBe("hyUSD is drift.");
+    expect(assetTweetText("USDC", null, 12)).toBe("USDC. Spread −0.12%.");
+    expect(assetTweetText("USDC", null, null)).toBe(
       "USDC; live peg-risk read",
     );
   });
 
   it("normalizes BLACK_SWAN underscore in the tweet text", () => {
-    expect(
-      new URL(assetTweetHref("xUSD", "BLACK_SWAN")).searchParams.get("text"),
-    ).toBe("xUSD is black swan; live peg-risk read");
+    expect(assetTweetText("xUSD", "BLACK_SWAN", null)).toBe(
+      "xUSD is black swan.",
+    );
   });
 
   it("shows the eHYUSD display alias in the tweet text, never the raw DB symbol", () => {
-    expect(
-      new URL(assetTweetHref("sHYUSD", "DRIFT")).searchParams.get("text"),
-    ).toBe("eHYUSD is drift; live peg-risk read");
+    expect(assetTweetText("sHYUSD", "DRIFT", null)).toBe("eHYUSD is drift.");
+  });
+
+  it("builds an X intent href: numbers in the text, permalink as the url param", () => {
+    const u = new URL(assetTweetHref("jitoSOL", "PEGGED", 40));
+    expect(u.origin + u.pathname).toBe("https://x.com/intent/tweet");
+    expect(u.searchParams.get("text")).toBe(
+      "jitoSOL is pegged. Spread −0.40%.",
+    );
+    expect(u.searchParams.get("url")).toBe(
+      "https://www.pegana.xyz/asset/jitoSOL",
+    );
+    expect(u.searchParams.get("via")).toBe("PeganaHQ");
   });
 
   it("keeps the permalink URL on the literal DB symbol (KEY, not display)", () => {
     expect(assetShareUrl("sHYUSD")).toBe("https://www.pegana.xyz/asset/sHYUSD");
   });
+});
 
-  it("shares the generated PNG as a file when native file sharing is available", async () => {
+describe("ShareButton", () => {
+  it("opens the X intent directly with the live numbers and no side effects", async () => {
     const user = userEvent.setup();
-    const blob = new Blob(["png"], { type: "image/png" });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, blob: async () => blob }));
-    const share = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "canShare", {
-      configurable: true,
-      value: vi.fn().mockReturnValue(true),
-    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const share = vi.fn();
     Object.defineProperty(navigator, "share", {
       configurable: true,
       value: share,
     });
+    // A download can only happen through the old fetch -> blob -> anchor.click
+    // path, so pin both halves of it shut.
+    const createObjectURL = vi.spyOn(URL, "createObjectURL");
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
 
-    render(<ShareButton symbol="hyUSD" state="DRIFT" />);
-    await user.click(screen.getByRole("button", { name: "Share on X" }));
+    render(<ShareButton symbol="jitoSOL" state="PEGGED" bps={40} />);
+    const x = screen.getByRole("link", { name: "Share on X" });
 
-    expect(fetch).toHaveBeenCalledWith(assetShareCardUrl("hyUSD"));
-    expect(share).toHaveBeenCalledOnce();
-    const payload = share.mock.calls[0]![0];
-    expect(payload.files).toHaveLength(1);
-    expect(payload.files[0].name).toBe("pegana-hyUSD.png");
-    expect(payload.url).toBe(assetShareUrl("hyUSD"));
+    expect(x.getAttribute("href")).toBe(
+      assetTweetHref("jitoSOL", "PEGGED", 40),
+    );
+    expect(x.getAttribute("target")).toBe("_blank");
+    expect(x.getAttribute("rel")).toBe("noopener noreferrer");
+
+    await user.click(x);
+
+    // The whole point of the split: no PNG fetch, no native share sheet, no
+    // download anchor. The click is the navigation and nothing else.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(anchorClick).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Card entry as an honest PNG download", () => {
+    render(<ShareButton symbol="hyUSD" state="DRIFT" bps={40} />);
+    const card = screen.getByRole("link", { name: "Download share card" });
+    expect(card.getAttribute("href")).toBe(assetShareCardUrl("hyUSD"));
+    expect(card.hasAttribute("download")).toBe(true);
   });
 });

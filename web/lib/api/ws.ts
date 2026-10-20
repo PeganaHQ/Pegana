@@ -42,13 +42,34 @@ export function createWsClient(url: string, opts: CreateOpts) {
     clearWatchdog();
     staleTimer = setTimeout(() => {
       opts.onStale?.();
+      // Closing fires onclose, which runs the single reconnect path.
       socket?.close();
     }, heartbeatTimeout);
   }
 
+  // Drop a socket without leaving handlers that could schedule a reconnect or
+  // fire callbacks for a connection that is no longer the current one.
+  function retire(s: WebSocket | null) {
+    if (!s) return;
+    s.onopen = null;
+    s.onmessage = null;
+    s.onclose = null;
+    s.onerror = null;
+    s.close();
+  }
+
   function open() {
     if (stopped) return;
-    socket = new WebSocket(url);
+    // Never hold two sockets: the server caps WS per IP and fans every update
+    // to every socket, so an orphan wastes a slot and a Redis subscription.
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    clearWatchdog();
+    retire(socket);
+    const current = new WebSocket(url);
+    socket = current;
     socket.onopen = () => {
       backoff = opts.initialBackoffMs ?? 800;
       armWatchdog();
@@ -80,13 +101,17 @@ export function createWsClient(url: string, opts: CreateOpts) {
   return {
     connect() {
       stopped = false;
+      // Idempotent: a second connect() must not open a second socket.
+      if (socket && socket.readyState <= 1) return;
       open();
     },
     disconnect() {
       stopped = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
       clearWatchdog();
-      socket?.close();
+      retire(socket);
+      socket = null;
     },
     send(msg: object) {
       socket?.send(JSON.stringify(msg));

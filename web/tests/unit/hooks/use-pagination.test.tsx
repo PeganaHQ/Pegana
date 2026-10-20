@@ -1,12 +1,11 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-let mockSearch = "";
-const replaceMock = vi.fn();
+const routerMock = { replace: vi.fn(), push: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: replaceMock }),
+  useRouter: () => routerMock,
   usePathname: () => "/assets",
-  useSearchParams: () => new URLSearchParams(mockSearch),
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 import { usePagination } from "@/lib/hooks/use-pagination";
@@ -14,8 +13,10 @@ import { usePagination } from "@/lib/hooks/use-pagination";
 const items = (n: number) => Array.from({ length: n }, (_, i) => `item-${i}`);
 
 beforeEach(() => {
-  mockSearch = "";
-  replaceMock.mockClear();
+  window.history.replaceState(null, "", "/assets");
+  routerMock.replace.mockClear();
+  routerMock.push.mockClear();
+  routerMock.refresh.mockClear();
 });
 
 describe("usePagination", () => {
@@ -110,75 +111,36 @@ describe("usePagination", () => {
     expect(result.current.pageItems).toHaveLength(2);
   });
 
-  it("does not strip ?page= from the URL before the data arrives", () => {
-    // Every consumer renders once with items=[] (useAssets has
-    // keepPreviousData but no fallbackData). totalPages was then 1, `current`
-    // clamped to 1, and the sync effect "corrected" the URL by DELETING a
-    // perfectly good ?page=3 the user had arrived with, restoring it a few
-    // hundred ms later once the fetch landed. Copy the address bar in that
-    // window and you share a link to page 1 — exactly what the URL sync exists
-    // to prevent.
-    mockSearch = "page=3";
-    const { result, rerender } = renderHook(
-      ({ n }: { n: number }) => usePagination({ items: items(n), pageSize: 10 }),
-      { initialProps: { n: 0 } },
+  it("keeps the page in state only: no router call, no URL change", () => {
+    const spy = vi.spyOn(window.history, "replaceState");
+    const { result } = renderHook(() =>
+      usePagination({ items: items(30), pageSize: 10 }),
     );
 
-    expect(replaceMock).not.toHaveBeenCalled();
-    // The page the user asked for is remembered across the empty render.
-    rerender({ n: 100 });
-    expect(result.current.page).toBe(3);
-    expect(replaceMock).not.toHaveBeenCalledWith("/assets", { scroll: false });
+    act(() => result.current.goToPage(2));
+
+    expect(result.current.page).toBe(2);
+    expect(routerMock.replace).not.toHaveBeenCalled();
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(window.location.search).toBe("");
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
-  it("reads the initial page from the URL", () => {
-    mockSearch = "page=3";
+  it("ignores a legacy ?page= and cleans it with history.replaceState", () => {
+    window.history.replaceState(null, "", "/assets?page=3&sort=risk#t");
+    const spy = vi.spyOn(window.history, "replaceState");
     const { result } = renderHook(() =>
       usePagination({ items: items(100), pageSize: 10 }),
     );
 
-    expect(result.current.page).toBe(3);
-    expect(result.current.pageItems[0]).toBe("item-20");
-  });
-
-  it("ignores a garbage page parameter instead of rendering nothing", () => {
-    mockSearch = "page=not-a-number";
-    const { result } = renderHook(() =>
-      usePagination({ items: items(30), pageSize: 10 }),
-    );
-
     expect(result.current.page).toBe(1);
-  });
-
-  it("mirrors the page into the URL without scrolling the document", () => {
-    const { result } = renderHook(() =>
-      usePagination({ items: items(30), pageSize: 10 }),
+    expect(window.location.pathname + window.location.search).toBe(
+      "/assets?sort=risk",
     );
-
-    act(() => result.current.goToPage(2));
-
-    expect(replaceMock).toHaveBeenCalledWith("/assets?page=2", {
-      scroll: false,
-    });
-  });
-
-  it("drops the parameter on page 1 rather than leaving ?page=1 behind", () => {
-    mockSearch = "page=2";
-    const { result } = renderHook(() =>
-      usePagination({ items: items(30), pageSize: 10 }),
-    );
-
-    act(() => result.current.goToPage(1));
-    expect(replaceMock).toHaveBeenCalledWith("/assets", { scroll: false });
-  });
-
-  it("leaves the URL alone when syncToUrl is off", () => {
-    const { result } = renderHook(() =>
-      usePagination({ items: items(30), pageSize: 10, syncToUrl: false }),
-    );
-
-    act(() => result.current.goToPage(2));
-    expect(replaceMock).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe("#t");
+    expect(spy).toHaveBeenCalledWith(null, "", "/assets?sort=risk#t");
+    expect(routerMock.replace).not.toHaveBeenCalled();
   });
 
   it("reports the direction so the swap can animate the right way", () => {

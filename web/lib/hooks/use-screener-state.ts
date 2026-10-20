@@ -13,7 +13,8 @@
 // rather than re-deriving a severity ramp.
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { replaceQuery } from "@/lib/url/replace-query";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useLive } from "@/lib/store/live-context";
 import {
@@ -237,8 +238,6 @@ export function useScreenerState(): UseScreenerStateResult {
     : EMPTY_OVERRIDES;
 
   const params = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
 
   const [classFilter, setClassFilter] = useState<ClassFilterKey>("all");
   const [search, setSearch] = useState("");
@@ -282,7 +281,7 @@ export function useScreenerState(): UseScreenerStateResult {
     const sp = new URLSearchParams(params?.toString() ?? "");
     sp.set("sort", key);
     sp.set("dir", nextDir);
-    router.replace(`${pathname}?${sp.toString()}`);
+    replaceQuery(sp);
     setSortAnnounce(
       `Sorted by ${SORT_LABEL[key]}, ${nextDir === "desc" ? "descending" : "ascending"}.`,
     );

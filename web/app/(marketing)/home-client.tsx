@@ -47,7 +47,7 @@ const WhatsNewPopup = dynamic(
 //   Nav (floating glass pill)
 //   1. Hero        — h1 + reveal-mask canvas + arc + live board (/v1/assets)
 //   2. Sources     — numbers grid (/v1/stats) + protocol logo marquee
-//   3. Product     — pill tabs: asset detail / alerts / api  (lazy)
+//   3. Product     — pill tabs: rest / websocket / mcp / cli  (lazy)
 //   4. Trust       — pinned scroll-scene (Lenis + GSAP ScrollTrigger) + candor  (lazy)
 //   5. Close       — statement + ICP line + wave-logo parallax scenario  (lazy)
 //   Footer         (lazy)

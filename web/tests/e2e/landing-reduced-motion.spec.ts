@@ -20,7 +20,7 @@ test.describe("Landing — reduced motion", () => {
     ).toBeVisible({ timeout: 2000 });
     await expect(
       page.getByRole("heading", {
-        name: /One signal, three ways to consume it\./i,
+        name: /One verdict, four open surfaces\./i,
       }),
     ).toBeVisible({ timeout: 2000 });
 

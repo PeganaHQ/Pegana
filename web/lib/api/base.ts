@@ -56,3 +56,14 @@ export function apiBase(): string {
   if (env && env.length > 0) return env;
   return onProdHost() ? PROD_API : LOCAL_API;
 }
+
+/**
+ * Resolve the WebSocket feed URL. Same host rules as `apiBase()`: an explicit
+ * NEXT_PUBLIC_WS_URL wins, Pegana/Vercel-preview hosts get the prod socket,
+ * everything else falls back to localhost.
+ */
+export function wsUrl(): string {
+  const env = process.env.NEXT_PUBLIC_WS_URL;
+  if (env && env.length > 0) return env;
+  return onProdHost() ? "wss://api.pegana.xyz/v1/ws" : "ws://localhost:8080/v1/ws";
+}

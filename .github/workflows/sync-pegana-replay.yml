@@ -148,8 +148,24 @@ jobs:
 
       - name: Snapshot the commit
         id: snapshot
+        env:
+          # Security audit 2026-10-18 finding #7: the PAT must never appear in
+          # a remote URL — URLs land in process args (`git remote -v`, error
+          # output, `ps`). The credential store (a 0600 file) authenticates
+          # every git call without the token touching argv. `x-access-token:`
+          # user form is REQUIRED for Fine-Grained PATs; the legacy bare-token
+          # URL form only worked with Classic tokens and silently failed to
+          # authenticate (the root-commit hazard handled below).
+          PUBLIC_REMOTE: https://github.com/PeganaHQ/ReplayCLI.git
+          PEGANA_PUSH_TOKEN: ${{ secrets.PEGANA_REPLAY_PUSH_TOKEN }}
         run: |
           set -euo pipefail
+          mkdir -p "$HOME/.pegana-cred" && chmod 700 "$HOME/.pegana-cred"
+          printf 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=%s\n' \
+            "${PEGANA_PUSH_TOKEN}" > "$HOME/.pegana-cred/store"
+          chmod 600 "$HOME/.pegana-cred/store"
+          git config --global credential.helper \
+            "store --file=$HOME/.pegana-cred/store"
           tree="$(git write-tree)"
           parent_arg=()
           # Chain the new snapshot onto the current head of ReplayCLI/main.
@@ -200,13 +216,6 @@ jobs:
           commit="$(git commit-tree "$tree" "${parent_arg[@]+${parent_arg[@]}}" < "$msg_file")"
           echo "  new public commit: $commit"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
-        env:
-          # `x-access-token:` form is REQUIRED for fine-grained PATs — the bare
-          # https://<TOKEN>@github.com/ form only ever worked with Classic
-          # tokens (see the Force-push step below, which already fixed this).
-          # With the old form this step silently failed to authenticate, which
-          # is precisely what fed the root-commit hazard handled above.
-          PUBLIC_REMOTE: https://x-access-token:${{ secrets.PEGANA_REPLAY_PUSH_TOKEN }}@github.com/PeganaHQ/ReplayCLI.git
 
       - name: Diagnose PAT permissions
         env:
@@ -252,7 +261,6 @@ jobs:
 
       - name: Force-push to pegana-replay
         env:
-          TOKEN: ${{ secrets.PEGANA_REPLAY_PUSH_TOKEN }}
           PUBLIC_COMMIT: ${{ steps.snapshot.outputs.commit }}
         run: |
           set -euo pipefail
@@ -260,13 +268,12 @@ jobs:
           # every git request with the workflow's GITHUB_TOKEN — strip it
           # so our PAT is the only credential considered.
           git config --local --unset-all http.https://github.com/.extraheader || true
-          # GitHub canonical token URL form is
-          #   https://x-access-token:<TOKEN>@github.com/<owner>/<repo>.git
-          # This works for both Classic PATs and Fine-Grained PATs. The
-          # alternative legacy form `https://<TOKEN>@github.com/...` only
-          # worked with Classic; Fine-Grained ignored it and git would
-          # either prompt for credentials or send the wrong auth header.
-          PUBLIC_REMOTE="https://x-access-token:${TOKEN}@github.com/PeganaHQ/ReplayCLI.git"
+          # Security audit 2026-10-18 finding #7: the token must never be in
+          # argv. The snapshot step installed a credential store holding the
+          # PAT (same job, same runner home), so a CLEAN remote URL works —
+          # git authenticates via the helper, and the token stays out of
+          # `git remote -v`, error output, and `ps`.
+          PUBLIC_REMOTE="https://github.com/PeganaHQ/ReplayCLI.git"
           git push --force "${PUBLIC_REMOTE}" \
                           "${PUBLIC_COMMIT}":refs/heads/main
           echo "  pushed ${PUBLIC_COMMIT} → pegana-replay/main"

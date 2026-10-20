@@ -16,7 +16,7 @@ test.describe("Landing — primary flow (desktop 1440)", () => {
     ).toBeVisible();
     await expect(
       page.getByRole("heading", {
-        name: /One signal, three ways to consume it\./i,
+        name: /One verdict, four open surfaces\./i,
       }),
     ).toBeVisible({ timeout: 15_000 });
     await expect(
@@ -58,7 +58,7 @@ test.describe("Landing — mobile 390 (iPhone-ish)", () => {
     ).toBeVisible();
     await expect(
       page.getByRole("heading", {
-        name: /One signal, three ways to consume it\./i,
+        name: /One verdict, four open surfaces\./i,
       }),
     ).toBeVisible({ timeout: 15_000 });
     await expect(

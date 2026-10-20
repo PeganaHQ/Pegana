@@ -106,7 +106,7 @@ function ActionCard({
             radius: 16,
             className: "group flex h-full flex-col gap-3 p-4",
           }),
-          // The primary action (Get alerts) carries a subtle, INTENTIONAL V5
+          // The primary action (Follow flips) carries a subtle, INTENTIONAL V5
           // emphasis — a brighter hairline (border-outline), not the old
           // inconsistent one-off border. Everything else stays uniform.
           primary ? "border-outline" : "border-hairline",

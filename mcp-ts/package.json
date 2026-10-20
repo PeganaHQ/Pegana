@@ -62,7 +62,7 @@
     "globals": "^16.5.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.66.0",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "@x402/core": "2.28.0",
