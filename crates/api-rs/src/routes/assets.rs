@@ -1727,9 +1727,12 @@ pub struct StateResp {
     pub asset: String,
     #[schema(value_type = crate::schema::PegState)]
     pub state: String,
-    /// Timestamp of the most recent transition into the current state.
-    /// Equals the current snapshot timestamp if the engine has only ever
-    /// observed one state for this asset.
+    /// Timestamp of the most recent transition into the current state: the
+    /// first snapshot of the current contiguous run. Constant across
+    /// recomputes; it changes ONLY on a real state transition. For an asset
+    /// that has only ever held one state it is that asset's first observed
+    /// snapshot. When `stale` is true it collapses to `updated_at`, the moment
+    /// data stopped.
     #[serde(serialize_with = "crate::serde_fmt::ts_millis_z")]
     pub since: DateTime<Utc>,
     #[serde(serialize_with = "crate::serde_fmt::dec_norm")]
@@ -1830,34 +1833,49 @@ pub async fn state_by_mint(
     state_for_symbol(&state.pg, symbol).await
 }
 
-async fn state_for_symbol(
-    pg: &sqlx::PgPool,
-    symbol: String,
-) -> Result<impl IntoResponse, ApiError> {
-    let row = sqlx::query(
-        r#"
+/// Latest-snapshot + current-run-start query for `/state`. Fast path is two
+/// primary-key reads (`discount_snapshots (asset, ts)` and
+/// `engine_state_snapshot (asset)`).
+const STATE_SQL: &str = r#"
         WITH current AS (
             SELECT *,
                    (ts < now() - INTERVAL '15 minutes') AS is_stale
             FROM discount_snapshots
             WHERE asset = $1
             ORDER BY ts DESC LIMIT 1
-        ),
-        prev AS (
-            SELECT max(ts) AS since FROM discount_snapshots
-            WHERE asset = $1
-              AND state <> (SELECT state FROM current)
         )
         SELECT
           CASE WHEN c.is_stale THEN 'UNKNOWN'
                ELSE c.state::text END AS state,
           CASE WHEN c.is_stale THEN 'stale_source'
                ELSE c.state_reason END AS state_reason,
-          -- When stale, `since` must reflect when data stopped (c.ts), not when
-          -- the now-collapsed state began — a consumer computing "age of current
-          -- UNKNOWN" would otherwise get a too-old, misleading duration.
+          -- `since` = start of the CURRENT published-state run; constant across
+          -- recomputes, moves only on a real transition. When stale it stays
+          -- c.ts (when data stopped). Fast path: the engine's persisted
+          -- `state_since` (migration 0079), a PK read, valid only if it does not
+          -- postdate the snapshot AND the engine row is not behind it: the engine
+          -- writes the snapshot row (persist_discount) BEFORE upserting
+          -- engine_state_snapshot, so on a transition tick the row briefly holds
+          -- the OLD state/state_since. updated_at (DB NOW() at upsert) >= c.ts
+          -- proves this tick's upsert landed; failing that, the row is still
+          -- trusted only when its last_state equals the snapshot's state (no
+          -- transition pending), else the exact fallback runs. Fallback (engine has not stamped it yet):
+          -- the exact derivation from history = first snapshot after the last
+          -- row of a DIFFERENT state, else the asset's first snapshot. The
+          -- fallback is a lazy COALESCE branch, so it never runs on the fast
+          -- path (its cost is O(history) for a never-changed asset).
           CASE WHEN c.is_stale THEN c.ts
-               ELSE COALESCE((SELECT since FROM prev), c.ts) END AS since,
+               ELSE COALESCE(
+                 (SELECT e.state_since FROM engine_state_snapshot e
+                  WHERE e.asset = $1 AND e.state_since <= c.ts
+                    AND (e.updated_at >= c.ts OR e.last_state = c.state::text)),
+                 (SELECT min(d.ts) FROM discount_snapshots d
+                  WHERE d.asset = $1
+                    AND d.ts > COALESCE(
+                          (SELECT max(x.ts) FROM discount_snapshots x
+                           WHERE x.asset = $1 AND x.state IS DISTINCT FROM c.state),
+                          '-infinity'::timestamptz)),
+                 c.ts) END AS since,
           c.discount_smooth AS discount, c.intrinsic_usd, c.market_usd,
           c.ts AS updated_at, c.is_stale AS stale,
           -- Collapse confidence to 'unknown' on a stale feed, mirroring the state
@@ -1865,12 +1883,17 @@ async fn state_for_symbol(
           CASE WHEN c.is_stale THEN 'unknown'
                ELSE c.confidence END AS confidence
         FROM current c
-        "#,
-    )
-    .bind(&symbol)
-    .fetch_optional(pg)
-    .await
-    .map_err(ApiError::db)?;
+        "#;
+
+async fn state_for_symbol(
+    pg: &sqlx::PgPool,
+    symbol: String,
+) -> Result<impl IntoResponse, ApiError> {
+    let row = sqlx::query(STATE_SQL)
+        .bind(&symbol)
+        .fetch_optional(pg)
+        .await
+        .map_err(ApiError::db)?;
     let row = match row {
         Some(r) => r,
         None => {
@@ -2642,5 +2665,236 @@ mod tests {
             .and_then(|x| x.as_str())
             .expect("oracle_usd as string");
         assert_eq!(oracle.parse::<Decimal>().unwrap(), Decimal::new(9990, 4));
+    }
+
+    // ---- `/state` `since` semantics (runs the real STATE_SQL) ----
+    //
+    // DB-gated like the repo's other integration tests: self-skips unless
+    // `PEGANA_INTEGRATION_PG_URL` points at a migrated Postgres.
+
+    async fn pg_or_skip() -> Option<sqlx::PgPool> {
+        let Ok(url) = std::env::var("PEGANA_INTEGRATION_PG_URL") else {
+            eprintln!("skip: PEGANA_INTEGRATION_PG_URL not set");
+            return None;
+        };
+        Some(sqlx::PgPool::connect(&url).await.unwrap())
+    }
+
+    async fn clean(pool: &sqlx::PgPool, sym: &str) {
+        for q in [
+            "DELETE FROM engine_state_snapshot WHERE asset = $1",
+            "DELETE FROM discount_snapshots WHERE asset = $1",
+            "DELETE FROM assets WHERE symbol = $1",
+        ] {
+            sqlx::query(q).bind(sym).execute(pool).await.unwrap();
+        }
+    }
+
+    async fn seed_asset(pool: &sqlx::PgPool, sym: &str) {
+        clean(pool, sym).await;
+        sqlx::query(
+            r#"INSERT INTO assets
+                 (symbol, mint, name, class, peg_target, decimals, intrinsic_kind, thresholds, is_active)
+               VALUES ($1, $2, 'since test', 'stable_fiat'::asset_class, 'USD'::peg_target, 6,
+                       'pyth_fx', '{}'::jsonb, true)"#,
+        )
+        .bind(sym)
+        .bind(format!("MINT_{sym}"))
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn tick(pool: &sqlx::PgPool, sym: &str, state: &str, ts: DateTime<Utc>) {
+        sqlx::query(
+            r#"INSERT INTO discount_snapshots
+                 (asset, discount_raw, discount_smooth, oracle_discount, state, confidence,
+                  intrinsic_usd, market_usd, extra, ts)
+               VALUES ($1, 0.001, 0.001, NULL, $2::peg_state, 'high', 1.0, 1.0, '{}'::jsonb, $3)"#,
+        )
+        .bind(sym)
+        .bind(state)
+        .bind(ts)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Mimics the engine's per-tick `engine_state_snapshot` upsert.
+    async fn set_engine_since(pool: &sqlx::PgPool, sym: &str, state: &str, since: DateTime<Utc>) {
+        sqlx::query(
+            r#"INSERT INTO engine_state_snapshot (asset, last_state, state_since)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (asset) DO UPDATE
+               SET last_state = EXCLUDED.last_state, state_since = EXCLUDED.state_since,
+                   updated_at = now()"#,
+        )
+        .bind(sym)
+        .bind(state)
+        .bind(since)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn read_state(pool: &sqlx::PgPool, sym: &str) -> (String, DateTime<Utc>, DateTime<Utc>) {
+        let r = sqlx::query(STATE_SQL)
+            .bind(sym)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        (r.get("state"), r.get("since"), r.get("updated_at"))
+    }
+
+    /// Fallback path (engine has not stamped `state_since`): the exact derivation
+    /// from snapshot history.
+    #[tokio::test]
+    async fn since_fallback_is_stable_within_a_state_and_moves_only_on_transition() {
+        let Some(pool) = pg_or_skip().await else {
+            return;
+        };
+        const SYM: &str = "ZZ_SINCE_TEST";
+        seed_asset(&pool, SYM).await;
+
+        // Minute-spaced ticks, all inside the 15-minute freshness window.
+        let t0 = Utc::now() - chrono::Duration::minutes(14);
+        let at = |m: i64| t0 + chrono::Duration::minutes(m);
+
+        // Only ever PEGGED: since == first observed snapshot, however many ticks.
+        for m in 0..3 {
+            tick(&pool, SYM, "PEGGED", at(m)).await;
+            let (state, since, updated_at) = read_state(&pool, SYM).await;
+            assert_eq!(state, "PEGGED");
+            assert_eq!(
+                since,
+                at(0),
+                "since must stay at the first snapshot (tick {m})"
+            );
+            assert_eq!(updated_at, at(m));
+        }
+
+        // Transition to DRIFT: since moves to the first DRIFT row, then holds.
+        for m in 3..5 {
+            tick(&pool, SYM, "DRIFT", at(m)).await;
+            let (state, since, _) = read_state(&pool, SYM).await;
+            assert_eq!(state, "DRIFT");
+            assert_eq!(since, at(3), "since must be the first DRIFT row (tick {m})");
+        }
+
+        // Back to PEGGED: a NEW run, not merged with the earlier PEGGED run.
+        for m in 5..8 {
+            tick(&pool, SYM, "PEGGED", at(m)).await;
+            let (state, since, _) = read_state(&pool, SYM).await;
+            assert_eq!(state, "PEGGED");
+            assert_eq!(
+                since,
+                at(5),
+                "since must restart at the re-entry (tick {m})"
+            );
+        }
+
+        // Stale: collapses to UNKNOWN and since == updated_at (data stopped).
+        sqlx::query("UPDATE discount_snapshots SET ts = ts - INTERVAL '1 hour' WHERE asset = $1")
+            .bind(SYM)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (state, since, updated_at) = read_state(&pool, SYM).await;
+        assert_eq!(state, "UNKNOWN");
+        assert_eq!(since, updated_at);
+
+        clean(&pool, SYM).await;
+    }
+
+    /// Fast path: the engine's persisted `state_since` is authoritative (O(1));
+    /// it wins over the history derivation, a value that postdates the snapshot
+    /// is ignored, and a stale feed still collapses to `updated_at`.
+    #[tokio::test]
+    async fn since_uses_engine_state_since_when_present() {
+        let Some(pool) = pg_or_skip().await else {
+            return;
+        };
+        const SYM: &str = "ZZ_SINCE_FAST_TEST";
+        seed_asset(&pool, SYM).await;
+        let t0 = Utc::now() - chrono::Duration::minutes(14);
+        let at = |m: i64| t0 + chrono::Duration::minutes(m);
+
+        // History alone would say since == at(0); the engine says at(0) too, and
+        // keeps saying it as ticks accumulate (never rewritten per tick).
+        set_engine_since(&pool, SYM, "PEGGED", at(0)).await;
+        for m in 0..3 {
+            tick(&pool, SYM, "PEGGED", at(m)).await;
+            let (_, since, updated_at) = read_state(&pool, SYM).await;
+            assert_eq!(since, at(0));
+            assert_eq!(updated_at, at(m));
+        }
+
+        // Proof the engine value (not a history scan) is what is returned: a
+        // sentinel that history could never produce.
+        set_engine_since(&pool, SYM, "PEGGED", at(1)).await;
+        assert_eq!(read_state(&pool, SYM).await.1, at(1));
+
+        // Engine transitions to DRIFT at at(3).
+        tick(&pool, SYM, "DRIFT", at(3)).await;
+        set_engine_since(&pool, SYM, "DRIFT", at(3)).await;
+        let (state, since, _) = read_state(&pool, SYM).await;
+        assert_eq!((state.as_str(), since), ("DRIFT", at(3)));
+
+        // Write-ordering window: the snapshot row for a transition is persisted
+        // BEFORE the engine upserts its row. The engine row (PEGGED, since at(0),
+        // updated before the DRIFT tick) must not be paired with the new state.
+        set_engine_since(&pool, SYM, "PEGGED", at(0)).await;
+        sqlx::query("UPDATE engine_state_snapshot SET updated_at = $2 WHERE asset = $1")
+            .bind(SYM)
+            .bind(at(2))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (state, since, _) = read_state(&pool, SYM).await;
+        assert_eq!(
+            (state.as_str(), since),
+            ("DRIFT", at(3)),
+            "behind row -> fallback"
+        );
+        // Same-state tick with an older engine row (upsert not yet landed) is
+        // still trusted: no transition is pending (last_state matches).
+        set_engine_since(&pool, SYM, "DRIFT", at(1)).await;
+        sqlx::query("UPDATE engine_state_snapshot SET updated_at = $2 WHERE asset = $1")
+            .bind(SYM)
+            .bind(at(2))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_state(&pool, SYM).await.1,
+            at(1),
+            "matching last_state -> fast path"
+        );
+        set_engine_since(&pool, SYM, "DRIFT", at(3)).await;
+
+        // A value newer than the snapshot is not trusted -> exact fallback.
+        set_engine_since(&pool, SYM, "DRIFT", at(13)).await;
+        assert_eq!(read_state(&pool, SYM).await.1, at(3));
+
+        // NULL (not yet stamped) -> exact fallback.
+        sqlx::query("UPDATE engine_state_snapshot SET state_since = NULL WHERE asset = $1")
+            .bind(SYM)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(read_state(&pool, SYM).await.1, at(3));
+
+        // Stale: since == updated_at regardless of the engine value.
+        set_engine_since(&pool, SYM, "DRIFT", at(3)).await;
+        sqlx::query("UPDATE discount_snapshots SET ts = ts - INTERVAL '1 hour' WHERE asset = $1")
+            .bind(SYM)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (state, since, updated_at) = read_state(&pool, SYM).await;
+        assert_eq!(state, "UNKNOWN");
+        assert_eq!(since, updated_at);
+
+        clean(&pool, SYM).await;
     }
 }

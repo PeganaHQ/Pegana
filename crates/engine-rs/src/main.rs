@@ -1480,6 +1480,13 @@ async fn try_recompute(
         "state" => peg_state_label(final_state).to_string(),
     )
     .set(1.0);
+    // Missing run start (new asset, TRUNCATEd cache, pre-backfill row): derive
+    // it exactly from history now that this tick's snapshot is persisted,
+    // instead of stamping the restart time.
+    if engine.state_since(asset).await.is_none() {
+        engine.seed_state_since_from_history(pg, asset).await;
+    }
+    engine.stamp_state_since(asset, final_state, ts).await;
     engine.set_last_published_state(asset, final_state).await;
 
     // Persist the engine cache so a restart inside the next tick window can

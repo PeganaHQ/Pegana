@@ -13,6 +13,14 @@ pub struct Config {
 
     #[serde(default = "default_sanctum_url")]
     pub sanctum_api_url: String,
+    /// Max tolerated disagreement (bps) between the Sanctum API NAV and its
+    /// reference (`SANCTUM_NAV_DRIFT_BPS`). Default = `sanctum_nav::NAV_MAX_DRIFT_BPS`
+    /// (100 = 1%). Reference is the on-chain NAV when readable, else the Jupiter
+    /// market-implied NAV (one-sided: API below market). The Sanctum batch endpoint
+    /// can serve a stale-low NAV while its HTTP still returns 200 (2026-10-19: ~2.4%
+    /// low across 38 LSTs, every one rendered PEGGED); this bound catches that.
+    #[serde(default = "default_sanctum_nav_drift_bps")]
+    pub sanctum_nav_drift_bps: i64,
     #[serde(default = "default_jupiter_url")]
     pub jupiter_api_url: String,
     #[serde(default = "default_pyth_url")]
@@ -92,6 +100,9 @@ pub struct Config {
 
 fn default_sanctum_url() -> String {
     "https://extra-api.sanctum.so".into()
+}
+fn default_sanctum_nav_drift_bps() -> i64 {
+    crate::sources::sanctum_nav::NAV_MAX_DRIFT_BPS
 }
 fn default_jupiter_url() -> String {
     "https://lite-api.jup.ag".into()

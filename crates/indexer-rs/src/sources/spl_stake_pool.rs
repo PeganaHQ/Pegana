@@ -49,11 +49,11 @@ const MIN_STAKE_POOL_LEN: usize = 282;
 /// trips. This is the SplStakePool analogue of the SanctumLst directory `stale`
 /// flag: those assets (jitoSOL et al.) have NO other frozen-backing detector.
 /// Observability only — never gates a verdict.
-const EPOCH_LAG_WARN: u64 = 2;
+pub(crate) const EPOCH_LAG_WARN: u64 = 2;
 
 /// Epochs the pool's last crank lags the current epoch. Saturating so a spurious
 /// `last_update_epoch` ahead of `current` reads 0 rather than underflowing.
-fn epoch_lag(current_epoch: u64, last_update_epoch: u64) -> u64 {
+pub(crate) fn epoch_lag(current_epoch: u64, last_update_epoch: u64) -> u64 {
     current_epoch.saturating_sub(last_update_epoch)
 }
 
@@ -187,10 +187,14 @@ async fn poll_once(
     pools: &[PoolCfg],
 ) -> Result<()> {
     let started = std::time::Instant::now();
-    // Present, non-zero, AND fresh — a stalled-publisher SOL/USD must not be
-    // multiplied into a fresh-looking LST NAV (see state::fresh_numeraire).
-    let Some(sol_usd) = crate::state::fresh_numeraire(&state.pyth, "SOL/USD").await else {
-        debug!("SOL/USD missing/zero/stale from Pyth cache — skipping spl_stake_pool tick");
+    // Fresh Pyth, else Jupiter-derived — a stalled-publisher SOL/USD must not
+    // be multiplied into a fresh-looking LST NAV, and if neither tier has a
+    // usable price we skip (see jupiter::numeraire_usd).
+    let Some(sol_usd) = crate::sources::jupiter::numeraire_usd(state, "SOL/USD").await else {
+        debug!(
+            "SOL/USD missing/zero/stale from Pyth and Jupiter unavailable — skipping \
+             spl_stake_pool tick"
+        );
         return Ok(());
     };
 

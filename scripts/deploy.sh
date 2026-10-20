@@ -178,7 +178,7 @@ if [[ "\$sqlx_history" == "t" ]]; then
     -v "\$migration_stage:/work/migrations:ro" \
     -w /work \
     rust:1.90-slim \
-    bash -lc 'cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked >/dev/null && cd migrations && sha256sum -c manifest.sha256 >/dev/null && cd .. && DATABASE_URL="postgres://\${POSTGRES_USER:-pegana}:\${POSTGRES_PASSWORD}@127.0.0.1:5432/\${POSTGRES_DB:-pegana}" sqlx migrate run --source migrations' \
+    bash -c 'cargo install sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres --locked >/dev/null && cd migrations && sha256sum -c manifest.sha256 >/dev/null && cd .. && DATABASE_URL="postgres://\${POSTGRES_USER:-pegana}:\${POSTGRES_PASSWORD}@127.0.0.1:5432/\${POSTGRES_DB:-pegana}" sqlx migrate run --source migrations' \
     </dev/null
 elif [[ "\$sqlx_history" == "f" ]]; then
   echo "  · legacy manually-migrated database detected; validating 0070 sentinel"

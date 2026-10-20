@@ -22,23 +22,29 @@ pub struct PythEntry {
 /// Shared in-memory cache of latest Pyth prices keyed by symbolic feed name (e.g. "SOL/USD").
 pub type PythCache = Arc<RwLock<HashMap<String, PythEntry>>>;
 
-/// Max age (seconds) of a Pyth numéraire reading before it is treated as STALE and
-/// its USD conversion skipped. A stalled Pyth publisher keeps its last `publish_time`,
-/// so a frozen SOL/USD would otherwise silently poison every USD intrinsic derived
-/// from it — and the engine's own staleness gate cannot see it, because the indexer
-/// re-stamps intrinsics with `now()` each tick. 120s = 2× the Hermes stream idle
-/// timeout (60s, `pyth::STREAM_IDLE_TIMEOUT`), so this only fires on a genuine
-/// sustained stall past a reconnect cycle, never on transient SSE jitter.
+/// Max age (seconds) of a Pyth numéraire reading before it is treated as STALE.
+/// A stalled Pyth publisher keeps its last `publish_time`, so a frozen SOL/USD
+/// would otherwise silently poison every USD intrinsic derived from it — and the
+/// engine's own staleness gate cannot see it, because the indexer re-stamps
+/// intrinsics with `now()` each tick. 120s = 2× the Hermes stream idle timeout
+/// (60s, `pyth::STREAM_IDLE_TIMEOUT`), so this only fires on a genuine sustained
+/// stall past a reconnect cycle, never on transient SSE jitter.
+///
+/// On staleness the consumer falls through to the Jupiter-derived last resort
+/// (`jupiter::numeraire_usd`), which is held to this same age bound. Only when
+/// BOTH tiers are stale is the USD conversion skipped.
 pub const PYTH_NUMERAIRE_STALE_SECS: i64 = 120;
 
 /// Read a Pyth numéraire price that is present, non-zero, AND fresh. Returns `None`
-/// — signalling the caller to SKIP this tick's USD conversion — when the feed is
-/// missing, zero, or stale (`publish_time` older than [`PYTH_NUMERAIRE_STALE_SECS`]).
+/// when the feed is missing, zero, or stale (`publish_time` older than
+/// [`PYTH_NUMERAIRE_STALE_SECS`]).
 ///
-/// This is the single guard for every SOL-numéraire source (hylo / sanctum / jupiter
-/// / spl_stake_pool): a stale numéraire must not be multiplied into a fresh-looking
-/// intrinsic. On staleness it increments `pegana_pyth_numeraire_stale_total{feed}`
-/// and warns; the caller's existing missing-feed skip path then runs unchanged.
+/// This is the Pyth tier of the numéraire guard. Consumers should call
+/// [`crate::sources::jupiter::numeraire_usd`] instead, which layers the
+/// Jupiter-derived last resort on top and only skips USD conversion when both
+/// tiers are unusable. A stale numéraire must never be multiplied into a
+/// fresh-looking intrinsic; on staleness this increments
+/// `pegana_pyth_numeraire_stale_total{feed}` and warns.
 pub async fn fresh_numeraire(pyth: &PythCache, feed: &str) -> Option<Decimal> {
     let (price, publish_time) = {
         let cache = pyth.read().await;
