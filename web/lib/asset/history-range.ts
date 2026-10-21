@@ -156,18 +156,31 @@ export function downsampleHistory(
  *
  * - `null` when the loaded data covers the range (within one sample step).
  * - Otherwise a plain sentence naming where the data starts, plus the
- *   history-start fact when the range reaches back past HISTORY_BEGINS_AT.
+ *   history-start fact when the range reaches back past it.
  * - A page cap that stopped paging early is stated as such.
+ *
+ * `assetHistoryStartMs` is the asset's own first stored row (`history_start`
+ * on /v1/assets/:symbol/state). Assets added after the 2026-10-17 rebuild
+ * start later (the LST cohort on 2026-10-20 10:50Z), so citing the global
+ * HISTORY_BEGINS_AT for them was false. Unknown (still loading, or the API
+ * did not send it), the global start is the fallback.
  */
 export function historyCoverageNote(
   points: Pick<HistoryPoint, "ts">[],
   fromMs: number,
   truncated = false,
+  assetHistoryStartMs: number | null = null,
 ): string | null {
+  const own =
+    assetHistoryStartMs != null && Number.isFinite(assetHistoryStartMs);
+  const beginsMs = own
+    ? Math.max(assetHistoryStartMs as number, HISTORY_BEGINS_MS)
+    : HISTORY_BEGINS_MS;
+  const beginsText = own
+    ? `Pegana's history for this asset begins ${formatUtc(beginsMs)}.`
+    : `Pegana's stored history begins ${formatUtc(beginsMs)}.`;
   if (points.length === 0) {
-    return fromMs < HISTORY_BEGINS_MS
-      ? `No data in this range. Pegana's stored history begins ${formatUtc(HISTORY_BEGINS_MS)}.`
-      : null;
+    return fromMs < beginsMs ? `No data in this range. ${beginsText}` : null;
   }
   let oldest = Infinity;
   for (const p of points) {
@@ -178,14 +191,24 @@ export function historyCoverageNote(
   // One hour of slack: the coarsest step is 1h, and a range start that falls
   // inside the first bucket is still covered.
   if (oldest - fromMs <= 3600_000) return null;
-  const since = `Showing data from ${formatUtc(oldest)}.`;
+  // An hourly bucket is stamped at the top of its hour, so the first one can
+  // read earlier than the first stored row (10:00 against a 10:50 start).
+  // Never claim data from before the history begins.
+  const since = `Showing data from ${formatUtc(Math.max(oldest, beginsMs))}.`;
   if (truncated) {
     return `${since} Older data in this range was not loaded.`;
   }
-  if (fromMs < HISTORY_BEGINS_MS) {
-    return `${since} Pegana's stored history begins ${formatUtc(HISTORY_BEGINS_MS)}.`;
+  if (fromMs < beginsMs) {
+    return `${since} ${beginsText}`;
   }
   return since;
+}
+
+/** `history_start` (ISO) as epoch ms; null when absent or unparseable. */
+export function historyStartMs(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : null;
 }
 
 /** "2026-10-17 09:20 UTC". */

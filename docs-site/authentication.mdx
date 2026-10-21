@@ -25,7 +25,7 @@ The full list is in the [API reference](/api-reference/introduction).
 
 ## Rate limiting
 
-The only control is a per-IP sliding-window limit: currently **60 requests/min**,
+The only control is a per-IP sliding-window limit: currently **240 requests a minute per IP**,
 reported on every response in the `RateLimit-Limit` header. See
 [rate limits](/guides/rate-limits).
 

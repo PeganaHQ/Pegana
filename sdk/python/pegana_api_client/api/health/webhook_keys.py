@@ -54,7 +54,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[ApiError | WebhookKeysResponse]:
-    """GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+    """GET /v1/meta/webhook-keys; active Ed25519 public keys for verifying
     inbound webhook signatures.
 
      Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
@@ -84,7 +84,7 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
 ) -> ApiError | WebhookKeysResponse | None:
-    """GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+    """GET /v1/meta/webhook-keys; active Ed25519 public keys for verifying
     inbound webhook signatures.
 
      Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
@@ -110,7 +110,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[ApiError | WebhookKeysResponse]:
-    """GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+    """GET /v1/meta/webhook-keys; active Ed25519 public keys for verifying
     inbound webhook signatures.
 
      Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
@@ -138,7 +138,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
 ) -> ApiError | WebhookKeysResponse | None:
-    """GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+    """GET /v1/meta/webhook-keys; active Ed25519 public keys for verifying
     inbound webhook signatures.
 
      Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).

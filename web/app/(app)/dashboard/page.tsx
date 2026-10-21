@@ -32,7 +32,7 @@ import { usePagination } from "@/lib/hooks/use-pagination";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useStats } from "@/lib/hooks/use-stats";
 import { useAlerts } from "@/lib/hooks/use-alerts";
-import { useLive } from "@/lib/store/live-context";
+import { useLive, useWsDrivenPage } from "@/lib/store/live-context";
 import { useWatchlist, parseWatchlistInput } from "@/lib/store/watchlist";
 import {
   cleanSeries,
@@ -218,6 +218,7 @@ function DashboardBoard() {
   const { data: stats } = useStats();
   const { data: alerts } = useAlerts({ limit: 15 });
   const { byAsset, connected } = useLive();
+  useWsDrivenPage();
   const { symbols: watchlist, importSymbols } = useWatchlist();
   const [watchCopied, setWatchCopied] = useState(false);
 
@@ -1215,7 +1216,7 @@ function BackendDownState({
 }) {
   return (
     <div className={cn("text-center", className)}>
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-st-drift">
+      <p className={`font-mono text-[11px] uppercase tracking-[0.08em] ${rateLimited ? "text-text-muted" : "text-st-drift"}`}>
         ● {rateLimited ? RATE_LIMITED_LABEL : "Live feed unreachable"}
       </p>
       <p className="mx-auto mt-3 max-w-[360px] text-[13px] leading-[1.6] text-text-muted">
@@ -1228,21 +1229,24 @@ function BackendDownState({
           </>
         )}
       </p>
-      <div className="mt-5 flex items-center justify-center gap-3">
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex items-center rounded-full border border-outline px-4 py-2 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted transition-colors duration-300 hover:border-text hover:text-text"
-        >
-          Retry now
-        </button>
-        <Link
-          href="/status"
-          className="inline-flex items-center rounded-full border border-hairline px-4 py-2 font-mono text-[10px] uppercase tracking-[0.08em] text-text-caption transition-colors duration-300 hover:border-outline hover:text-text"
-        >
-          Check status
-        </Link>
-      </div>
+      {/* A slow-down request resumes on its own: no Retry button. */}
+      {!rateLimited && (
+        <div className="mt-5 flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center rounded-full border border-outline px-4 py-2 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted transition-colors duration-300 hover:border-text hover:text-text"
+          >
+            Retry now
+          </button>
+          <Link
+            href="/status"
+            className="inline-flex items-center rounded-full border border-hairline px-4 py-2 font-mono text-[10px] uppercase tracking-[0.08em] text-text-caption transition-colors duration-300 hover:border-outline hover:text-text"
+          >
+            Check status
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -233,3 +233,79 @@ async fn invalid_inputs_are_400() {
         }
     }
 }
+
+/// Round-3 F3: xSOL (synth_lev) receipts are excluded from the discoverable
+/// ledger (index, `?asset=`, CSV) like every `/v1/assets*` route excludes
+/// the asset, while the receipt itself stays reachable by id. Skips when the
+/// database has no `xSOL` catalog row of class `synth_lev` to attach to.
+#[tokio::test]
+async fn non_public_asset_is_hidden_from_the_ledger_but_resolves_by_id() {
+    let (Some(base), Some(pg)) = (base(), pg_url()) else {
+        return;
+    };
+    let pool = PgPool::connect(&pg).await.unwrap();
+    let class: Option<(String,)> =
+        sqlx::query_as("SELECT class::text FROM assets WHERE symbol = 'xSOL'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+    if class.map(|c| c.0) != Some("synth_lev".to_string()) {
+        return;
+    }
+    let t0 = Utc.with_ymd_and_hms(2001, 6, 1, 0, 0, 0).unwrap() + Duration::seconds(rand_secs());
+    let xsol = Uuid::new_v4();
+    seed(&pool, xsol, "xSOL", "synth_lev", t0).await;
+    let usdc = Uuid::new_v4();
+    seed(
+        &pool,
+        usdc,
+        "USDC",
+        "stable_fiat",
+        t0 + Duration::seconds(1),
+    )
+    .await;
+    let (lo, hi) = (t0 - Duration::seconds(1), t0 + Duration::minutes(1));
+    let win = format!("since={}&until={}&limit=100", iso(lo), iso(hi));
+
+    // `?asset=xSOL` is a 404 unknown_asset on the index, gate or no gate.
+    let (st, body) = get(&base, &format!("{win}&asset=xSOL")).await;
+    assert_eq!(st, 404, "{body}");
+    assert_eq!(body["error"], "unknown_asset");
+
+    // CSV: same 404 for the filter.
+    let client = reqwest::Client::new();
+    let csv_url =
+        |extra: &str| format!("{base}/v1/audit.csv?from={}&to={}{extra}", iso(lo), iso(hi));
+    let resp = client.get(csv_url("&asset=xSOL")).send().await.unwrap();
+    assert_eq!(resp.status().as_u16(), 404);
+
+    if public_alerts() {
+        // The window lists the public row only.
+        let (st, all) = get(&base, &win).await;
+        assert_eq!(st, 200);
+        let got = ids(&all);
+        assert!(got.contains(&usdc.to_string()));
+        assert!(!got.contains(&xsol.to_string()), "xSOL must not be indexed");
+        let text = client
+            .get(csv_url(""))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(text.contains(&usdc.to_string()));
+        assert!(
+            !text.contains(&xsol.to_string()),
+            "xSOL must not be exported"
+        );
+    }
+
+    // The receipt itself stays reachable by id: permanent public evidence.
+    let resp = client
+        .get(format!("{base}/v1/audit/{xsol}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+}

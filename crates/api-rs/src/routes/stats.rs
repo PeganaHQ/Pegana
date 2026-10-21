@@ -16,7 +16,7 @@ use utoipa::ToSchema;
 /// Redact chat-id-shaped numbers (6+ consecutive digits) from a string.
 /// Telegram errors occasionally embed `chat_id=12345678` or similar; the
 /// /v1/stats endpoint is unauthenticated so we redact defensively before
-/// returning. Conservative pattern — strings like "2026-05-25" (date) are
+/// returning. Conservative pattern; strings like "2026-05-25" (date) are
 /// left intact because the regex requires 6+ contiguous digits.
 fn redact_chat_ids(s: &str) -> String {
     // Avoid pulling in the `regex` crate for one pattern; this is the same
@@ -49,7 +49,7 @@ fn redact_chat_ids(s: &str) -> String {
 }
 
 /// Delivery-pipeline health rollup. Surfaced so the dashboard can show a
-/// degraded badge when notifications are silently failing — historically
+/// degraded badge when notifications are silently failing; historically
 /// MarkdownV2 escape bugs caused alert_deliveries.status='failed' rows to
 /// pile up without any user-visible signal, breaking trust.
 #[derive(Debug, Serialize, ToSchema)]
@@ -84,7 +84,7 @@ pub struct StatsResponse {
     summary = "Aggregate counters + delivery health",
     responses(
         (status = 200, description = "Aggregate counters + delivery rollup", body = StatsResponse),
-        (status = 429, description = "Rate limit exceeded — see Retry-After header", body = ApiError),
+        (status = 429, description = "Rate limit exceeded; see Retry-After header", body = ApiError),
         (status = 500, description = "Unexpected server error", body = ApiError)
     )
 )]
@@ -107,10 +107,19 @@ pub async fn summary(State(state): State<Arc<AppState>>) -> Result<impl IntoResp
     let alerts_24h: i64 = if state.feature_public_alerts {
         // Beta cohort: monitoring_only assets are now publicly listed in
         // /v1/audit (no longer egress-gated), so this counter
-        // includes them too and stays reconciled with those feeds.
+        // includes them too and stays reconciled with those feeds. Non-public
+        // classes (synth_lev, e.g. xSOL) are not indexed there, so they are
+        // not counted here either.
         let (n,): (i64,) = sqlx::query_as(
             "SELECT count(*) FROM alerts \
-             WHERE detected_at >= now() - INTERVAL '24 hours'",
+             WHERE detected_at >= now() - INTERVAL '24 hours' \
+               AND class::text <> ALL($1::text[])",
+        )
+        .bind(
+            crate::schema::NON_PUBLIC_CLASSES
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>(),
         )
         .fetch_one(&state.pg)
         .await

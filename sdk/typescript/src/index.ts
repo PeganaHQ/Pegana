@@ -1,4 +1,4 @@
-// Pegana TypeScript SDK — minimal hand-rolled wrapper.
+// Pegana TypeScript SDK: minimal hand-rolled wrapper.
 //
 // v0.1.0 ships four functions covering the public-receipt verification
 // flow. Full OpenAPI-generated coverage (all 33+ endpoints) is deferred to
@@ -13,14 +13,14 @@
 // CI can't accidentally push it to the registry. Flip to public once the
 // generated SDK lands.
 
-// v0.2.0 — the full OpenAPI-generated typed client + helpers (`createPeganaApi`,
+// v0.2.0; the full OpenAPI-generated typed client + helpers (`createPeganaApi`,
 // `unwrapList`, `toNumberUnsafe`) and the generated `paths`/`components`/
 // `operations` types, covering every `/v1` endpoint. The v0.1 receipt-
 // verification surface below (`PeganaClient` + the four convenience fns) is
 // unchanged for backward compatibility.
 export * from "./typed.js";
 
-// Live peg-feed WebSocket helper (`PegFeed` / `connectPegFeed`) — the one
+// Live peg-feed WebSocket helper (`PegFeed` / `connectPegFeed`); the one
 // endpoint OpenAPI can't model (`/v1/ws` is a spec stub). Completes v0.2.0.
 export * from "./ws.js";
 
@@ -43,7 +43,7 @@ export interface PeganaClientOptions {
 
 // Mirrors the actual /v1/audit/{id} response: { alert, evidence, evidence_status }.
 // Pre-2026-05-29 the type was flat (receipt_sha256 at the top), but the API
-// has always returned the nested shape — verifyAlert() silently returned
+// has always returned the nested shape; verifyAlert() silently returned
 // `ok: false` for every call because `receipt.receipt_sha256` was undefined.
 // See docs/operations/qa-pre-launch-workflow.md (B-012).
 export interface AuditAlert {
@@ -98,9 +98,9 @@ export interface AuditIndexRow {
 // Mirrors the actual 200 body of /v1/audit/{id}/onchain:
 // { tx_sig, explorer_url, commit_status }. On a 200 the alert is anchored, so
 // `commit_status` is always "committed" and `tx_sig` is non-null (see
-// crates/api-rs/src/routes/audit.rs onchain()). Every non-committed state —
+// crates/api-rs/src/routes/audit.rs onchain()). Every non-committed state,
 // the COMMON case, since on-chain SPL Memo commits are cost-gated to
-// {Depeg, Critical, BlackSwan} (ADR-0004) — returns 404, not a null tx_sig,
+// {Depeg, Critical, BlackSwan} (ADR-0004), returns 404, not a null tx_sig,
 // so getOnchain() resolves to `null` rather than this shape (B-028: there is
 // no `cluster`/`alert_id`/`memo_format` field on the live response).
 export interface OnchainCommitment {
@@ -113,7 +113,7 @@ export interface VerifyResult {
   /**
    * A DEFINITIVE verification verdict: `true` only when the receipt is `ready`
    * AND its sha matches `expected`. `false` means EITHER the receipt is ready
-   * but its sha does not match (tampered / wrong expected) OR it isn't ready —
+   * but its sha does not match (tampered / wrong expected) OR it isn't ready;
    * branch on `status` to tell those apart. It is NOT `false === tampered`.
    */
   ok: boolean;
@@ -139,14 +139,14 @@ export class PeganaClient {
   }
 
   /**
-   * GET /v1/audit/{id} — fetch the full receipt for an alert.
+   * GET /v1/audit/{id}: fetch the full receipt for an alert.
    */
   async getAudit(id: string): Promise<AuditReceipt> {
     return this.json<AuditReceipt>(`/v1/audit/${encodeURIComponent(id)}`);
   }
 
   /**
-   * GET /v1/audit?limit=N — recent receipts, newest first.
+   * GET /v1/audit?limit=N: recent receipts, newest first.
    */
   async getAuditIndex(
     options: { limit?: number; excludePegged?: boolean } = {},
@@ -161,9 +161,9 @@ export class PeganaClient {
   }
 
   /**
-   * GET /v1/audit/{id}/onchain — Solana SPL Memo commitment for the alert.
+   * GET /v1/audit/{id}/onchain: Solana SPL Memo commitment for the alert.
    *
-   * Resolves to `null` when the alert is NOT anchored — which the route
+   * Resolves to `null` when the alert is NOT anchored, which the route
    * reports as a 404 across every non-committed state (cost-gated /
    * not_applicable, in-flight, retry_exhausted, wallet_drained, unknown).
    * This is the COMMON case: SPL Memo commits are reserved for high-severity
@@ -179,7 +179,7 @@ export class PeganaClient {
 
   /**
    * Verify an alert's stored receipt sha256 matches the expected value. This
-   * is a lightweight client-side check — for cryptographic replay use the
+   * is a lightweight client-side check; for cryptographic replay use the
    * pegana-replay CLI which re-executes the methodology end-to-end.
    */
   async verifyAlert(id: string, expectedSha: string): Promise<VerifyResult> {
@@ -188,7 +188,7 @@ export class PeganaClient {
     const actual = receipt.evidence?.receipt_sha256 ?? "";
     return {
       // Only a READY receipt can be verified. A pending/failed receipt has no
-      // sha yet (actual === "") — returning ok:false there is NOT a mismatch;
+      // sha yet (actual === ""); returning ok:false there is NOT a mismatch;
       // callers distinguish it via `status` instead of mistaking it for tampering.
       ok: status === "ready" && actual !== "" && actual === expectedSha,
       status,

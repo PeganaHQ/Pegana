@@ -11,6 +11,12 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { createMcpServer, initSharedState } from "@/server";
 import { renderProm } from "@/metrics";
 import { TOOL_CATALOG, toolCountSummary } from "@/pricing";
+import { extractFingerprint } from "@/middleware/fingerprint";
+import {
+  checkMessageRateLimit,
+  MESSAGE_RATE_LIMIT_PER_MIN,
+} from "@/middleware/rate-limit";
+import { incr } from "@/metrics";
 import packageMetadata from "../package.json";
 
 // Static landing HTML served on GET / so browser visitors see a useful
@@ -129,6 +135,39 @@ export const MAX_BODY_BYTES = 64 * 1024;
  */
 export const TRANSPORT_MAX_BODY_BYTES = 16 * 1024 * 1024;
 
+/**
+ * Largest accepted JSON-RPC batch. Every tool is one call away, so a client
+ * never needs more than a handful of messages per POST; without a cap one
+ * 8 KB POST carried 150 `tools/list` entries and all of them were processed
+ * (R3 audit SEC-R3-03). A larger batch is refused as a whole with one
+ * JSON-RPC -32600 error before any entry runs.
+ */
+export const MAX_BATCH_SIZE = 10;
+
+function jsonRpcError(
+  code: number,
+  message: string,
+  data?: unknown,
+  id: string | number | null = null,
+) {
+  return {
+    jsonrpc: "2.0" as const,
+    error: data === undefined ? { code, message } : { code, message, data },
+    id,
+  };
+}
+
+/**
+ * The id of a single (non-batch) JSON-RPC request, so an error about it can
+ * be correlated by the client. `null` for a batch, a notification or an id
+ * that is not a string or number (JSON-RPC 2.0 section 5).
+ */
+function singleRequestId(body: unknown): string | number | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const id = (body as { id?: unknown }).id;
+  return typeof id === "string" || typeof id === "number" ? id : null;
+}
+
 /** True when the client asked for an SSE stream and not for HTML. */
 function wantsEventStream(accept: string | undefined): boolean {
   if (!accept) return false;
@@ -144,7 +183,8 @@ export async function buildApp(): Promise<Hono> {
   // JSON-RPC + preflight OPTIONS. Without this, OPTIONS 404'd and browser
   // clients were blocked (QA audit 2026-07-23). Server-side clients (Claude
   // Desktop/Code, Cursor) are unaffected either way.
-  app.use("*", cors());
+  // Retry-After is exposed so a browser client can honour the 429 backoff.
+  app.use("*", cors({ origin: "*", exposeHeaders: ["Retry-After"] }));
 
   // Warm the shared state (facilitator handshake + payment wrappers) once
   // at boot — the per-request factory is then cheap.
@@ -168,6 +208,53 @@ export async function buildApp(): Promise<Hono> {
         ),
     }),
     async (c) => {
+    // Parse here (not in the SDK) so the batch cap and the per-message rate
+    // limit run before any message is dispatched. Unparseable bodies go to
+    // the SDK untouched so it answers with its usual errors (406/415/-32700).
+    const text = await c.req.text();
+    let parsed: unknown;
+    let parsedOk = false;
+    try {
+      parsed = JSON.parse(text);
+      parsedOk = true;
+    } catch {
+      parsedOk = false;
+    }
+
+    const fingerprint = extractFingerprint(c.req.header());
+    if (parsedOk && Array.isArray(parsed) && parsed.length > MAX_BATCH_SIZE) {
+      // Refused without running any entry; charged as one message.
+      checkMessageRateLimit(fingerprint, 1);
+      incr("pegana_mcp_rejected_requests_total", { reason: "batch_too_large" });
+      return c.json(
+        jsonRpcError(
+          -32600,
+          `Invalid Request: batch too large (${parsed.length} entries, max ${MAX_BATCH_SIZE})`,
+          { max_batch_size: MAX_BATCH_SIZE },
+        ),
+        400,
+      );
+    }
+
+    const messages = parsedOk && Array.isArray(parsed) ? parsed.length : 1;
+    if (!checkMessageRateLimit(fingerprint, messages)) {
+      incr("pegana_mcp_rejected_requests_total", { reason: "rate_limited" });
+      return c.json(
+        jsonRpcError(
+          -32000,
+          "Rate limit exceeded: too many JSON-RPC messages",
+          {
+            error: "rate_limited",
+            limit_per_min: MESSAGE_RATE_LIMIT_PER_MIN,
+            retry_after_seconds: 60,
+          },
+          parsedOk ? singleRequestId(parsed) : null,
+        ),
+        429,
+        { "retry-after": "60" },
+      );
+    }
+
     // Build fresh per request — McpServer cannot be connected to two
     // transports concurrently, and the streamable-HTTP transport is
     // request-scoped. The shared state inside createMcpServer() is
@@ -177,7 +264,17 @@ export async function buildApp(): Promise<Hono> {
       sessionIdGenerator: undefined, // stateless
     });
     await mcp.connect(transport);
-    return transport.handleRequest(c.req.raw);
+    if (parsedOk) {
+      return transport.handleRequest(c.req.raw, { parsedBody: parsed });
+    }
+    // The raw body was consumed above; hand the SDK an identical request.
+    return transport.handleRequest(
+      new Request(c.req.raw.url, {
+        method: "POST",
+        headers: c.req.raw.headers,
+        body: text,
+      }),
+    );
     },
   );
 

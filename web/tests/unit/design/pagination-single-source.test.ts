@@ -65,6 +65,7 @@ describe("pagination has one implementation", () => {
       "app/(app)/assets/assets-screener-page.tsx",
       "app/(app)/dashboard/page.tsx",
       "app/(app)/events/page.tsx",
+      "components/organisms/audit/audit-ledger-table.tsx",
       "components/organisms/lst/lst-directory-table-v2.tsx",
     ]);
   });

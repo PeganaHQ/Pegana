@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { mutate as globalMutate } from "swr";
 import { createWsClient } from "@/lib/api/ws";
 import type { PegState } from "@/lib/api/types";
 
@@ -48,6 +49,14 @@ function narrowUpdate(payload: Record<string, unknown>): AssetUpdate {
 }
 
 interface LiveContextValue {
+  /** True inside a mounted LiveProvider (the app shell, /status). Hooks use
+   *  it to tell "no socket on this page" apart from "socket down". */
+  available?: boolean;
+  /** True while the current page renders values from the socket (see
+   *  useWsDrivenPage). Only then does a streaming socket make a REST pause
+   *  harmless enough to hide the notice. */
+  wsDrivenPage?: boolean;
+  registerWsDrivenPage?: () => () => void;
   byAsset: Record<string, AssetUpdate>;
   connected: boolean;
   disconnectedSinceMs: number | null;
@@ -67,6 +76,56 @@ const LiveContext = createContext<LiveContextValue>({
 
 const DISCONNECT_BANNER_THRESHOLD_MS = 5 * 60 * 1000;
 
+/** Minimum gap between transition-driven REST refreshes (see below). */
+export const TRANSITION_REFRESH_MIN_GAP_MS = 60_000;
+
+/** SWR keys whose data changes when an asset changes peg state. */
+export function isTransitionKey(key: unknown): boolean {
+  return (
+    typeof key === "string" &&
+    (key === "stats" ||
+      key.startsWith("assets|") ||
+      key.startsWith("alerts|") ||
+      key.startsWith("alerts-window|"))
+  );
+}
+
+/**
+ * While the socket is up, the asset list, the receipts feed and the state
+ * counters poll slowly (lib/api/poll-policy.ts). A state transition pushed
+ * over the socket is exactly when those change, so refresh them then instead: at most once a
+ * minute (trailing), and never from a hidden tab (focus revalidation catches
+ * up when it is shown again).
+ */
+export function createTransitionRefresher(
+  refresh: () => void,
+  minGapMs: number = TRANSITION_REFRESH_MIN_GAP_MS,
+) {
+  let last = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const fire = () => {
+    timer = null;
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState === "hidden"
+    )
+      return;
+    last = Date.now();
+    refresh();
+  };
+  return {
+    trigger() {
+      if (timer) return;
+      const wait = Math.max(0, last + minGapMs - Date.now());
+      timer = setTimeout(fire, wait);
+    },
+    cancel() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
+  };
+}
+
 export function LiveProvider({ children }: { children: React.ReactNode }) {
   const [byAsset, setByAsset] = useState<Record<string, AssetUpdate>>({});
   const [connected, setConnected] = useState(false);
@@ -76,10 +135,36 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
   );
   const [lastHeartbeatAt, setLastHeartbeatAt] = useState<string | null>(null);
   const ref = useRef<ReturnType<typeof createWsClient> | null>(null);
+  const lastStateRef = useRef<Record<string, PegState>>({});
+  const [wsPages, setWsPages] = useState(0);
+  const registerWsDrivenPage = useCallback(() => {
+    setWsPages((n) => n + 1);
+    return () => setWsPages((n) => Math.max(0, n - 1));
+  }, []);
+  const refresherRef = useRef<ReturnType<
+    typeof createTransitionRefresher
+  > | null>(null);
+
+  useEffect(() => {
+    const r = createTransitionRefresher(() => {
+      void globalMutate(isTransitionKey);
+    });
+    refresherRef.current = r;
+    return () => {
+      r.cancel();
+      refresherRef.current = null;
+    };
+  }, []);
 
   const onUpdate = useCallback(
     (asset: string, payload: Record<string, unknown>) => {
       const narrowed = narrowUpdate(payload);
+      if (narrowed.state) {
+        const prev = lastStateRef.current[asset];
+        lastStateRef.current[asset] = narrowed.state;
+        // The first frame for an asset is a sync, not a transition.
+        if (prev && prev !== narrowed.state) refresherRef.current?.trigger();
+      }
       setByAsset((prev) => ({
         ...prev,
         [asset]: { ...prev[asset], ...narrowed },
@@ -158,12 +243,22 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
+      available: true,
+      wsDrivenPage: wsPages > 0,
+      registerWsDrivenPage,
       byAsset,
       connected,
       disconnectedSinceMs: exposedSince,
       lastHeartbeatAt,
     }),
-    [byAsset, connected, exposedSince, lastHeartbeatAt],
+    [
+      byAsset,
+      connected,
+      exposedSince,
+      lastHeartbeatAt,
+      wsPages,
+      registerWsDrivenPage,
+    ],
   );
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }
@@ -175,4 +270,16 @@ export function useLive() {
 export function useLiveAsset(symbol: string): AssetUpdate | undefined {
   const { byAsset } = useLive();
   return byAsset[symbol];
+}
+
+/**
+ * Declare that the current page renders values pushed over the socket (the
+ * dashboard board, the screener, the events feed). The app-shell
+ * HealthBanner then stays quiet about a REST slow-down while the socket is
+ * streaming, because this page is still live. Pages that read nothing from
+ * the socket (the asset page) do not call this, so they get the notice.
+ */
+export function useWsDrivenPage(): void {
+  const { registerWsDrivenPage } = useLive();
+  useEffect(() => registerWsDrivenPage?.(), [registerWsDrivenPage]);
 }

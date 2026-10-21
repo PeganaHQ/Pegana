@@ -1,4 +1,4 @@
-// Live peg-feed WebSocket helper — completes the v0.2.0 SDK's coverage of the
+// Live peg-feed WebSocket helper; completes the v0.2.0 SDK's coverage of the
 // one endpoint OpenAPI can't model (the `/v1/ws` upgrade is only a stub in the
 // spec). Typed to the server protocol in crates/api-rs/src/ws.rs.
 //
@@ -24,7 +24,7 @@ export type PegFeedClientMsg =
   | { op: "unsubscribe"; assets: string[] }
   | { op: "ping" };
 
-/** Minimal structural shape of a WebSocket ctor — satisfied by the browser/Node
+/** Minimal structural shape of a WebSocket ctor; satisfied by the browser/Node
  *  global `WebSocket` and by the `ws` package's `WebSocket`. */
 export type WebSocketLike = {
   new (url: string): {

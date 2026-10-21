@@ -18,6 +18,15 @@
 //!   This preserves the trust narrative: we never 404 an alert that was
 //!   actually dispatched. See `docs/adr/0006-alert-evidence-persistence-failure.md`.
 //!
+//! - **Public asset surface**: a non-public class (`synth_lev`, e.g. xSOL;
+//!   see `schema::NON_PUBLIC_CLASSES`) is excluded from the discoverable
+//!   surfaces exactly as on `/v1/assets*`, the feed, stats and the WebSocket:
+//!   its receipts never appear in the `/v1/audit` index or `/v1/audit.csv`,
+//!   and `?asset=xSOL` on either is a 404 `unknown_asset`. The by-id routes
+//!   (`/v1/audit/{id}`, `/replay-bundle`, `/onchain`) deliberately stay
+//!   reachable for every receipt: a receipt is permanent public evidence of
+//!   what Pegana published, and an id already handed out must keep resolving.
+//!
 //! - **ADR-0014**: per-endpoint bounds documented as part of the public API
 //!   contract so SDK clients code to them from day one. `/v1/audit.csv` is
 //!   capped at a 90-day window and 50k rows per response; `/v1/audit` index
@@ -48,13 +57,40 @@ use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-/// Receipt JSON is content-addressed by `receipt_sha256`; an `alert_id`'s
-/// receipt never changes after first write. `immutable` instructs caches
-/// (browser, Caddy, CDN) to skip revalidation for a year.
+/// The frozen parts of a receipt (inputs, computed, `receipt_sha256`, replay
+/// bundle) never change after first write; the append-only trigger
+/// (migrations 0033/0037) enforces it. `immutable` instructs caches (browser,
+/// Caddy, CDN) to skip revalidation for a year. The replay bundle always gets
+/// it; the receipt JSON only once its on-chain fields are final too (see
+/// [`receipt_cache_control`]).
 const IMMUTABLE_CACHE: &str = "public, max-age=31536000, immutable";
 
+/// A receipt whose `commit_status` / `onchain_tx_sig` can still change.
+/// Matches the 60s back-off the 202 path and the commit worker already use.
+const UNSETTLED_RECEIPT_CACHE: &str = "public, max-age=60";
+
+/// `Cache-Control` for a 200 receipt from its two mutable columns. The
+/// trigger lets exactly these move after first write: `commit_status`
+/// `pending` → `committed` | `retry_exhausted` | `wallet_drained`, and
+/// `onchain_tx_sig` NULL → set (write-once, alongside `committed`).
+/// `not_applicable`, `retry_exhausted` and `wallet_drained` are terminal, and
+/// `committed` is final once its signature is present, so those are
+/// `immutable`. `pending`, a `committed` row still missing its signature, a
+/// NULL or an unrecognised status all get the short cache, so a client sees
+/// the anchor land within a minute instead of a year.
+fn receipt_cache_control(
+    commit_status: Option<&str>,
+    onchain_tx_sig: Option<&str>,
+) -> &'static str {
+    match (commit_status, onchain_tx_sig) {
+        (Some("committed"), Some(_)) => IMMUTABLE_CACHE,
+        (Some("not_applicable" | "retry_exhausted" | "wallet_drained"), _) => IMMUTABLE_CACHE,
+        _ => UNSETTLED_RECEIPT_CACHE,
+    }
+}
+
 /// 500 with opaque body + tracing log. Mirrors the helper used in every
-/// other route module — never surface `sqlx::Error` strings on the wire.
+/// other route module; never surface `sqlx::Error` strings on the wire.
 fn db_error<E: std::fmt::Debug>(e: E) -> (StatusCode, Json<serde_json::Value>) {
     tracing::error!(?e, "audit endpoint db error");
     (
@@ -87,7 +123,7 @@ pub struct AuditAlert {
     pub detected_at: DateTime<Utc>,
 }
 
-/// The `evidence` object inside a 200 receipt body — the frozen inputs and
+/// The `evidence` object inside a 200 receipt body; the frozen inputs and
 /// methodology pin that make the alert independently verifiable.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuditEvidence {
@@ -110,7 +146,7 @@ pub struct AuditEvidence {
 /// `alert_evidence` row exists). The runtime body is assembled via `json!` for
 /// LEFT-JOIN flexibility; these structs mirror it field-for-field so
 /// `/openapi.json` documents the REAL shape instead of two opaque objects. Kept
-/// in lockstep with the `json!` body manually — the 202/410 responses use a
+/// in lockstep with the `json!` body manually; the 202/410 responses use a
 /// different shape (see the endpoint's other documented responses).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuditDetailResponse {
@@ -120,7 +156,7 @@ pub struct AuditDetailResponse {
     pub evidence_status: String,
 }
 
-/// 202 body for `GET /v1/audit/{alert_id}` — receipt persistence is still
+/// 202 body for `GET /v1/audit/{alert_id}`; receipt persistence is still
 /// retrying (ADR-0006). Poll again after `retry_after_seconds`.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuditPendingResponse {
@@ -135,7 +171,7 @@ pub struct AuditPendingResponse {
     pub evidence_status: String,
 }
 
-/// 410 body for `GET /v1/audit/{alert_id}` — receipt persistence failed
+/// 410 body for `GET /v1/audit/{alert_id}`; receipt persistence failed
 /// permanently (ADR-0006 dead-letter terminal); the receipt will never land.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuditGoneResponse {
@@ -155,7 +191,7 @@ pub struct AuditGoneResponse {
 pub struct OnchainResponse {
     pub tx_sig: String,
     pub explorer_url: String,
-    /// Always `"committed"` on a 200 — present so a caller can branch on the
+    /// Always `"committed"` on a 200; present so a caller can branch on the
     /// same `commit_status` vocabulary the 404 body uses (ADR-0004).
     pub commit_status: String,
 }
@@ -173,13 +209,13 @@ pub struct AuditIndexRow {
     pub methodology_version: String,
     pub receipt_sha256: String,
     pub onchain_tx_sig: Option<String>,
-    /// True for a released `monitoring_only` (beta) asset — provisional
+    /// True for a released `monitoring_only` (beta) asset; provisional
     /// calibration. Present at runtime since the beta release; this field
     /// re-aligns the documented schema with the wire (it was emitted but not
     /// declared). Always present.
     pub monitoring_only: bool,
-    /// Self-describing form of `monitoring_only`, `provisional` | `calibrated`
-    /// — same vocabulary as the webhook canonical event. Always present.
+    /// Self-describing form of `monitoring_only`, `provisional` | `calibrated`;
+    /// same vocabulary as the webhook canonical event. Always present.
     #[schema(value_type = crate::schema::Calibration)]
     pub calibration: String,
 }
@@ -209,7 +245,7 @@ pub struct AuditCsvRow {
 
 // ─── GET /v1/audit/:alert_id ─────────────────────────────────────────────
 
-/// `GET /v1/audit/{alert_id}` — single receipt with ADR-0006 four-state
+/// `GET /v1/audit/{alert_id}`; single receipt with ADR-0006 four-state
 /// discrimination.
 ///
 /// Returns `Response` (not `Json`) so each status path can carry distinct
@@ -224,7 +260,7 @@ pub struct AuditCsvRow {
         ("alert_id" = String, Path, description = "Alert UUID")
     ),
     responses(
-        (status = 200, description = "Receipt JSON (alert + evidence wrapper)", body = AuditDetailResponse),
+        (status = 200, description = "Receipt JSON (alert + evidence wrapper). Cache-Control is `public, max-age=31536000, immutable` once the receipt can no longer change (commit_status not_applicable, retry_exhausted or wallet_drained, or committed with onchain_tx_sig set) and `public, max-age=60` while the on-chain commit is still pending", body = AuditDetailResponse),
         (status = 202, description = "Evidence persistence pending (ADR-0006); body carries retry_after_seconds", body = AuditPendingResponse),
         (status = 400, description = "Invalid UUID format"),
         (status = 404, description = "Unknown alert_id (no row in alert_evidence or alert_evidence_pending)"),
@@ -270,6 +306,16 @@ pub async fn detail(
             .flatten()
             .unwrap_or(serde_json::Value::Null)
             .is_null();
+        let onchain_tx_sig = row
+            .try_get::<Option<String>, _>("onchain_tx_sig")
+            .ok()
+            .flatten();
+        let commit_status = row
+            .try_get::<Option<String>, _>("commit_status")
+            .ok()
+            .flatten();
+        let cache_control =
+            receipt_cache_control(commit_status.as_deref(), onchain_tx_sig.as_deref());
         let body = json!({
             "alert": {
                 "id": row.get::<Uuid, _>("id").to_string(),
@@ -291,19 +337,22 @@ pub async fn detail(
                 "computed": row.get::<serde_json::Value, _>("computed"),
                 "has_replay_artifact": has_replay,
                 "receipt_sha256": row.get::<String, _>("receipt_sha256"),
-                "onchain_tx_sig": row.try_get::<Option<String>, _>("onchain_tx_sig").ok().flatten(),
+                "onchain_tx_sig": onchain_tx_sig,
                 // commit_status: not_applicable | pending | committed | retry_exhausted | wallet_drained
                 // (per migration 0033 + ADR-0004). Drift transitions land as
                 // not_applicable because on-chain SPL Memo commit is cost-gated
                 // to {Depeg, Critical, BlackSwan}. Without this field the UI can't
                 // distinguish "anchoring in progress" from "anchoring intentionally skipped".
-                "commit_status": row.try_get::<Option<String>, _>("commit_status").ok().flatten(),
+                "commit_status": commit_status,
                 "created_at": crate::serde_fmt::rfc3339_millis_z(&row.get::<DateTime<Utc>, _>("evidence_at")),
             },
             "evidence_status": "ready",
         });
         let mut headers = HeaderMap::new();
-        headers.insert(header::CACHE_CONTROL, IMMUTABLE_CACHE.parse().unwrap());
+        headers.insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static(cache_control),
+        );
         return Ok((StatusCode::OK, headers, Json(body)).into_response());
     }
 
@@ -478,12 +527,12 @@ pub async fn replay_bundle(
     responses(
         (status = 200, description = "On-chain commit pointer", body = OnchainResponse),
         (status = 400, description = "Invalid UUID format"),
-        (status = 404, description = "Not anchored — stays 404 across ALL non-committed states \
+        (status = 404, description = "Not anchored; stays 404 across ALL non-committed states \
             by design (clients such as `pegana-replay --verify-onchain` treat 404 as 'skip the \
             on-chain check'). Body `error` discriminates the reason: `not_applicable` \
-            (cost-gated, never anchored — ADR-0004), `not_committed_yet` (in-flight, queued, or \
+            (cost-gated, never anchored; ADR-0004), `not_committed_yet` (in-flight, queued, or \
             unknown alert), `retry_exhausted`, `wallet_drained`, or `persistence_failed` \
-            (ADR-0006 dead-letter terminal — the same state /detail returns as 410)."),
+            (ADR-0006 dead-letter terminal; the same state /detail returns as 410)."),
     )
 )]
 pub async fn onchain(
@@ -558,7 +607,7 @@ pub async fn onchain(
                 None => (
                     "not_committed_yet",
                     "unknown",
-                    "No evidence row for this alert — unknown alert_id, or the \
+                    "No evidence row for this alert; unknown alert_id, or the \
                      receipt has not been persisted yet."
                         .to_string(),
                 ),
@@ -599,7 +648,7 @@ pub async fn onchain(
             "No on-chain anchor for this alert. The usual cause is the ADR-0004 cost gate: \
              SPL Memo commits are reserved for high-severity transitions \
              (Depeg/Critical/BlackSwan), so Drift transitions are never anchored. (If \
-             on-chain commits are disabled operator-side — e.g. no commit keypair — a \
+             on-chain commits are disabled operator-side; e.g. no commit keypair; a \
              higher-severity alert can also land here.) The receipt is still \
              cryptographically verifiable offline either way.",
         ),
@@ -643,9 +692,9 @@ pub struct IndexParams {
     /// Page size. Default 50, clamped to 100 per ADR-0014.
     pub limit: Option<u32>,
     /// When true (default), filter out `PEGGED` end-state rows. PEGGED is
-    /// the "recovered" state — usually noise from the index perspective.
+    /// the "recovered" state; usually noise from the index perspective.
     pub exclude_pegged: Option<bool>,
-    /// Server-side filter on the to_state value. Closes AC42 — the
+    /// Server-side filter on the to_state value. Closes AC42; the
     /// previous client-side filter on the web/audit page was correct in
     /// shape but constrained to whatever batch the index returned (default
     /// 50 rows). With server filtering the full limit applies to matching
@@ -683,6 +732,51 @@ struct IndexFilters<'a> {
 
 fn bad_request(body: serde_json::Value) -> (StatusCode, Json<serde_json::Value>) {
     (StatusCode::BAD_REQUEST, Json(body))
+}
+
+/// The non-public classes as a bindable `text[]` for `class::text <> ALL($n)`.
+fn non_public_classes() -> Vec<String> {
+    crate::schema::NON_PUBLIC_CLASSES
+        .iter()
+        .map(|c| c.to_string())
+        .collect()
+}
+
+/// `(symbol, class)` of the catalog row for an exact `?asset=` symbol → a 404
+/// `unknown_asset` (the same body every `/v1/assets*` route returns) when the
+/// class is not public. An untracked symbol is NOT rejected here: the index
+/// and CSV keep answering it with an empty result, as before.
+fn check_public_asset(
+    row: Option<(String, String)>,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    match row {
+        Some((symbol, class)) if !crate::schema::is_public_class(&class) => {
+            let e = crate::error::ApiError::not_public(symbol);
+            Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::to_value(e).unwrap_or_default()),
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Reject an `?asset=` filter naming a non-public asset (see the module docs).
+async fn reject_non_public_asset(
+    pg: &sqlx::PgPool,
+    asset: Option<&str>,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let Some(asset) = asset else {
+        return Ok(());
+    };
+    // Exact case, matching how the filter itself compares `a.asset`.
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT symbol, class::text FROM assets WHERE symbol = $1")
+            .bind(asset)
+            .fetch_optional(pg)
+            .await
+            .map_err(db_error)?;
+    check_public_asset(row)
 }
 
 /// Pure validation of the new index params (timestamps are already parsed by
@@ -761,6 +855,7 @@ const VALID_AUDIT_STATES: &[&str] = &[
     responses(
         (status = 200, description = "Index of recent audits, newest first", body = Vec<AuditIndexRow>),
         (status = 400, description = "Invalid ?state= value (PEGGED|DRIFT|DEPEG|CRITICAL|BLACK_SWAN|UNKNOWN), malformed RFC 3339 timestamp or UUID (invalid_query), invalid_asset, invalid_range (until <= since) or invalid_cursor (before_id without before)"),
+        (status = 404, description = "unknown_asset: ?asset= names a non-public asset (synth_lev, e.g. xSOL). Its receipts are not indexed; each stays reachable by id at /v1/audit/{alert_id}", body = crate::error::ApiError),
     )
 )]
 pub async fn index(
@@ -798,6 +893,9 @@ pub async fn index(
     };
 
     let f = validate_index_filters(&q)?;
+    // Before the ADR-0020 gate, like the other input checks: whether xSOL is
+    // public is catalog knowledge, and says nothing about the ledger's rows.
+    reject_non_public_asset(&state.pg, f.asset).await?;
 
     // ADR-0020: the discoverable INDEX (and the RSS/Atom/CSV feeds that call
     // it) is gated on FEATURE_PUBLIC_ALERTS. During the calibration window
@@ -835,6 +933,8 @@ pub async fn index(
                   OR ($8::uuid IS NOT NULL
                       AND date_trunc('milliseconds', a.detected_at) = $7::timestamptz
                       AND a.id < $8::uuid))
+             -- Non-public classes (synth_lev, e.g. xSOL) are not indexed.
+             AND a.class::text <> ALL($9::text[])
            ORDER BY date_trunc('milliseconds', a.detected_at) DESC, a.id DESC
            LIMIT $2"#,
     )
@@ -846,6 +946,7 @@ pub async fn index(
     .bind(f.until)
     .bind(f.before)
     .bind(f.before_id)
+    .bind(non_public_classes())
     .fetch_all(&state.pg)
     .await
     .map_err(db_error)?;
@@ -888,7 +989,7 @@ pub struct CsvParams {
 
 /// ADR-0014 max-row cap. Once the running yield count hits this, the stream
 /// terminates. CSV trailers can't be written after the body has flushed, so we
-/// cannot surface an `X-Truncated` header inline — instead any truncation is
+/// cannot surface an `X-Truncated` header inline; instead any truncation is
 /// COUNTED (`pegana_audit_csv_truncated_total{reason}`) so it is observable to
 /// operators rather than silent (#R4-1). Two reasons: `row_cap` (this 50k cap)
 /// and `query_error` (a transient mid-stream Postgres failure, also
@@ -909,7 +1010,8 @@ const CSV_PAGE: i64 = 1_000;
     responses(
         (status = 200, description = "Streaming CSV export (chunked transfer encoding); max 50k rows per ADR-0014"),
         (status = 400, description = "Invalid date range (> 90 days per ADR-0014) or missing parameters"),
-        (status = 429, description = "Rate limit exceeded — 10/min on this endpoint (ADR-0014), 60/min global by default (see RateLimit-Limit); Retry-After header set"),
+        (status = 404, description = "unknown_asset: ?asset= names a non-public asset (synth_lev, e.g. xSOL); its receipts are not exported", body = crate::error::ApiError),
+        (status = 429, description = "Rate limit exceeded; 10/min on this endpoint (ADR-0014), 60/min global by default (see RateLimit-Limit); Retry-After header set"),
     )
 )]
 pub async fn csv(
@@ -940,6 +1042,8 @@ pub async fn csv(
             })),
         ));
     }
+    // Same rule as the index: a non-public asset is a 404, before the gate.
+    reject_non_public_asset(&state.pg, q.asset.as_deref()).await?;
 
     // ADR-0020: the CSV export is the bulk-download face of the discoverable
     // ledger index, so it is gated on FEATURE_PUBLIC_ALERTS alongside the
@@ -1005,6 +1109,7 @@ pub async fn csv(
 
     let pg = state.pg.clone();
     let asset = q.asset.clone();
+    let hidden = non_public_classes();
     let from = q.from;
     let to = q.to;
 
@@ -1037,9 +1142,10 @@ pub async fn csv(
                            WHERE a.detected_at >= $2
                              AND a.asset = $3
                              AND (a.detected_at < $1 OR (a.detected_at = $1 AND a.id < $4))
+                             AND a.class::text <> ALL($6::text[])
                            ORDER BY a.detected_at DESC, a.id DESC LIMIT $5"#,
                     )
-                    .bind(cursor_ts).bind(from).bind(a).bind(last_id).bind(CSV_PAGE)
+                    .bind(cursor_ts).bind(from).bind(a).bind(last_id).bind(CSV_PAGE).bind(&hidden)
                     .fetch_all(&pg).await
                 }
                 (Some(a), None) => {
@@ -1054,9 +1160,10 @@ pub async fn csv(
                                   e.receipt_sha256, e.onchain_tx_sig
                            FROM alerts a JOIN alert_evidence e ON e.alert_id = a.id
                            WHERE a.detected_at <= $1 AND a.detected_at >= $2 AND a.asset = $3
+                             AND a.class::text <> ALL($5::text[])
                            ORDER BY a.detected_at DESC, a.id DESC LIMIT $4"#,
                     )
-                    .bind(cursor_ts).bind(from).bind(a).bind(CSV_PAGE)
+                    .bind(cursor_ts).bind(from).bind(a).bind(CSV_PAGE).bind(&hidden)
                     .fetch_all(&pg).await
                 }
                 (None, Some(last_id)) => {
@@ -1072,9 +1179,10 @@ pub async fn csv(
                            FROM alerts a JOIN alert_evidence e ON e.alert_id = a.id
                            WHERE a.detected_at >= $2
                              AND (a.detected_at < $1 OR (a.detected_at = $1 AND a.id < $3))
+                             AND a.class::text <> ALL($5::text[])
                            ORDER BY a.detected_at DESC, a.id DESC LIMIT $4"#,
                     )
-                    .bind(cursor_ts).bind(from).bind(last_id).bind(CSV_PAGE)
+                    .bind(cursor_ts).bind(from).bind(last_id).bind(CSV_PAGE).bind(&hidden)
                     .fetch_all(&pg).await
                 }
                 (None, None) => {
@@ -1089,9 +1197,10 @@ pub async fn csv(
                                   e.receipt_sha256, e.onchain_tx_sig
                            FROM alerts a JOIN alert_evidence e ON e.alert_id = a.id
                            WHERE a.detected_at <= $1 AND a.detected_at >= $2
+                             AND a.class::text <> ALL($4::text[])
                            ORDER BY a.detected_at DESC, a.id DESC LIMIT $3"#,
                     )
-                    .bind(cursor_ts).bind(from).bind(CSV_PAGE)
+                    .bind(cursor_ts).bind(from).bind(CSV_PAGE).bind(&hidden)
                     .fetch_all(&pg).await
                 }
             };
@@ -1232,6 +1341,65 @@ mod index_filter_tests {
         assert_eq!(trim_decimal_text("1.000000000000000000".into()), "1");
         assert_eq!(trim_decimal_text("150.17".into()), "150.17");
         assert_eq!(trim_decimal_text("not-a-number".into()), "not-a-number");
+    }
+
+    /// Round-3 F3: `?asset=` naming a non-public asset is the same 404
+    /// `unknown_asset` body the `/v1/assets*` routes return; public and
+    /// untracked symbols pass through (untracked keeps its empty result).
+    #[test]
+    fn non_public_asset_filter_is_404_unknown_asset() {
+        let (status, Json(body)) =
+            check_public_asset(Some(("xSOL".into(), "synth_lev".into()))).unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "unknown_asset");
+        assert_eq!(body["asset"], "xSOL");
+        assert!(body["message"].as_str().unwrap().contains("synth_lev"));
+        assert!(check_public_asset(Some(("USDC".into(), "stable_fiat".into()))).is_ok());
+        assert!(check_public_asset(None).is_ok());
+        assert_eq!(non_public_classes(), vec!["synth_lev".to_string()]);
+    }
+
+    /// Every discoverable ledger query (the index and the four CSV pages)
+    /// excludes the non-public classes, so xSOL can never leak through one
+    /// branch of the CSV cursor while the others filter it.
+    #[test]
+    fn every_ledger_listing_query_excludes_non_public_classes() {
+        let src = include_str!("audit.rs");
+        let src = &src[..src.find("#[cfg(test)]").unwrap()];
+        let listing = src.matches("FROM alerts a JOIN alert_evidence e").count();
+        assert_eq!(listing, 5, "index + four CSV pages");
+        assert_eq!(
+            src.matches("AND a.class::text <> ALL($").count(),
+            listing,
+            "each listing query filters non-public classes"
+        );
+        assert_eq!(src.matches(".bind(&hidden)").count(), 4);
+        assert_eq!(src.matches(".bind(non_public_classes())").count(), 1);
+    }
+
+    /// Round-3 F4: a receipt is `immutable` only once `commit_status` and
+    /// `onchain_tx_sig` can no longer change (the trigger's state machine);
+    /// before that it gets a 60s cache so the anchor shows up.
+    #[test]
+    fn receipt_is_immutable_only_once_settled() {
+        let sig = Some("5xSig");
+        for (status, tx, want) in [
+            (Some("pending"), None, UNSETTLED_RECEIPT_CACHE),
+            (Some("committed"), None, UNSETTLED_RECEIPT_CACHE),
+            (None, None, UNSETTLED_RECEIPT_CACHE),
+            (None, sig, UNSETTLED_RECEIPT_CACHE),
+            (Some("unknown_future_value"), None, UNSETTLED_RECEIPT_CACHE),
+            (Some("committed"), sig, IMMUTABLE_CACHE),
+            (Some("not_applicable"), None, IMMUTABLE_CACHE),
+            (Some("retry_exhausted"), None, IMMUTABLE_CACHE),
+            (Some("wallet_drained"), None, IMMUTABLE_CACHE),
+        ] {
+            assert_eq!(receipt_cache_control(status, tx), want, "{status:?} {tx:?}");
+        }
+        assert!(!UNSETTLED_RECEIPT_CACHE.contains("immutable"));
+        // The hot cache never stores the receipt route, but if it ever did the
+        // short header must still be storable for a bounded time.
+        assert!(UNSETTLED_RECEIPT_CACHE.contains("max-age=60"));
     }
 
     #[test]

@@ -11,7 +11,13 @@ import { ViewTransitions } from "@/lib/motion/view-transitions";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-x-hidden bg-canvas text-text pt-[env(safe-area-inset-top)]">
+    // overflow-x-CLIP, not -hidden: `hidden` makes this div a scroll container
+    // (overflow-y computes to auto), and a sticky child sticks to its nearest
+    // scroll container. This div never scrolls, so the desktop topbar's
+    // `lg:sticky` never engaged: it scrolled away with the page and its glass
+    // had nothing to blur (measured at 1440 on /dashboard, 2026-10-21). `clip`
+    // still stops sideways overflow without creating a scroll container.
+    <div className="relative flex min-h-dvh flex-col overflow-x-clip bg-canvas text-text pt-[env(safe-area-inset-top)]">
       <LiveProvider>
         <AmbientGlowBg />
         <CommandPalette />

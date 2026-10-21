@@ -4,7 +4,8 @@
 // api-rs rate-limits per client IP, keyed on the first X-Forwarded-For entry
 // (crates/api-rs/src/rate_limit.rs). When PEGANA_API points at the public
 // https://api.pegana.xyz, Caddy overwrites X-Forwarded-For with the MCP
-// container's egress IP, so EVERY MCP user shares one 60/min bucket and a
+// container's egress IP, so EVERY MCP user shares one per-IP bucket (240/min
+// in production, 60 by code default) and a
 // burst from one agent 429s everybody (R1 audit idx 86). Pointing PEGANA_API
 // at the internal http://api:8080 and forwarding the MCP caller's IP (taken
 // from the Caddy-set header on the MCP request, so it cannot be spoofed)

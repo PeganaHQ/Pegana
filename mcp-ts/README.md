@@ -24,14 +24,14 @@ real output with the official MCP SDK client).
 |---|---|
 | `ping` | `pong (Ns)` + server uptime |
 | `ping_paid` | `paid pong`; legacy alias of `ping`, name kept for compatibility |
-| `get_assets` | Every asset with a live snapshot: state, discount, intrinsic, market, `ts`, `updated_at`, `stale`. Leveraged synthetics (`synth_lev`, xSOL) are excluded, as in REST `/v1/assets` |
+| `get_assets` | Every active tracked asset, the same set and count as REST `/v1/assets`: state, discount, intrinsic, market, `ts`, `updated_at`, `stale`. An asset with no live snapshot is listed as `UNKNOWN` with null values and `stale: true`. Leveraged synthetics (`synth_lev`, xSOL) are excluded, as in REST |
 | `get_asset_state(symbol)` | Current snapshot for one asset (errors if older than 5 min) |
 | `get_methodology(symbol)` | How this asset's intrinsic and market prices are sourced, plus the state machine (errors if not tracked) |
 | `get_loop_exposure(symbol)` | Anonymous aggregate cross-protocol leverage exposure (advisory) |
-| `simulate_depeg_impact(symbol, shock_bps)` | Estimated liquidation cascade for a preset shock (advisory). `liquidatable_usd` is the total collateral of the bands that liquidate, so it can exceed `loop_exposure_usd` |
-| `verify_alert(alert_id)` | Public audit receipt for an alert, with replay bundle URL and on-chain anchor status |
+| `simulate_depeg_impact(symbol, shock_bps)` | Estimated liquidation cascade for a preset shock (advisory). `liquidatable_usd` is the total collateral of the bands that liquidate, so it can exceed `loop_exposure_usd`; it and `positions` may be null when coverage is unknown (amount not known, not zero) |
+| `verify_alert(alert_id)` | Fetches the public audit receipt for an alert as the API serves it, with replay bundle URL and on-chain anchor status. It recomputes no hash and checks no anchor; verify independently with the `pegana-replay` CLI (below) |
 | `get_asset_history(symbol, bucket, limit)` | Time-bucketed discount series (1m / 5m / 15m / 1h, 30-day lookback) |
-| `subscribe_peg_events(symbols, since_ts, threshold_bps?)` | Batch of state-transition events since a lossless cursor, each with `evidence_url` and `evidence_status` (`ready`, `pending`, `failed_permanent` or `missing`; some alerts have no persisted receipt, and a just-created alert can show `missing` for a moment before its receipt lands) |
+| `subscribe_peg_events(symbols, since_ts, threshold_bps?)` | Batch of state-transition events since a lossless cursor, each with `evidence_url` and `evidence_status` (`ready`, `pending`, `failed_permanent` or `missing`; some alerts have no persisted receipt, and a just-created alert can show `missing` for a moment before its receipt lands). An unknown symbol is an `isError` naming it, not an empty batch |
 
 `discount` is `1 - market/intrinsic`, signed: negative means the asset trades
 above intrinsic (a premium), positive means below (a discount). Decimals and
@@ -41,6 +41,8 @@ Where the data comes from:
 
 - `get_assets`, `get_asset_state`: an in-memory cache filled by a Redis
   SUBSCRIBE on `pegana:discount` (engine-rs publishes every recompute).
+  `get_assets` takes its asset list from the registry below, so an active
+  asset without a live snapshot still appears (as `UNKNOWN`).
 - `get_asset_history`, `subscribe_peg_events`: Postgres
   (`discount_snapshots`, `alert_events`; `evidence_status` reads
   `alert_evidence` and `alert_evidence_pending`).
@@ -55,6 +57,15 @@ Where the data comes from:
 - 100 tool calls per minute per client IP, enforced in-app (ADR-0011
   `withRateLimit`, keyed only on the proxy-set client IP), with usage
   telemetered to `mcp_call_log`. There is no Caddy-level rate limit.
+- 300 JSON-RPC messages per minute per client IP, counted in the transport
+  before any message runs: every message counts, including each entry of a
+  batch, `initialize`, `tools/list`, notifications and calls that fail
+  validation. Over the limit the reply is HTTP 429 (`Retry-After: 60`) with
+  a JSON-RPC error (`-32000`, `data.error: "rate_limited"`). A `tools/call`
+  counts against both limits.
+- A JSON-RPC batch holds at most 10 entries. A larger batch is refused as a
+  whole, before any entry runs, with one HTTP 400 JSON-RPC error (`-32600`,
+  "batch too large").
 - Request bodies are capped at 64 KB: above that the reply is HTTP 413 with
   a JSON-RPC error (`-32600`), whether the body has a Content-Length or is
   chunked.
@@ -112,6 +123,23 @@ api-rs    ── loop, simulate, audit  ──▶
 The MCP server is a stateless read-through layer: it never writes to the
 engine and never publishes back, so a failure here cannot corrupt the
 oracle's state.
+
+## Verifying a receipt
+
+`verify_alert` is a convenience fetch: it returns the receipt exactly as
+`GET /v1/audit/{id}` serves it and does no checking of its own. To verify a
+receipt independently, run the open-source `pegana-replay` CLI on your own
+machine:
+
+```
+cargo install pegana-replay --locked
+pegana-replay --alert-id <uuid>
+```
+
+It re-hashes the frozen inputs and verdict, compares the result to
+`receipt_sha256`, and checks that the on-chain memo anchor carries that hash
+and was signed by Pegana's pinned ops wallet (`--offline` skips the on-chain
+check; `--bundle <file>` verifies a downloaded replay bundle).
 
 ## See also
 

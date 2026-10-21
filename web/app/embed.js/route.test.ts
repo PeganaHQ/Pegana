@@ -83,3 +83,94 @@ describe("GET /embed.js, display alias", () => {
     );
   });
 });
+
+describe("GET /embed.js, soft-fail keeps the last good state", () => {
+  async function boot(responses: Array<() => Promise<unknown>>) {
+    const body = await (await GET()).text();
+    const mount = { id: "", innerHTML: "", setAttribute() {} };
+    const script = {
+      src: "https://www.pegana.xyz/embed.js",
+      getAttribute: (k: string) => (k === "data-asset" ? "jitoSOL" : null),
+      parentNode: { insertBefore() {} },
+      nextSibling: null,
+    };
+    const doc = {
+      currentScript: script,
+      getElementById: () => null,
+      createElement: () => mount,
+    };
+    let i = 0;
+    const fakeFetch = () => responses[Math.min(i++, responses.length - 1)]!();
+    let tick: () => void = () => {};
+    const win = { location: { href: "https://host.example/" }, parent: null, postMessage() {} };
+    new Function("document", "fetch", "window", "setInterval", "console", body)(
+      doc,
+      fakeFetch,
+      win,
+      (fn: () => void) => {
+        tick = fn;
+        return 1;
+      },
+      { warn() {} },
+    );
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    await settle();
+    return { mount, poll: async () => (tick(), await settle(), await settle()) };
+  }
+  const ok = () =>
+    Promise.resolve({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        state: "DRIFT",
+        discount: "0.0024",
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  const rateLimited = () => Promise.resolve({ status: 429, ok: false });
+  const offline = () => Promise.reject(new TypeError("network"));
+
+  it("shows the last good verdict marked stale on a 429, not Unknown", async () => {
+    const { mount, poll } = await boot([ok, rateLimited]);
+    expect(mount.innerHTML).toContain("Drift");
+    await poll();
+    expect(mount.innerHTML).toContain("Drift");
+    expect(mount.innerHTML).toContain("stale");
+    expect(mount.innerHTML).not.toContain("Unknown");
+  });
+
+  it("does the same on a network error", async () => {
+    const { mount, poll } = await boot([ok, offline]);
+    await poll();
+    expect(mount.innerHTML).toContain("Drift");
+    expect(mount.innerHTML).toContain("stale");
+  });
+
+  it("never replays a verdict that had no updated_at", async () => {
+    const noTs = () =>
+      Promise.resolve({
+        status: 200,
+        ok: true,
+        json: async () => ({ state: "DRIFT", discount: "0.0024", updated_at: null }),
+      });
+    const { mount, poll } = await boot([noTs, rateLimited]);
+    expect(mount.innerHTML).toContain("Drift");
+    await poll();
+    expect(mount.innerHTML).toContain("Unknown");
+    expect(mount.innerHTML).not.toContain("stale");
+  });
+
+  it("renders the stale marker at 12px with no opacity fade", async () => {
+    const { mount, poll } = await boot([ok, rateLimited]);
+    await poll();
+    const marker = mount.innerHTML.match(/<span title="Live read unavailable[^>]*>/)?.[0] ?? "";
+    expect(marker).toContain("12px");
+    expect(marker).not.toContain("opacity");
+  });
+
+  it("falls back to Unknown when there was never a good read", async () => {
+    const { mount } = await boot([rateLimited]);
+    expect(mount.innerHTML).toContain("Unknown");
+    expect(mount.innerHTML).not.toContain("stale");
+  });
+});

@@ -24,7 +24,7 @@ class AuditCsvRow:
             assets_toml_sha256 (str):
             class_ (str):
             confidence (Confidence): Pyth oracle confidence bucket. Mirrors `pyth_confidence_label`. Scopes the
-                PRICE-ORACLE confidence interval only (conf/price ratio) — NOT market-quote
+                PRICE-ORACLE confidence interval only (conf/price ratio); NOT market-quote
                 or route-depth reliability.
             detected_at (str):
             discount (str):

@@ -30,29 +30,29 @@ class ApiListHistoryPointDataItem:
             `None` for `bucket=1m` because the continuous aggregate
             `discount_1m` only stores `avg(discount_smooth)`. For `bucket=raw`,
             populated from `discount_snapshots.discount_raw`.
-        intrinsic_usd (None | str | Unset): Intrinsic (NAV) leg in USD — the fair-value denominator of the
+        intrinsic_usd (None | str | Unset): Intrinsic (NAV) leg in USD; the fair-value denominator of the
             discount. `None` for `bucket=1m` (the `discount_1m` aggregate stores no
             legs); for `bucket=raw`, the `discount_snapshots.intrinsic_usd` column
             (`NOT NULL`). Lets the asset-detail "Legs" view distinguish a market
-            crash from a NAV re-rating — the two legs the single zeroed spread line
+            crash from a NAV re-rating; the two legs the single zeroed spread line
             structurally cannot separate. USD-denominated, so only meaningful for
             USD-peg assets (the client gates the view on `peg_target = USD`).
-        market_usd (None | str | Unset): Market leg in USD — the traded price numerator of the discount. Same
+        market_usd (None | str | Unset): Market leg in USD; the traded price numerator of the discount. Same
             `None`-for-1m / present-for-raw semantics as `intrinsic_usd`, from
             `discount_snapshots.market_usd` (`NOT NULL`).
-        oracle_usd (None | str | Unset): Pyth ORACLE leg in USD — a THIRD, structurally independent price source
+        oracle_usd (None | str | Unset): Pyth ORACLE leg in USD; a THIRD, structurally independent price source
             (vs the DEX `market_usd` and the NAV `intrinsic_usd`), for the 3-leg
             "sources disagree" view. asof-joined from `oracle_snapshots` on the
             asset's `pyth_feed_id` (0x-normalized to the indexer's stored form).
             `None` for `bucket=1m`. For `bucket=raw`, `None` unless ALL hold: the
             market is a DEX source (`market_kind` jupiter_usd/dex_screener_usd, so
             the oracle is independent, not a duplicate of a `pyth_*` market), the
-            asset's `peg_target` is USD (the oracle leg is a USD price — excludes
+            asset's `peg_target` is USD (the oracle leg is a USD price; excludes
             SOL/BRL/EUR-peg assets like the LSTs, BRZ, EURC whose `<asset>/USD`
             feed isn't their peg), the asset carries a `pyth_feed_id`, AND that
             feed actually streams into
             `oracle_snapshots`. The `market_kind`+`pyth_feed_id` CASE is only a
-            cheap pre-filter, NOT a subscription proof — `pyth_feed_id` is display
+            cheap pre-filter, NOT a subscription proof; `pyth_feed_id` is display
             metadata that can name a feed the indexer's `[pyth_feeds]` set never
             subscribes; such feeds yield no `oracle_snapshots` rows, so the asof
             subquery returns NULL and the leg quietly stays hidden. So the leg

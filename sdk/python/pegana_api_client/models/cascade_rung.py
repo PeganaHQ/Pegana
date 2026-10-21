@@ -11,7 +11,7 @@ T = TypeVar("T", bound="CascadeRung")
 
 @_attrs_define
 class CascadeRung:
-    """One rung of the depeg-cascade at a preset shock — the compact form carried by
+    """One rung of the depeg-cascade at a preset shock; the compact form carried by
     the `/loop-exposure` endpoint and the tokens.xyz feed's `systemic` block so a
     consumer gets the whole escalation ($0 → $Nm as the depeg deepens) in one read.
 
@@ -22,7 +22,7 @@ class CascadeRung:
                 Lend vault positions), not only the leverage loops counted in
                 `loop_exposure_usd`. It can therefore be larger than `loop_exposure_usd`;
                 the comparable denominator is `collateral_usd`.
-            positions (str): Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
+            positions (str): Bucketed range of affected positions (ADR-0036 inv.8; never a raw count).
             shock_bps (int):
     """
 

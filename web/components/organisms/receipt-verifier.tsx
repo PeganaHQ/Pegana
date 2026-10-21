@@ -2,6 +2,13 @@
 
 import { useState } from "react";
 import { verifyReceipt, type ReplayBundle } from "@/lib/verify-receipt";
+import { parseRetryAfter } from "@/lib/api/client";
+import { noteRateLimited, rateLimitWaitMs } from "@/lib/api/freshness";
+
+// Shown when the API asks this browser to slow down. Never the limit, the
+// status code or the words "rate limited".
+const SLOW_DOWN_MESSAGE =
+  "Verification is paused for a moment. Try again in a minute.";
 
 type VerifyState =
   | { status: "idle" }
@@ -29,9 +36,20 @@ export function ReceiptVerifier({
   const [state, setState] = useState<VerifyState>({ status: "idle" });
 
   async function handleVerify() {
+    // Join the tab-wide 429 gate: while it is open, do not spend more of the
+    // shared per-IP window.
+    if (rateLimitWaitMs() > 0) {
+      setState({ status: "error", message: SLOW_DOWN_MESSAGE });
+      return;
+    }
     setState({ status: "loading" });
     try {
       const resp = await fetch(`${apiBase}/v1/audit/${alertId}/replay-bundle`);
+      if (resp.status === 429) {
+        noteRateLimited(parseRetryAfter(resp.headers?.get?.("retry-after")));
+        setState({ status: "error", message: SLOW_DOWN_MESSAGE });
+        return;
+      }
       if (!resp.ok) {
         const text = await resp.text().catch(() => resp.statusText);
         setState({

@@ -223,17 +223,17 @@ function ProofReceipt() {
         <span className="v2-in-rwho">
           <span
             aria-hidden
-            className="grid h-[22px] w-[22px] place-items-center rounded-full font-mono text-[11px] text-[var(--color-canvas)]"
+            className="grid h-[22px] w-[22px] place-items-center rounded-full font-mono text-[12px] text-[var(--color-canvas)]"
             style={{ background: "var(--v2-peg)" }}
           >
             ◆
           </span>
           Depeg receipt
-          <span className="font-mono text-[11px] text-[var(--v2-muted)]">
+          <span className="font-mono text-[12px] text-[var(--v2-muted)]">
             anchored 2026-07-29
           </span>
         </span>
-        <span className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_srgb,var(--v2-peg)_40%,transparent)] bg-[rgba(95,211,160,0.1)] px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-[var(--v2-peg)]">
+        <span className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_srgb,var(--v2-peg)_40%,transparent)] bg-[rgba(95,211,160,0.1)] px-2.5 py-1 font-mono text-[12px] uppercase tracking-[0.06em] text-[var(--v2-peg)]">
           <span className="relative flex h-1.5 w-1.5">
             <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--v2-peg)] opacity-70 motion-safe:animate-ping" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--v2-peg)]" />
@@ -404,7 +404,7 @@ function Hero() {
             <ProofReceipt />
           </div>
 
-          <p className="relative z-[2] mt-[18px] text-center font-mono text-[11px] tracking-[0.02em] text-[var(--v2-muted)]">
+          <p className="relative z-[2] mt-[18px] text-center font-mono text-[12px] tracking-[0.02em] text-[var(--v2-muted)]">
             a real Depeg receipt · re-derivable byte-for-byte with{" "}
             <span className="text-[var(--v2-muted)]">pegana-replay</span>
           </p>
@@ -423,7 +423,7 @@ function ChangeGroup({ group }: { group: Group }) {
   return (
     <section className="pt-[104px] first:pt-[120px]">
       <div ref={head.ref} style={head.style}>
-        <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--v2-muted)]">
+        <p className="mb-3 font-mono text-[12px] uppercase tracking-[0.16em] text-[var(--v2-muted)]">
           <span className="text-[var(--v2-muted)]">{group.n}</span> ·{" "}
           {group.eyebrow}
         </p>
@@ -438,16 +438,16 @@ function ChangeGroup({ group }: { group: Group }) {
       <div ref={table.ref} style={table.style}>
         <ListRowsV2 label="Changes in this release" className="mt-9">
           <ListRowHead columns="110px minmax(0,1fr)">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--v2-muted)]">
+            <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-[var(--v2-muted)]">
               signal
             </span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--v2-muted)]">
+            <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-[var(--v2-muted)]">
               what changed
             </span>
           </ListRowHead>
           {group.entries.map((e) => (
             <ListRow key={e.head} columns="110px minmax(0,1fr)">
-              <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-[var(--v2-muted)]">
+              <span className="font-mono text-[12px] uppercase tracking-[0.06em] text-[var(--v2-muted)]">
                 {e.tag}
               </span>
               <span className="text-[14.5px] leading-[1.6] text-[var(--v2-body)]">
@@ -471,7 +471,7 @@ function Metrics() {
   return (
     <section className="pt-[104px]">
       <div ref={head.ref} style={head.style}>
-        <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--v2-muted)]">
+        <p className="mb-3 font-mono text-[12px] uppercase tracking-[0.16em] text-[var(--v2-muted)]">
           <span className="text-[var(--v2-muted)]">06</span> · Verifiable by
           anyone
         </p>
@@ -499,7 +499,7 @@ function Metrics() {
             <div className="whitespace-nowrap font-mono text-[clamp(19px,2.3vw,25px)] font-medium tabular-nums tracking-[-0.01em] text-[var(--v2-text)]">
               {m.v}
             </div>
-            <div className="mt-1.5 font-mono text-[10px] uppercase leading-[1.4] tracking-[0.14em] text-[var(--v2-muted)]">
+            <div className="mt-1.5 font-mono text-[12px] uppercase leading-[1.4] tracking-[0.14em] text-[var(--v2-muted)]">
               {m.l}
             </div>
           </div>
@@ -529,7 +529,7 @@ function Close() {
       <div aria-hidden className="v2-close-mchroma" />
 
       <div className="relative z-[2] mx-auto max-w-[1180px] px-6 sm:px-10">
-        <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--v2-muted)]">
+        <p className="mb-4 font-mono text-[12px] uppercase tracking-[0.18em] text-[var(--v2-muted)]">
           Verify, don&apos;t trust
         </p>
         <h2

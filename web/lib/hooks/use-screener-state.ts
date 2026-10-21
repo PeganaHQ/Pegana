@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { replaceQuery } from "@/lib/url/replace-query";
 import { useAssets } from "@/lib/hooks/use-assets";
-import { useLive } from "@/lib/store/live-context";
+import { useLive, useWsDrivenPage } from "@/lib/store/live-context";
 import {
   isDeprecated,
   jitterLabel,
@@ -233,6 +233,7 @@ export function useScreenerState(): UseScreenerStateResult {
   // reading it unguarded lets a now-frozen frame's state/spread shadow the
   // fresher REST snapshot for up to STALE_AFTER_MS.
   const { byAsset, connected } = useLive();
+  useWsDrivenPage();
   const liveOverrides: Record<string, LiveOverride> = connected
     ? byAsset
     : EMPTY_OVERRIDES;

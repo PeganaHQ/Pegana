@@ -9,7 +9,7 @@ Pegana has no tiers and no paid surface. Every read path is free.
 
 | Surface | Limit | What you get |
 | --- | --- | --- |
-| REST API | Per-IP rate limit; currently `60` req/min (read the `RateLimit-Limit` header). `/v1/audit.csv` is stricter at 10/min. | All `/v1/assets/*`, `/v1/stats`, `/v1/calibration`, `/v1/methodology/current`, `/v1/audit*`, `/v1/peg/feed`, `/v1/meta/*`. |
+| REST API | Per-IP rate limit; currently `240` requests a minute per IP (see the `RateLimit-Limit` header). `/v1/audit.csv` is stricter at 10/min. | All `/v1/assets/*`, `/v1/stats`, `/v1/calibration`, `/v1/methodology/current`, `/v1/audit*`, `/v1/peg/feed`, `/v1/meta/*`. |
 | WebSocket | 20 connections per IP | Push of every engine recompute at `/v1/ws`. |
 | Embed widget | Public | `<iframe>` badge per asset. |
 | MCP server | Per-agent rate limit | All 10 tools at `https://mcp.pegana.xyz`, including `get_asset_history` and `subscribe_peg_events`. |

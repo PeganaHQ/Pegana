@@ -1,4 +1,12 @@
 import "@testing-library/jest-dom/vitest";
+import { afterEach } from "vitest";
+import { __resetFreshnessForTests } from "@/lib/api/freshness";
+
+// The browser-side 429 gate (lib/api/freshness.ts) is module state; a 429 in
+// one test must not hold back fetches in the next.
+afterEach(() => {
+  __resetFreshnessForTests();
+});
 
 // jsdom doesn't expose SVGPathElement as a global, but tests that stub getTotalLength need it.
 // We expose the constructor so Object.defineProperty(SVGPathElement.prototype, ...) works.

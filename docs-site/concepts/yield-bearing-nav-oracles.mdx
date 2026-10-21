@@ -81,10 +81,10 @@ Sometimes the depeg isn't `market < NAV` — sometimes the **NAV itself drops**.
   regime stops the NAV from growing, may even reverse it.
 - **syrupUSDC**'s NAV can be hit by a borrower default.
 
-Pegana surfaces NAV drops as legitimate alerts even when market tracks NAV closely.
-The `/explain` command on the bot calls out the issuer-specific risks for each asset
-(T-bill shock, negative funding, claim event, borrower default) so subscribers see
-what could cause the next alert before it fires.
+Pegana surfaces NAV drops as legitimate transitions even when the market tracks NAV closely.
+The per-asset methodology pages list the issuer-specific risks for each asset
+(T-bill shock, negative funding, claim event, borrower default), so integrators can see
+what could cause the next transition before it fires.
 
 ## What this means for builders
 

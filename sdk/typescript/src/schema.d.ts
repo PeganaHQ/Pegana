@@ -64,7 +64,7 @@ export interface paths {
         };
         /**
          * List all active assets with their latest peg snapshot
-         * @description Returns every active asset with its latest discount, state, and peg-snapshot. This is the dashboard screener endpoint — for the public receipt ledger of peg state-transition alerts, use `GET /v1/audit` instead.
+         * @description Returns every active asset with its latest discount, state, and peg-snapshot. This is the dashboard screener endpoint; for the public receipt ledger of peg state-transition alerts, use `GET /v1/audit` instead.
          */
         get: operations["list_assets"];
         put?: never;
@@ -236,7 +236,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * `GET /v1/audit/{alert_id}` — single receipt with ADR-0006 four-state
+         * `GET /v1/audit/{alert_id}`; single receipt with ADR-0006 four-state
          *     discrimination.
          * @description Returns `Response` (not `Json`) so each status path can carry distinct
          *     headers and body without fighting axum's `Result<T, E>` → IntoResponse
@@ -310,7 +310,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+         * GET /v1/meta/webhook-ips; IP allowlist hint for webhook subscribers.
          * @description Pattern lifted from Linear (`6 static IPs` page) and GitHub
          *     (`GET /meta` with `hooks` field). Subscribers behind enterprise
          *     firewalls need to know which source IPs to trust; without this
@@ -337,7 +337,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+         * GET /v1/meta/webhook-keys; active Ed25519 public keys for verifying
          *     inbound webhook signatures.
          * @description Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
          *     During key rotation we publish BOTH the outgoing primary AND the
@@ -430,7 +430,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * `GET /v1/ws` — upgrade to a WebSocket carrying the live peg-state stream.
+         * `GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
          * @description Not a JSON endpoint: a successful handshake returns `101 Switching
          *     Protocols`. After upgrade the server pushes `{op:"update", ...}` and
          *     `{op:"heartbeat", ts}` frames; the client may send `{op:"ping"}` (→ `pong`)
@@ -456,14 +456,14 @@ export interface components {
          * @description Peg anchor tells a consumer how to interpret the asset's fair value WITHOUT
          *     knowing Pegana's internal taxonomy:
          *
-         *     - `"USD"` — the asset targets exactly $1 (fiat-backed, RWA, delta-neutral,
+         *     - `"USD"`: the asset targets exactly $1 (fiat-backed, RWA, delta-neutral,
          *       and CDP stablecoins). A discount from $1 IS the risk signal.
          *
-         *     - `"FX"` — the asset targets a fixed non-USD fiat exchange rate (e.g.
+         *     - `"FX"`: the asset targets a fixed non-USD fiat exchange rate (e.g.
          *       EURC→EUR, BRZ→BRL). Read `peg_target` for the specific currency. A
          *       discount from the FX rate IS the risk signal.
          *
-         *     - `"NAV"` — the asset's fair value is its intrinsic redemption/net-asset
+         *     - `"NAV"`: the asset's fair value is its intrinsic redemption/net-asset
          *       value, which is NOT a fixed fiat rate (LSTs, yield-bearing stables,
          *       synthetic leverage). The discount is relative to NAV, and NAV itself
          *       moves.
@@ -479,7 +479,7 @@ export interface components {
             asset?: string | null;
             /** @description Stable, machine-readable code. Branch on this, never on `message`. */
             error: string;
-            /** @description Human-readable explanation. NOT stable — for humans/logs; do not parse. */
+            /** @description Human-readable explanation. NOT stable; for humans/logs; do not parse. */
             message: string;
         };
         /** @description List envelope: `{ ok, generated_at, count, data: [...] }`. */
@@ -488,15 +488,15 @@ export interface components {
             count: number;
             data: {
                 /**
-                 * @description Peg anchor — how to interpret the asset's fair value without knowing
+                 * @description Peg anchor; how to interpret the asset's fair value without knowing
                  *     Pegana's internal taxonomy.
                  *
-                 *     - `"USD"` — fixed $1 target (fiat-backed, RWA, delta-neutral, CDP
+                 *     - `"USD"`: fixed $1 target (fiat-backed, RWA, delta-neutral, CDP
                  *       stablecoins). A discount from $1 IS the risk signal.
-                 *     - `"FX"` — fixed non-USD fiat exchange-rate peg (e.g. EURC→EUR,
+                 *     - `"FX"`: fixed non-USD fiat exchange-rate peg (e.g. EURC→EUR,
                  *       BRZ→BRL). Read `peg_target` for the specific currency. A discount
                  *       from the FX rate IS the risk signal.
-                 *     - `"NAV"` — intrinsic redemption / net-asset value, NOT a fixed fiat
+                 *     - `"NAV"`: intrinsic redemption / net-asset value, NOT a fixed fiat
                  *       rate (LSTs, yield-bearing stables, synthetic leverage). NAV itself
                  *       moves; the discount is relative to it.
                  *
@@ -506,7 +506,7 @@ export interface components {
                  */
                 anchor: components["schemas"]["Anchor"];
                 /**
-                 * @description Consumer-facing calibration label, `provisional` | `calibrated` — the
+                 * @description Consumer-facing calibration label, `provisional` | `calibrated`; the
                  *     self-describing form of `monitoring_only` (`provisional` ⇔
                  *     `monitoring_only=true`), in the SAME vocabulary the dispatcher emits on
                  *     the webhook canonical event. Always present.
@@ -514,13 +514,13 @@ export interface components {
                 calibration: components["schemas"]["Calibration"];
                 /**
                  * @description Circulating supply of the mint (`rust_decimal`, serialized as a JSON
-                 *     string), scaled by `decimals`. This is a SIZE/CONTEXT signal — NOT a
-                 *     peg-safety signal — and is NEVER an input to `discount`/`state`/
+                 *     string), scaled by `decimals`. This is a SIZE/CONTEXT signal; NOT a
+                 *     peg-safety signal; and is NEVER an input to `discount`/`state`/
                  *     thresholds. Sourced from the on-chain SPL Mint account's `supply`
                  *     field by the isolated `token_supply` indexer task on a slow (~10 min)
                  *     cadence (migration 0065). No freshness bound is enforced on this
-                 *     field the way `updated_at` is for `discount` — supply changes slowly
-                 *     by nature. `null` until the mint has been observed at least once —
+                 *     field the way `updated_at` is for `discount`; supply changes slowly
+                 *     by nature. `null` until the mint has been observed at least once;
                  *     serialized as `null` (like `discount`), not omitted.
                  */
                 circulating_supply?: string | null;
@@ -591,12 +591,12 @@ export interface components {
                  *     much size an exit can absorb, NOT a peg-safety signal and NEVER an input
                  *     to `discount`/`state`/thresholds. `null` when tokens.xyz has no market
                  *     for the mint (7 of 69 active assets as of 2026-08-10) or it has not been
-                 *     observed yet — `null` NEVER means zero (ADR-0019). Read together with
+                 *     observed yet; `null` NEVER means zero (ADR-0019). Read together with
                  *     `market_context_at` for freshness.
                  */
                 liquidity_usd?: string | null;
                 /**
-                 * @description Market capitalization in USD = `circulating_supply × market_usd` — a
+                 * @description Market capitalization in USD = `circulating_supply × market_usd`; a
                  *     SIZE/CONTEXT signal for gauging relative scale across assets, NOT a
                  *     peg-safety signal and NEVER an input to `discount`/`state`/thresholds.
                  *     `None` whenever either factor is missing (no `circulating_supply`
@@ -636,12 +636,12 @@ export interface components {
                 peg_target: string;
                 /**
                  * Format: int32
-                 * @description Derived 0-100 peg-risk score — a single sortable/thresholdable number for
+                 * @description Derived 0-100 peg-risk score; a single sortable/thresholdable number for
                  *     integrators, ALONGSIDE (never replacing) `state`. Anchored to the committed
                  *     `state` so it never disagrees with the classification (PEGGED ≤ 24, DRIFT
                  *     25-49, DEPEG 50-74, CRITICAL 75-94, BLACK_SWAN 95-100), interpolated within
                  *     the band by the effective discount magnitude. `null` when `state` is
-                 *     UNKNOWN/absent, no discount exists, or thresholds are the CDP CR-form —
+                 *     UNKNOWN/absent, no discount exists, or thresholds are the CDP CR-form;
                  *     we never fabricate a score (ADR-0019). Deterministic + reproducible from
                  *     the other published fields; NOT part of any receipt hash. See
                  *     `crates/api-rs/src/risk_score.rs`.
@@ -660,7 +660,7 @@ export interface components {
                 /**
                  * @description Stake-pool SOL per share for LSTs (decimal string, at most 18 decimal
                  *     places like the USD legs, trailing zeros trimmed). Omitted for non-LST
-                 *     assets. Reflects the LATEST intrinsic snapshot — read together with
+                 *     assets. Reflects the LATEST intrinsic snapshot; read together with
                  *     `updated_at` for freshness. NAV decomposition is
                  *     `intrinsic_usd = sol_per_lst × SOL/USD`.
                  */
@@ -668,20 +668,20 @@ export interface components {
                 state?: null | components["schemas"]["PegState"];
                 /**
                  * @description Advisory machine-readable reason for the snapshot's state. Explanatory
-                 *     only — never a verdict input and not part of any receipt hash.
+                 *     only; never a verdict input and not part of any receipt hash.
                  *
                  *     **Emitted today:**
-                 *     - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
+                 *     - `premium_sanity`: engine NAV-sanity override: smoothed discount exceeded
                  *       the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
                  *       suspect).
-                 *     - `stale_source` — API layer: no discount snapshot in the last 15 min
+                 *     - `stale_source`: API layer: no discount snapshot in the last 15 min
                  *       (sources or engine dark), state collapsed to UNKNOWN.
-                 *     - `market_unavailable` — API layer: no discount snapshot in the last 15
+                 *     - `market_unavailable`: API layer: no discount snapshot in the last 15
                  *       min, but the intrinsic leg IS fresh and no market tick exists in that
                  *       window (thin market, no reliable quote). State UNKNOWN; `intrinsic_usd`
                  *       and `updated_at` are the fresh intrinsic reading, `market_usd` is null.
                  *
-                 *     **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
+                 *     **Reserved; not yet emitted (planned for depth-gate / oracle-crosscheck
                  *     work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
                  *     nominal`.
                  *
@@ -702,7 +702,7 @@ export interface components {
                  *     CDP collateral-ratio form `{"cr_drift","cr_depeg","cr_critical",
                  *     "cr_black_swan"}` for hyUSD. This is the AUTHORITATIVE source the
                  *     client should key band-gauge / chart threshold lines / "closest to
-                 *     breaking" sort off — replacing any hand-maintained client table. The
+                 *     breaking" sort off; replacing any hand-maintained client table. The
                  *     column is re-synced to the engine's calibrated `assets.toml` values by
                  *     migration `0042_resync_asset_thresholds`. Omitted only if the column
                  *     is NULL (never, given the `NOT NULL` constraint) or fails to decode.
@@ -720,7 +720,7 @@ export interface components {
                  *     24h (BSRV-02), in the same signed-fraction units as `discount`
                  *     (e.g. `0.0123` = 123 bps). Computed as
                  *     `max(greatest(abs(min_discount), abs(max_discount)))` over the
-                 *     `discount_1m` aggregate — discount is signed, so the abs is required to
+                 *     `discount_1m` aggregate; discount is signed, so the abs is required to
                  *     catch the worst tick in EITHER direction. Trailing 24h, INDEPENDENT of
                  *     the current-snapshot 15-min freshness bound on `discount`. Omitted when
                  *     no `discount_1m` rows exist in the window.
@@ -736,8 +736,30 @@ export interface components {
              *     absence of events. Omitted elsewhere.
              */
             history_start?: string | null;
+            /**
+             * @description Present only when `truncated` is `true`: the EFFECTIVE lower bound of
+             *     this window (RFC3339, microsecond, `Z`), i.e. the `from` the request
+             *     sent or the default it got (now minus 24h). Pass it back as `from`
+             *     with `next_to`: the default `from` is `Utc::now() - 24h`, not
+             *     `to - 24h`, so paging without `from` keeps `from` at now-24h and, once
+             *     `next_to` is older than 24h, the request returns 400 `invalid_range`.
+             */
+            next_from?: string | null;
+            /**
+             * @description Present only when `truncated` is `true`: RFC3339 (microsecond, `Z`)
+             *     instant just before the oldest row returned. Repeat the request with
+             *     `from=<next_from>&to=<next_to>` (same `bucket`, `limit`) to get the
+             *     next, older page; no row is skipped or repeated.
+             */
+            next_to?: string | null;
             /** @description Always `true` on a 2xx; errors use the `{error, message}` envelope instead. */
             ok: boolean;
+            /**
+             * @description Time-series lists only (`/v1/assets/{symbol}/history`): `true` when the
+             *     window holds more rows than `limit`, so `data` stops before `from`.
+             *     Always present there (`false` when the window fit). Omitted elsewhere.
+             */
+            truncated?: boolean | null;
         };
         /** @description List envelope: `{ ok, generated_at, count, data: [...] }`. */
         ApiList_CalibrationHealth: {
@@ -745,8 +767,8 @@ export interface components {
             count: number;
             data: {
                 /**
-                 * @description Self-describing form of `monitoring_only`, `provisional` | `calibrated`
-                 *     — same vocabulary as the webhook canonical event and the other read
+                 * @description Self-describing form of `monitoring_only`, `provisional` | `calibrated`;
+                 *     same vocabulary as the webhook canonical event and the other read
                  *     surfaces. Always present.
                  */
                 calibration: components["schemas"]["Calibration"];
@@ -766,7 +788,7 @@ export interface components {
                 health: string;
                 /**
                  * @description Calibration-status flag (not a health state). `monitoring_only` (beta)
-                 *     assets now alert publicly, but their calibration is provisional — the
+                 *     assets now alert publicly, but their calibration is provisional; the
                  *     flag lets clients label them as beta.
                  */
                 monitoring_only: boolean;
@@ -797,8 +819,30 @@ export interface components {
              *     absence of events. Omitted elsewhere.
              */
             history_start?: string | null;
+            /**
+             * @description Present only when `truncated` is `true`: the EFFECTIVE lower bound of
+             *     this window (RFC3339, microsecond, `Z`), i.e. the `from` the request
+             *     sent or the default it got (now minus 24h). Pass it back as `from`
+             *     with `next_to`: the default `from` is `Utc::now() - 24h`, not
+             *     `to - 24h`, so paging without `from` keeps `from` at now-24h and, once
+             *     `next_to` is older than 24h, the request returns 400 `invalid_range`.
+             */
+            next_from?: string | null;
+            /**
+             * @description Present only when `truncated` is `true`: RFC3339 (microsecond, `Z`)
+             *     instant just before the oldest row returned. Repeat the request with
+             *     `from=<next_from>&to=<next_to>` (same `bucket`, `limit`) to get the
+             *     next, older page; no row is skipped or repeated.
+             */
+            next_to?: string | null;
             /** @description Always `true` on a 2xx; errors use the `{error, message}` envelope instead. */
             ok: boolean;
+            /**
+             * @description Time-series lists only (`/v1/assets/{symbol}/history`): `true` when the
+             *     window holds more rows than `limit`, so `data` stops before `from`.
+             *     Always present there (`false` when the window fit). Omitted elsewhere.
+             */
+            truncated?: boolean | null;
         };
         /** @description List envelope: `{ ok, generated_at, count, data: [...] }`. */
         ApiList_HistoryPoint: {
@@ -815,35 +859,35 @@ export interface components {
                  */
                 discount_raw?: string | null;
                 /**
-                 * @description Intrinsic (NAV) leg in USD — the fair-value denominator of the
+                 * @description Intrinsic (NAV) leg in USD; the fair-value denominator of the
                  *     discount. `None` for `bucket=1m` (the `discount_1m` aggregate stores no
                  *     legs); for `bucket=raw`, the `discount_snapshots.intrinsic_usd` column
                  *     (`NOT NULL`). Lets the asset-detail "Legs" view distinguish a market
-                 *     crash from a NAV re-rating — the two legs the single zeroed spread line
+                 *     crash from a NAV re-rating; the two legs the single zeroed spread line
                  *     structurally cannot separate. USD-denominated, so only meaningful for
                  *     USD-peg assets (the client gates the view on `peg_target = USD`).
                  */
                 intrinsic_usd?: string | null;
                 /**
-                 * @description Market leg in USD — the traded price numerator of the discount. Same
+                 * @description Market leg in USD; the traded price numerator of the discount. Same
                  *     `None`-for-1m / present-for-raw semantics as `intrinsic_usd`, from
                  *     `discount_snapshots.market_usd` (`NOT NULL`).
                  */
                 market_usd?: string | null;
                 /**
-                 * @description Pyth ORACLE leg in USD — a THIRD, structurally independent price source
+                 * @description Pyth ORACLE leg in USD; a THIRD, structurally independent price source
                  *     (vs the DEX `market_usd` and the NAV `intrinsic_usd`), for the 3-leg
                  *     "sources disagree" view. asof-joined from `oracle_snapshots` on the
                  *     asset's `pyth_feed_id` (0x-normalized to the indexer's stored form).
                  *     `None` for `bucket=1m`. For `bucket=raw`, `None` unless ALL hold: the
                  *     market is a DEX source (`market_kind` jupiter_usd/dex_screener_usd, so
                  *     the oracle is independent, not a duplicate of a `pyth_*` market), the
-                 *     asset's `peg_target` is USD (the oracle leg is a USD price — excludes
+                 *     asset's `peg_target` is USD (the oracle leg is a USD price; excludes
                  *     SOL/BRL/EUR-peg assets like the LSTs, BRZ, EURC whose `<asset>/USD`
                  *     feed isn't their peg), the asset carries a `pyth_feed_id`, AND that
                  *     feed actually streams into
                  *     `oracle_snapshots`. The `market_kind`+`pyth_feed_id` CASE is only a
-                 *     cheap pre-filter, NOT a subscription proof — `pyth_feed_id` is display
+                 *     cheap pre-filter, NOT a subscription proof; `pyth_feed_id` is display
                  *     metadata that can name a feed the indexer's `[pyth_feeds]` set never
                  *     subscribes; such feeds yield no `oracle_snapshots` rows, so the asof
                  *     subquery returns NULL and the leg quietly stays hidden. So the leg
@@ -863,20 +907,42 @@ export interface components {
              *     absence of events. Omitted elsewhere.
              */
             history_start?: string | null;
+            /**
+             * @description Present only when `truncated` is `true`: the EFFECTIVE lower bound of
+             *     this window (RFC3339, microsecond, `Z`), i.e. the `from` the request
+             *     sent or the default it got (now minus 24h). Pass it back as `from`
+             *     with `next_to`: the default `from` is `Utc::now() - 24h`, not
+             *     `to - 24h`, so paging without `from` keeps `from` at now-24h and, once
+             *     `next_to` is older than 24h, the request returns 400 `invalid_range`.
+             */
+            next_from?: string | null;
+            /**
+             * @description Present only when `truncated` is `true`: RFC3339 (microsecond, `Z`)
+             *     instant just before the oldest row returned. Repeat the request with
+             *     `from=<next_from>&to=<next_to>` (same `bucket`, `limit`) to get the
+             *     next, older page; no row is skipped or repeated.
+             */
+            next_to?: string | null;
             /** @description Always `true` on a 2xx; errors use the `{error, message}` envelope instead. */
             ok: boolean;
+            /**
+             * @description Time-series lists only (`/v1/assets/{symbol}/history`): `true` when the
+             *     window holds more rows than `limit`, so `data` stops before `from`.
+             *     Always present there (`false` when the window fit). Omitted elsewhere.
+             */
+            truncated?: boolean | null;
         };
         AssetCard: {
             /**
-             * @description Peg anchor — how to interpret the asset's fair value without knowing
+             * @description Peg anchor; how to interpret the asset's fair value without knowing
              *     Pegana's internal taxonomy.
              *
-             *     - `"USD"` — fixed $1 target (fiat-backed, RWA, delta-neutral, CDP
+             *     - `"USD"`: fixed $1 target (fiat-backed, RWA, delta-neutral, CDP
              *       stablecoins). A discount from $1 IS the risk signal.
-             *     - `"FX"` — fixed non-USD fiat exchange-rate peg (e.g. EURC→EUR,
+             *     - `"FX"`: fixed non-USD fiat exchange-rate peg (e.g. EURC→EUR,
              *       BRZ→BRL). Read `peg_target` for the specific currency. A discount
              *       from the FX rate IS the risk signal.
-             *     - `"NAV"` — intrinsic redemption / net-asset value, NOT a fixed fiat
+             *     - `"NAV"`: intrinsic redemption / net-asset value, NOT a fixed fiat
              *       rate (LSTs, yield-bearing stables, synthetic leverage). NAV itself
              *       moves; the discount is relative to it.
              *
@@ -886,7 +952,7 @@ export interface components {
              */
             anchor: components["schemas"]["Anchor"];
             /**
-             * @description Consumer-facing calibration label, `provisional` | `calibrated` — the
+             * @description Consumer-facing calibration label, `provisional` | `calibrated`; the
              *     self-describing form of `monitoring_only` (`provisional` ⇔
              *     `monitoring_only=true`), in the SAME vocabulary the dispatcher emits on
              *     the webhook canonical event. Always present.
@@ -894,13 +960,13 @@ export interface components {
             calibration: components["schemas"]["Calibration"];
             /**
              * @description Circulating supply of the mint (`rust_decimal`, serialized as a JSON
-             *     string), scaled by `decimals`. This is a SIZE/CONTEXT signal — NOT a
-             *     peg-safety signal — and is NEVER an input to `discount`/`state`/
+             *     string), scaled by `decimals`. This is a SIZE/CONTEXT signal; NOT a
+             *     peg-safety signal; and is NEVER an input to `discount`/`state`/
              *     thresholds. Sourced from the on-chain SPL Mint account's `supply`
              *     field by the isolated `token_supply` indexer task on a slow (~10 min)
              *     cadence (migration 0065). No freshness bound is enforced on this
-             *     field the way `updated_at` is for `discount` — supply changes slowly
-             *     by nature. `null` until the mint has been observed at least once —
+             *     field the way `updated_at` is for `discount`; supply changes slowly
+             *     by nature. `null` until the mint has been observed at least once;
              *     serialized as `null` (like `discount`), not omitted.
              */
             circulating_supply?: string | null;
@@ -971,12 +1037,12 @@ export interface components {
              *     much size an exit can absorb, NOT a peg-safety signal and NEVER an input
              *     to `discount`/`state`/thresholds. `null` when tokens.xyz has no market
              *     for the mint (7 of 69 active assets as of 2026-08-10) or it has not been
-             *     observed yet — `null` NEVER means zero (ADR-0019). Read together with
+             *     observed yet; `null` NEVER means zero (ADR-0019). Read together with
              *     `market_context_at` for freshness.
              */
             liquidity_usd?: string | null;
             /**
-             * @description Market capitalization in USD = `circulating_supply × market_usd` — a
+             * @description Market capitalization in USD = `circulating_supply × market_usd`; a
              *     SIZE/CONTEXT signal for gauging relative scale across assets, NOT a
              *     peg-safety signal and NEVER an input to `discount`/`state`/thresholds.
              *     `None` whenever either factor is missing (no `circulating_supply`
@@ -1016,12 +1082,12 @@ export interface components {
             peg_target: string;
             /**
              * Format: int32
-             * @description Derived 0-100 peg-risk score — a single sortable/thresholdable number for
+             * @description Derived 0-100 peg-risk score; a single sortable/thresholdable number for
              *     integrators, ALONGSIDE (never replacing) `state`. Anchored to the committed
              *     `state` so it never disagrees with the classification (PEGGED ≤ 24, DRIFT
              *     25-49, DEPEG 50-74, CRITICAL 75-94, BLACK_SWAN 95-100), interpolated within
              *     the band by the effective discount magnitude. `null` when `state` is
-             *     UNKNOWN/absent, no discount exists, or thresholds are the CDP CR-form —
+             *     UNKNOWN/absent, no discount exists, or thresholds are the CDP CR-form;
              *     we never fabricate a score (ADR-0019). Deterministic + reproducible from
              *     the other published fields; NOT part of any receipt hash. See
              *     `crates/api-rs/src/risk_score.rs`.
@@ -1040,7 +1106,7 @@ export interface components {
             /**
              * @description Stake-pool SOL per share for LSTs (decimal string, at most 18 decimal
              *     places like the USD legs, trailing zeros trimmed). Omitted for non-LST
-             *     assets. Reflects the LATEST intrinsic snapshot — read together with
+             *     assets. Reflects the LATEST intrinsic snapshot; read together with
              *     `updated_at` for freshness. NAV decomposition is
              *     `intrinsic_usd = sol_per_lst × SOL/USD`.
              */
@@ -1048,20 +1114,20 @@ export interface components {
             state?: null | components["schemas"]["PegState"];
             /**
              * @description Advisory machine-readable reason for the snapshot's state. Explanatory
-             *     only — never a verdict input and not part of any receipt hash.
+             *     only; never a verdict input and not part of any receipt hash.
              *
              *     **Emitted today:**
-             *     - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
+             *     - `premium_sanity`: engine NAV-sanity override: smoothed discount exceeded
              *       the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
              *       suspect).
-             *     - `stale_source` — API layer: no discount snapshot in the last 15 min
+             *     - `stale_source`: API layer: no discount snapshot in the last 15 min
              *       (sources or engine dark), state collapsed to UNKNOWN.
-             *     - `market_unavailable` — API layer: no discount snapshot in the last 15
+             *     - `market_unavailable`: API layer: no discount snapshot in the last 15
              *       min, but the intrinsic leg IS fresh and no market tick exists in that
              *       window (thin market, no reliable quote). State UNKNOWN; `intrinsic_usd`
              *       and `updated_at` are the fresh intrinsic reading, `market_usd` is null.
              *
-             *     **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
+             *     **Reserved; not yet emitted (planned for depth-gate / oracle-crosscheck
              *     work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
              *     nominal`.
              *
@@ -1082,7 +1148,7 @@ export interface components {
              *     CDP collateral-ratio form `{"cr_drift","cr_depeg","cr_critical",
              *     "cr_black_swan"}` for hyUSD. This is the AUTHORITATIVE source the
              *     client should key band-gauge / chart threshold lines / "closest to
-             *     breaking" sort off — replacing any hand-maintained client table. The
+             *     breaking" sort off; replacing any hand-maintained client table. The
              *     column is re-synced to the engine's calibrated `assets.toml` values by
              *     migration `0042_resync_asset_thresholds`. Omitted only if the column
              *     is NULL (never, given the `NOT NULL` constraint) or fails to decode.
@@ -1100,7 +1166,7 @@ export interface components {
              *     24h (BSRV-02), in the same signed-fraction units as `discount`
              *     (e.g. `0.0123` = 123 bps). Computed as
              *     `max(greatest(abs(min_discount), abs(max_discount)))` over the
-             *     `discount_1m` aggregate — discount is signed, so the abs is required to
+             *     `discount_1m` aggregate; discount is signed, so the abs is required to
              *     catch the worst tick in EITHER direction. Trailing 24h, INDEPENDENT of
              *     the current-snapshot 15-min freshness bound on `discount`. Omitted when
              *     no `discount_1m` rows exist in the window.
@@ -1151,7 +1217,7 @@ export interface components {
          *     `alert_evidence` row exists). The runtime body is assembled via `json!` for
          *     LEFT-JOIN flexibility; these structs mirror it field-for-field so
          *     `/openapi.json` documents the REAL shape instead of two opaque objects. Kept
-         *     in lockstep with the `json!` body manually — the 202/410 responses use a
+         *     in lockstep with the `json!` body manually; the 202/410 responses use a
          *     different shape (see the endpoint's other documented responses).
          */
         AuditDetailResponse: {
@@ -1161,7 +1227,7 @@ export interface components {
             evidence_status: string;
         };
         /**
-         * @description The `evidence` object inside a 200 receipt body — the frozen inputs and
+         * @description The `evidence` object inside a 200 receipt body; the frozen inputs and
          *     methodology pin that make the alert independently verifiable.
          */
         AuditEvidence: {
@@ -1181,7 +1247,7 @@ export interface components {
             receipt_sha256: string;
         };
         /**
-         * @description 410 body for `GET /v1/audit/{alert_id}` — receipt persistence failed
+         * @description 410 body for `GET /v1/audit/{alert_id}`; receipt persistence failed
          *     permanently (ADR-0006 dead-letter terminal); the receipt will never land.
          */
         AuditGoneResponse: {
@@ -1202,8 +1268,8 @@ export interface components {
         AuditIndexRow: {
             asset: string;
             /**
-             * @description Self-describing form of `monitoring_only`, `provisional` | `calibrated`
-             *     — same vocabulary as the webhook canonical event. Always present.
+             * @description Self-describing form of `monitoring_only`, `provisional` | `calibrated`;
+             *     same vocabulary as the webhook canonical event. Always present.
              */
             calibration: components["schemas"]["Calibration"];
             /** Format: date-time */
@@ -1212,7 +1278,7 @@ export interface components {
             id: string;
             methodology_version: string;
             /**
-             * @description True for a released `monitoring_only` (beta) asset — provisional
+             * @description True for a released `monitoring_only` (beta) asset; provisional
              *     calibration. Present at runtime since the beta release; this field
              *     re-aligns the documented schema with the wire (it was emitted but not
              *     declared). Always present.
@@ -1223,7 +1289,7 @@ export interface components {
             to_state: components["schemas"]["PegState"];
         };
         /**
-         * @description 202 body for `GET /v1/audit/{alert_id}` — receipt persistence is still
+         * @description 202 body for `GET /v1/audit/{alert_id}`; receipt persistence is still
          *     retrying (ADR-0006). Poll again after `retry_after_seconds`.
          */
         AuditPendingResponse: {
@@ -1246,11 +1312,11 @@ export interface components {
         /**
          * @description Calibration status of an asset (and of an alert that asset emitted).
          *
-         *     - `provisional` — a "beta" asset: released and alerting publicly, but its
+         *     - `provisional`: a "beta" asset: released and alerting publicly, but its
          *       thresholds are not yet validated over a full post-launch calibration
          *       window. Equivalent to `monitoring_only=true`. Read its alerts as
          *       experimental.
-         *     - `calibrated` — a fully calibrated asset that counts in the launch
+         *     - `calibrated`: a fully calibrated asset that counts in the launch
          *       denominator.
          *
          *     This is the SAME vocabulary the dispatcher emits on the webhook canonical
@@ -1262,8 +1328,8 @@ export interface components {
         Calibration: "provisional" | "calibrated";
         CalibrationHealth: {
             /**
-             * @description Self-describing form of `monitoring_only`, `provisional` | `calibrated`
-             *     — same vocabulary as the webhook canonical event and the other read
+             * @description Self-describing form of `monitoring_only`, `provisional` | `calibrated`;
+             *     same vocabulary as the webhook canonical event and the other read
              *     surfaces. Always present.
              */
             calibration: components["schemas"]["Calibration"];
@@ -1283,7 +1349,7 @@ export interface components {
             health: string;
             /**
              * @description Calibration-status flag (not a health state). `monitoring_only` (beta)
-             *     assets now alert publicly, but their calibration is provisional — the
+             *     assets now alert publicly, but their calibration is provisional; the
              *     flag lets clients label them as beta.
              */
             monitoring_only: boolean;
@@ -1306,7 +1372,7 @@ export interface components {
             symbol: string;
         };
         /**
-         * @description One rung of the depeg-cascade at a preset shock — the compact form carried by
+         * @description One rung of the depeg-cascade at a preset shock; the compact form carried by
          *     the `/loop-exposure` endpoint and the tokens.xyz feed's `systemic` block so a
          *     consumer gets the whole escalation ($0 → $Nm as the depeg deepens) in one read.
          */
@@ -1320,21 +1386,21 @@ export interface components {
              *     the comparable denominator is `collateral_usd`.
              */
             liquidatable_usd: string;
-            /** @description Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count). */
+            /** @description Bucketed range of affected positions (ADR-0036 inv.8; never a raw count). */
             positions: string;
             /** Format: int32 */
             shock_bps: number;
         };
         /**
          * @description Pyth oracle confidence bucket. Mirrors `pyth_confidence_label`. Scopes the
-         *     PRICE-ORACLE confidence interval only (conf/price ratio) — NOT market-quote
+         *     PRICE-ORACLE confidence interval only (conf/price ratio); NOT market-quote
          *     or route-depth reliability.
          * @enum {string}
          */
         Confidence: "high" | "medium" | "low" | "unknown";
         /**
          * @description Delivery-pipeline health rollup. Surfaced so the dashboard can show a
-         *     degraded badge when notifications are silently failing — historically
+         *     degraded badge when notifications are silently failing; historically
          *     MarkdownV2 escape bugs caused alert_deliveries.status='failed' rows to
          *     pile up without any user-visible signal, breaking trust.
          */
@@ -1361,35 +1427,35 @@ export interface components {
              */
             discount_raw?: string | null;
             /**
-             * @description Intrinsic (NAV) leg in USD — the fair-value denominator of the
+             * @description Intrinsic (NAV) leg in USD; the fair-value denominator of the
              *     discount. `None` for `bucket=1m` (the `discount_1m` aggregate stores no
              *     legs); for `bucket=raw`, the `discount_snapshots.intrinsic_usd` column
              *     (`NOT NULL`). Lets the asset-detail "Legs" view distinguish a market
-             *     crash from a NAV re-rating — the two legs the single zeroed spread line
+             *     crash from a NAV re-rating; the two legs the single zeroed spread line
              *     structurally cannot separate. USD-denominated, so only meaningful for
              *     USD-peg assets (the client gates the view on `peg_target = USD`).
              */
             intrinsic_usd?: string | null;
             /**
-             * @description Market leg in USD — the traded price numerator of the discount. Same
+             * @description Market leg in USD; the traded price numerator of the discount. Same
              *     `None`-for-1m / present-for-raw semantics as `intrinsic_usd`, from
              *     `discount_snapshots.market_usd` (`NOT NULL`).
              */
             market_usd?: string | null;
             /**
-             * @description Pyth ORACLE leg in USD — a THIRD, structurally independent price source
+             * @description Pyth ORACLE leg in USD; a THIRD, structurally independent price source
              *     (vs the DEX `market_usd` and the NAV `intrinsic_usd`), for the 3-leg
              *     "sources disagree" view. asof-joined from `oracle_snapshots` on the
              *     asset's `pyth_feed_id` (0x-normalized to the indexer's stored form).
              *     `None` for `bucket=1m`. For `bucket=raw`, `None` unless ALL hold: the
              *     market is a DEX source (`market_kind` jupiter_usd/dex_screener_usd, so
              *     the oracle is independent, not a duplicate of a `pyth_*` market), the
-             *     asset's `peg_target` is USD (the oracle leg is a USD price — excludes
+             *     asset's `peg_target` is USD (the oracle leg is a USD price; excludes
              *     SOL/BRL/EUR-peg assets like the LSTs, BRZ, EURC whose `<asset>/USD`
              *     feed isn't their peg), the asset carries a `pyth_feed_id`, AND that
              *     feed actually streams into
              *     `oracle_snapshots`. The `market_kind`+`pyth_feed_id` CASE is only a
-             *     cheap pre-filter, NOT a subscription proof — `pyth_feed_id` is display
+             *     cheap pre-filter, NOT a subscription proof; `pyth_feed_id` is display
              *     metadata that can name a feed the indexer's `[pyth_feeds]` set never
              *     subscribes; such feeds yield no `oracle_snapshots` rows, so the asof
              *     subquery returns NULL and the leg quietly stays hidden. So the leg
@@ -1411,14 +1477,14 @@ export interface components {
         };
         /** @description One protocol's latest leverage rollup for an asset. */
         LoopByProtocol: {
-            /** @description Leveraged collateral (USD) — the "loop" exposure to this asset. */
+            /** @description Leveraged collateral (USD); the "loop" exposure to this asset. */
             collateral_lev_usd?: string | null;
             /** @description Total collateral supplied (USD), of which `collateral_lev_usd` is leveraged. */
             collateral_usd?: string | null;
             coverage: string;
             /** @description Asset borrowed/shorted (USD). */
             debt_usd?: string | null;
-            /** @description k-floored obligation-count RANGE (ADR-0036 inv.7 — never a raw count). */
+            /** @description k-floored obligation-count RANGE (ADR-0036 inv.7; never a raw count). */
             positions?: string | null;
             protocol: string;
             /** Format: date-time */
@@ -1426,7 +1492,7 @@ export interface components {
         };
         /** @description Cross-protocol leverage exposure for an asset. */
         LoopExposureResponse: {
-            /** @description ADR-0036 inv.9 — this is a model estimate, not a verifiable receipt. */
+            /** @description ADR-0036 inv.9; this is a model estimate, not a verifiable receipt. */
             advisory_note: string;
             asset: string;
             by_protocol: components["schemas"]["LoopByProtocol"][];
@@ -1493,7 +1559,7 @@ export interface components {
             /**
              * Format: int32
              * @description 0-100, higher = more executable market. `null` when the inputs are too
-             *     sparse to state a number honestly — read `insufficient_reason` then.
+             *     sparse to state a number honestly; read `insufficient_reason` then.
              */
             score?: number | null;
         };
@@ -1518,7 +1584,7 @@ export interface components {
         /**
          * @description Public methodology lifecycle pointer.
          *
-         *     `version`, `status`, and `fix_url` are the original (v1) shape — every
+         *     `version`, `status`, and `fix_url` are the original (v1) shape; every
          *     current consumer (web/app/api/methodology/route.ts type-checks only
          *     `version`+`status`) is forward-compatible with the additive fields below.
          */
@@ -1535,7 +1601,7 @@ export interface components {
             git_tag?: string | null;
             /**
              * @description RFC3339 timestamp this version was released. The honest analogue of the
-             *     often-requested "adopted_at" — there is no separate adoption column;
+             *     often-requested "adopted_at"; there is no separate adoption column;
              *     release == adoption in this lifecycle (ADR-0003).
              */
             released_at?: string | null;
@@ -1554,7 +1620,7 @@ export interface components {
         /** @description On-chain commit pointer. */
         OnchainResponse: {
             /**
-             * @description Always `"committed"` on a 200 — present so a caller can branch on the
+             * @description Always `"committed"` on a 200; present so a caller can branch on the
              *     same `commit_status` vocabulary the 404 body uses (ADR-0004).
              */
             commit_status: string;
@@ -1572,7 +1638,7 @@ export interface components {
              * Format: int64
              * @description Seconds elapsed since the asof-joined oracle snapshot was published.
              *     `None` only when no oracle snapshot was found at all (in which case
-             *     the whole annotation is `None` too — this field is always populated
+             *     the whole annotation is `None` too; this field is always populated
              *     whenever `OracleDegraded` is `Some`).
              */
             age_secs?: number | null;
@@ -1604,7 +1670,7 @@ export interface components {
         PegFeedResponse: {
             count: number;
             data: components["schemas"]["PegSignal"][];
-            /** @description RFC3339 build time — an explicit staleness read independent of HTTP headers. */
+            /** @description RFC3339 build time; an explicit staleness read independent of HTTP headers. */
             generated_at: string;
             methodology: string;
             ok: boolean;
@@ -1615,7 +1681,7 @@ export interface components {
          *     only what it needs.
          */
         PegSignal: {
-            /** @description USD | FX | NAV — how to read fair value without Pegana's taxonomy. */
+            /** @description USD | FX | NAV; how to read fair value without Pegana's taxonomy. */
             anchor: components["schemas"]["Anchor"];
             /** @description provisional | calibrated. Always present. */
             calibration: components["schemas"]["Calibration"];
@@ -1651,7 +1717,7 @@ export interface components {
             market_cap?: string | null;
             market_usd?: string | null;
             /**
-             * @description Canonical Solana mint — the join key each signal carries in the batch
+             * @description Canonical Solana mint; the join key each signal carries in the batch
              *     `data[]` array (index the array by this).
              */
             mint: string;
@@ -1662,7 +1728,7 @@ export interface components {
             receipt_url: string;
             /**
              * Format: int32
-             * @description Composite peg-risk score, 0–100 (higher = riskier) — the single number a
+             * @description Composite peg-risk score, 0–100 (higher = riskier); the single number a
              *     consumer (e.g. tokens.xyz's risk block) can surface without Pegana's model.
              *     Derived on `/v1/assets` (`risk_score.rs`); omitted when unavailable.
              */
@@ -1716,7 +1782,7 @@ export interface components {
          * @description Which direction of the signed `discount` can move this asset's published
          *     `state`.
          *
-         *     - `"below"` — only a discount (market BELOW the peg/anchor) is a risk
+         *     - `"below"`: only a discount (market BELOW the peg/anchor) is a risk
          *       signal. A premium never escalates the state. This covers USD and FX
          *       anchors, and also every NAV class today (LSTs, yield-bearing stables,
          *       synthetic leverage): for those the engine treats a premium as
@@ -1724,7 +1790,7 @@ export interface components {
          *       `discount` on them is NOT a missed alert. An implausibly large premium on
          *       an LST or yield stable is reported as `UNKNOWN` (`state_reason:
          *       premium_sanity`), not as a depeg.
-         *     - `"either"` — both a discount and a premium can escalate the state.
+         *     - `"either"`: both a discount and a premium can escalate the state.
          *       Reserved for a NAV-anchored class without the premium carve-out; no
          *       tracked class uses it today.
          * @enum {string}
@@ -1736,13 +1802,18 @@ export interface components {
             protocol: string;
         };
         SimulateDepegResponse: {
-            /** @description ADR-0036 inv.9 — advisory model estimate, not a verifiable receipt. */
+            /** @description ADR-0036 inv.9; advisory model estimate, not a verifiable receipt. */
             advisory_note: string;
             asset: string;
+            /** @description Per-protocol breakdown. Empty when `coverage` is `unknown`. */
             by_protocol: components["schemas"]["SimulateByProtocol"][];
             /**
-             * @description `full` | `partial` | `unknown`. `partial` whenever risky bands were
-             *     k-floor-dropped or dominance-suppressed (the honest ADR-0036 posture).
+             * @description `partial` | `unknown`. `partial` whenever fresh bands exist (risky
+             *     bands may be k-floor-dropped or dominance-suppressed, the honest
+             *     ADR-0036 posture, so this is never `full`). `unknown` when no
+             *     health-factor band is fresh: `liquidatable_usd` and `positions` are then
+             *     `null` and `by_protocol` is empty, like the omitted `/loop-exposure`
+             *     cascade.
              */
             coverage: string;
             /**
@@ -1750,16 +1821,23 @@ export interface components {
              *     not) whose health-factor band crosses 1 at this shock. Not a subset of
              *     `loop_exposure_usd`: a plain deposit-and-borrow position counts here but
              *     not there, so this value can exceed `loop_exposure_usd`.
+             *
+             *     `null` when `coverage` is `unknown` (no fresh health-factor bands): the
+             *     cascade is NOT KNOWN, which is not the same as zero. Never read `null`
+             *     as "nothing liquidates".
              */
-            liquidatable_usd: string;
+            liquidatable_usd: string | null;
             /**
              * @description Total leveraged collateral across protocols (context, from loop-exposure).
              *     Counts leverage loops only (e.g. Kamino multiply pairs), so it is a
              *     NARROWER basis than `liquidatable_usd` and is not its upper bound.
              */
             loop_exposure_usd: string;
-            /** @description Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count). */
-            positions: string;
+            /**
+             * @description Bucketed range of affected positions (ADR-0036 inv.8; never a raw
+             *     count). `null` when `coverage` is `unknown`: unknown, not "<5".
+             */
+            positions: string | null;
             /** Format: int32 */
             shock_bps: number;
             updated_at?: string | null;
@@ -1787,7 +1865,7 @@ export interface components {
              * Format: int64
              * @description Seconds since the most recent `intrinsic_snapshots` row written by
              *     the Sanctum LST adapter (`source LIKE 'sanctum%'`). `None` means no
-             *     row yet — cold start, or the source has never come up.
+             *     row yet; cold start, or the source has never come up.
              */
             sanctum_secs?: number | null;
         };
@@ -1795,7 +1873,7 @@ export interface components {
             asset: string;
             /**
              * @description Pyth oracle confidence bucket: `high` | `medium` | `low` | `unknown`.
-             *     The PRICE-ORACLE confidence-interval signal (conf/price ratio) — the field
+             *     The PRICE-ORACLE confidence-interval signal (conf/price ratio); the field
              *     integrators should gate automation on alongside `state`. Mirrors the list
              *     endpoint's `confidence`. Collapses to `unknown` when the feed is stale (same
              *     as `state`), so a frozen feed cannot read as confidently pegged. Omitted only
@@ -1833,7 +1911,7 @@ export interface components {
             since_is_lower_bound: boolean;
             /**
              * @description `true` when `updated_at` is older than the 15-minute freshness bound the
-             *     list/detail endpoints enforce — i.e. the feed has likely frozen. Unlike
+             *     list/detail endpoints enforce; i.e. the feed has likely frozen. Unlike
              *     list/detail, `/state` still returns the last value rather than 404-hiding
              *     it; read this flag to fail safe. Consumers needing a tighter bound can
              *     derive their own from `updated_at`.
@@ -1845,18 +1923,18 @@ export interface components {
              *     `discount_snapshots.state_reason` and `Receipt.state_reason`).
              *
              *     **Emitted today:**
-             *     - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
+             *     - `premium_sanity`: engine NAV-sanity override: smoothed discount exceeded
              *       the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
              *       suspect).
-             *     - `stale_source` — API layer: no discount snapshot in the last 15 min
+             *     - `stale_source`: API layer: no discount snapshot in the last 15 min
              *       (sources or engine dark), state collapsed to UNKNOWN.
-             *     - `market_unavailable` — API layer: no discount snapshot in the last 15
+             *     - `market_unavailable`: API layer: no discount snapshot in the last 15
              *       min, but the intrinsic leg IS fresh and no market tick exists in that
              *       window (thin market, no reliable quote). State UNKNOWN; the other
              *       fields are from the last discount snapshot (`updated_at` = when it
              *       stopped), like `stale_source`.
              *
-             *     **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
+             *     **Reserved; not yet emitted (planned for depth-gate / oracle-crosscheck
              *     work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
              *     nominal`.
              *
@@ -1868,7 +1946,7 @@ export interface components {
              * @description Timestamp the current snapshot was computed (the latest
              *     `discount_snapshots.ts`). Distinct from `since` (state-transition time):
              *     this is the FRESHNESS signal. The engine stops writing snapshots when a
-             *     feed goes stale ("missing data is not confirming data" — H8), so a frozen
+             *     feed goes stale ("missing data is not confirming data"; H8), so a frozen
              *     `updated_at` is exactly how a stale/frozen feed surfaces on this endpoint.
              */
             updated_at: string;
@@ -1900,7 +1978,7 @@ export interface components {
          *     carries no tracked leverage.
          */
         SystemicSignal: {
-            /** @description ADR-0036 inv.9 — advisory, not a verifiable receipt. */
+            /** @description ADR-0036 inv.9; advisory, not a verifiable receipt. */
             advisory_note: string;
             /**
              * @description Depeg-cascade across the preset shock grid. Empty (`[]`) when no fresh
@@ -1939,7 +2017,7 @@ export interface components {
             ips: string[];
             /**
              * Format: date-time
-             * @description Hint to refresh this list weekly — IPs can change without notice
+             * @description Hint to refresh this list weekly; IPs can change without notice
              *     during infrastructure migrations.
              */
             recheck_after: string;
@@ -1955,7 +2033,7 @@ export interface components {
             pubkeys_b64: string[];
             /**
              * Format: date-time
-             * @description Hint to refresh weekly — during a rotation this list flips
+             * @description Hint to refresh weekly; during a rotation this list flips
              *     from `[A]` → `[A, B]` → `[B]` over the rotation window. Polling
              *     at least once between deploys is enough to follow it.
              */
@@ -1988,7 +2066,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Rate limit exceeded — see Retry-After header */
+            /** @description Rate limit exceeded; see Retry-After header */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2008,7 +2086,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Liveness probe — process is up */
+            /** @description Liveness probe; process is up */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2098,7 +2176,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Rate limit exceeded — see Retry-After header */
+            /** @description Rate limit exceeded; see Retry-After header */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2123,7 +2201,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description SPL mint address (base58) — the canonical on-chain identifier. Resolves to the same card as /v1/assets/{symbol}. */
+                /** @description SPL mint address (base58); the canonical on-chain identifier. Resolves to the same card as /v1/assets/{symbol}. */
                 mint: string;
             };
             cookie?: never;
@@ -2205,7 +2283,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Asset symbol — case-insensitive; resolved to canonical casing (e.g. `jitoSOL`, `USDC`, `hyUSD`) */
+                /** @description Asset symbol; case-insensitive; resolved to canonical casing (e.g. `jitoSOL`, `USDC`, `hyUSD`) */
                 symbol: string;
             };
             cookie?: never;
@@ -2255,12 +2333,18 @@ export interface operations {
                 from?: string;
                 /** @description Inclusive upper bound on `ts`. Defaults to now. */
                 to?: string;
-                /** @description Page size, clamped to `[1, 5000]`. Default `500`. */
+                /**
+                 * @description Page size, clamped to `[1, 5000]`. Default `500`. A window holding
+                 *     more rows than this comes back newest-first with `truncated: true` and
+                 *     `next_from` / `next_to` cursors for the next, older page (raw samples arrive every
+                 *     few seconds, so the default 24h window usually needs several pages, or
+                 *     `bucket=1m` with `limit=1440`).
+                 */
                 limit?: number;
             };
             header?: never;
             path: {
-                /** @description Asset symbol — case-insensitive */
+                /** @description Asset symbol; case-insensitive */
                 symbol: string;
             };
             cookie?: never;
@@ -2301,7 +2385,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Asset symbol — case-insensitive. */
+                /** @description Asset symbol; case-insensitive. */
                 symbol: string;
             };
             cookie?: never;
@@ -2345,14 +2429,14 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description Asset symbol — case-insensitive. */
+                /** @description Asset symbol; case-insensitive. */
                 symbol: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Cascade estimate for the shock */
+            /** @description Cascade estimate for the shock. With coverage `unknown` (no fresh health-factor bands) `liquidatable_usd` and `positions` are null (unknown, NOT zero) and `by_protocol` is empty */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2386,7 +2470,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Asset symbol — case-insensitive; resolved to canonical casing */
+                /** @description Asset symbol; case-insensitive; resolved to canonical casing */
                 symbol: string;
             };
             cookie?: never;
@@ -2429,11 +2513,11 @@ export interface operations {
                 limit?: number;
                 /**
                  * @description When true (default), filter out `PEGGED` end-state rows. PEGGED is
-                 *     the "recovered" state — usually noise from the index perspective.
+                 *     the "recovered" state; usually noise from the index perspective.
                  */
                 exclude_pegged?: boolean;
                 /**
-                 * @description Server-side filter on the to_state value. Closes AC42 — the
+                 * @description Server-side filter on the to_state value. Closes AC42; the
                  *     previous client-side filter on the web/audit page was correct in
                  *     shape but constrained to whatever batch the index returned (default
                  *     50 rows). With server filtering the full limit applies to matching
@@ -2489,6 +2573,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description unknown_asset: ?asset= names a non-public asset (synth_lev, e.g. xSOL). Its receipts are not indexed; each stays reachable by id at /v1/audit/{alert_id} */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     csv: {
@@ -2527,7 +2620,16 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Rate limit exceeded — 10/min on this endpoint (ADR-0014), 60/min global by default (see RateLimit-Limit); Retry-After header set */
+            /** @description unknown_asset: ?asset= names a non-public asset (synth_lev, e.g. xSOL); its receipts are not exported */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limit exceeded; 10/min on this endpoint (ADR-0014), 60/min global by default (see RateLimit-Limit); Retry-After header set */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2548,7 +2650,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Receipt JSON (alert + evidence wrapper) */
+            /** @description Receipt JSON (alert + evidence wrapper). Cache-Control is `public, max-age=31536000, immutable` once the receipt can no longer change (commit_status not_applicable, retry_exhausted or wallet_drained, or committed with onchain_tx_sig set) and `public, max-age=60` while the on-chain commit is still pending */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2619,7 +2721,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not anchored — stays 404 across ALL non-committed states by design (clients such as `pegana-replay --verify-onchain` treat 404 as 'skip the on-chain check'). Body `error` discriminates the reason: `not_applicable` (cost-gated, never anchored — ADR-0004), `not_committed_yet` (in-flight, queued, or unknown alert), `retry_exhausted`, `wallet_drained`, or `persistence_failed` (ADR-0006 dead-letter terminal — the same state /detail returns as 410). */
+            /** @description Not anchored; stays 404 across ALL non-committed states by design (clients such as `pegana-replay --verify-onchain` treat 404 as 'skip the on-chain check'). Body `error` discriminates the reason: `not_applicable` (cost-gated, never anchored; ADR-0004), `not_committed_yet` (in-flight, queued, or unknown alert), `retry_exhausted`, `wallet_drained`, or `persistence_failed` (ADR-0006 dead-letter terminal; the same state /detail returns as 410). */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2683,7 +2785,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiList_CalibrationHealth"];
                 };
             };
-            /** @description Rate limit exceeded — see Retry-After header */
+            /** @description Rate limit exceeded; see Retry-After header */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2721,7 +2823,7 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookIpsResponse"];
                 };
             };
-            /** @description Rate limit exceeded — see Retry-After header */
+            /** @description Rate limit exceeded; see Retry-After header */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2750,7 +2852,7 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookKeysResponse"];
                 };
             };
-            /** @description Rate limit exceeded — see Retry-After header */
+            /** @description Rate limit exceeded; see Retry-After header */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2813,7 +2915,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Rate limit exceeded — see Retry-After header */
+            /** @description Rate limit exceeded; see Retry-After header */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2838,7 +2940,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description SPL mint address (base58) — the tokens.xyz join key. */
+                /** @description SPL mint address (base58); the tokens.xyz join key. */
                 mint: string;
             };
             cookie?: never;
@@ -2892,7 +2994,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatsResponse"];
                 };
             };
-            /** @description Rate limit exceeded — see Retry-After header */
+            /** @description Rate limit exceeded; see Retry-After header */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2921,7 +3023,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Switching Protocols — WebSocket established */
+            /** @description Switching Protocols; WebSocket established */
             101: {
                 headers: {
                     [name: string]: unknown;

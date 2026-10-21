@@ -19,7 +19,9 @@ export function SiteNavV2() {
   return (
     <div
       className={cn(
-        "pegana-v2",
+        // v2-nav-host: no grain on this wrapper, or the pill cannot blur
+        // the page behind it (see v2.css).
+        "pegana-v2 v2-nav-host",
         switzerV2.variable,
         geistMonoV2.variable,
         "z-50",

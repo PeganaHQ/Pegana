@@ -1,7 +1,9 @@
-// Shared wording for a 429 from the public API. The API allows 60 requests a
-// minute per IP; when a browser (or everyone behind the same NAT/VPN) uses
-// that up, the API is still healthy. Every "feed unreachable" surface swaps to
-// this copy on a 429 so a rate limit is never presented as an outage.
-export const RATE_LIMITED_LABEL = "Rate limited";
+// Shared wording for when the public API asks this browser to slow down (a
+// 429). The API is healthy and the page resumes on its own, so visitors see a
+// calm "paused" line: never the words "rate limited", never the per-IP limit,
+// never a status code. Everything that renders on a 429 uses these strings.
+export const RATE_LIMITED_LABEL = "Live updates paused";
 export const RATE_LIMITED_BODY =
-  "The Pegana API is up, but it allows 60 requests a minute per IP and this network has used them. This retries on its own within a minute.";
+  "Live updates are paused for a moment and resume on their own.";
+/** Short inline form for strips that already show data. */
+export const LIVE_PAUSED_INLINE = "Live updates paused, resuming shortly.";

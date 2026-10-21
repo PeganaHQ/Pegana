@@ -23,7 +23,7 @@ class SourceFreshness:
             SSE stream).
         sanctum_secs (int | None | Unset): Seconds since the most recent `intrinsic_snapshots` row written by
             the Sanctum LST adapter (`source LIKE 'sanctum%'`). `None` means no
-            row yet — cold start, or the source has never come up.
+            row yet; cold start, or the source has never come up.
     """
 
     hylo_secs: int | None | Unset = UNSET

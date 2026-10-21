@@ -62,7 +62,7 @@ export default function FaqPage() {
           <PillGhost href={"/assets"}>Browse every asset</PillGhost>
         </div>
 
-        <p className="mt-8 font-mono text-[11.5px] leading-[1.7] text-[var(--v2-muted)]">
+        <p className="mt-8 font-mono text-[12px] leading-[1.7] text-[var(--v2-muted)]">
           The full list of what Pegana does not model lives on the{" "}
           <Link
             href="https://docs.pegana.xyz/methodology/honesty"

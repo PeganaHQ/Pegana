@@ -24,7 +24,7 @@ class OracleDegraded:
                 > `oracle_stale`.
             age_secs (int | None | Unset): Seconds elapsed since the asof-joined oracle snapshot was published.
                 `None` only when no oracle snapshot was found at all (in which case
-                the whole annotation is `None` too — this field is always populated
+                the whole annotation is `None` too; this field is always populated
                 whenever `OracleDegraded` is `Some`).
             conf_bps (int | None | Unset): `oracle_conf / oracle_usd`, in bps. `None` when the oracle snapshot
                 carried no confidence interval, or the computation overflowed.

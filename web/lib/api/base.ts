@@ -76,7 +76,7 @@ export const SSR_TOKEN_HEADER = "x-pegana-ssr-token";
  * handlers, OG images, sitemap).
  *
  * Server-side fetches all leave Vercel from a small shared egress pool, so they
- * share one 60/min per-IP API budget; a crawler walking the sitemap exhausted it
+ * share one per-IP API budget (60/min then, 240 in production now); a crawler walking the sitemap exhausted it
  * and the API's 429 surfaced as a 500 page. When `PEGANA_WEB_SSR_TOKEN` is set
  * (server-only: no `NEXT_PUBLIC_` prefix, so Next never inlines it into a
  * browser bundle) it is sent in `x-pegana-ssr-token` and the API applies its

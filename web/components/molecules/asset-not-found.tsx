@@ -11,8 +11,9 @@ interface AssetNotFoundProps {
   /** When true, the upstream fetch failed network-side rather than with a 404. */
   apiUnreachable?: boolean;
   /**
-   * The API answered 429: this browser's IP used up its public 60/min budget.
-   * The API is healthy, so this is worded as a pause, never as an outage.
+   * The API answered 429 (asked this browser to slow down). The API is
+   * healthy, so this is worded as a short pause: never as an outage, and
+   * never with the limit, the status code or the words "rate limited".
    * Takes precedence over `apiUnreachable`.
    */
   rateLimited?: boolean;
@@ -52,12 +53,12 @@ export function AssetNotFound({
     <section className="mx-auto max-w-[1280px] px-5 py-16 sm:px-8 sm:py-24">
       <div className="grid items-baseline gap-4 md:grid-cols-[110px_1fr] md:gap-16">
         <span className="inline-flex w-fit rounded-full border border-hairline px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-text-caption">
-          {rateLimited ? "429 · paused" : apiUnreachable ? "503 · feed" : "404"}
+          {rateLimited ? "paused" : apiUnreachable ? "503 · feed" : "404"}
         </span>
         <div className="max-w-[720px]">
           <h1 className="text-[40px] font-medium leading-[1.05] tracking-[-0.035em] sm:text-[56px]">
             {rateLimited ? (
-              "Too many requests from this network."
+              "Live updates paused."
             ) : apiUnreachable ? (
               "Live feed unreachable."
             ) : (
@@ -68,10 +69,10 @@ export function AssetNotFound({
           </h1>
           <p className="mt-5 max-w-[560px] text-[15px] leading-snug text-text-muted sm:text-[17px]">
             {rateLimited
-              ? `The Pegana API is up, but it allows 60 requests a minute per IP and this network has used them. The page retries on its own${
+              ? `This page loads on its own${
                   typeof retryAfterSec === "number" && retryAfterSec > 0
                     ? ` in about ${retryAfterSec}s`
-                    : " within a minute"
+                    : " in a moment"
                 }.`
               : apiUnreachable
               ? "The Pegana API isn't responding right now. The live dashboard and per-asset detail will come back automatically as soon as it's healthy."

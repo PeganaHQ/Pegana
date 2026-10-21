@@ -104,4 +104,34 @@ describe("MCP Sub-C outputSchema — unified field names", () => {
     // The pre-reshape body lacks the required `positions`/`advisory_note` → rejected.
     expect(schema.safeParse(legacy).success).toBe(false);
   });
+
+  // R3 audit P3: the API will report null (not "0") for an amount that is
+  // not known when coverage is unknown. The schema must accept it, and still
+  // accept the strings older builds send.
+  it("simulate_depeg_impact accepts null liquidatable_usd / positions when coverage is unknown", () => {
+    const schema = z.object(simulateDepegTool.outputSchema);
+    const unknown = {
+      asset: "hyUSD",
+      shock_bps: 500,
+      loop_exposure_usd: "0",
+      liquidatable_usd: null,
+      positions: null,
+      coverage: "unknown",
+      by_protocol: [{ protocol: "kamino", liquidatable_usd: null, positions: null }],
+      advisory_note: "advisory model estimate, not a verifiable receipt",
+    };
+    const r = schema.safeParse(unknown);
+    expect(r.success).toBe(true);
+    expect(r.data?.liquidatable_usd).toBeNull();
+    expect(r.data?.positions).toBeNull();
+    // Still required: a body that drops the keys is a contract break.
+    const withoutAmount: Record<string, unknown> = { ...unknown };
+    delete withoutAmount.liquidatable_usd;
+    expect(schema.safeParse(withoutAmount).success).toBe(false);
+  });
+
+  it("simulate_depeg_impact example uses an asset with bands, not hyUSD", () => {
+    expect(simulateDepegTool.description).toContain('{ symbol: "jitoSOL", shock_bps: 500 }');
+    expect(simulateDepegTool.description).not.toContain("hyUSD");
+  });
 });

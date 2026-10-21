@@ -27,6 +27,7 @@ vi.mock("@/lib/hooks/use-assets", () => ({
 
 vi.mock("@/lib/store/live-context", () => ({
   useLive: () => ({ byAsset: {}, connected: false }),
+  useWsDrivenPage: () => {},
 }));
 
 import { useScreenerState } from "@/lib/hooks/use-screener-state";

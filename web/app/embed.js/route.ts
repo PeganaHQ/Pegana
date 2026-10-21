@@ -118,7 +118,7 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
     CURRENT.parentNode.insertBefore(mount, CURRENT.nextSibling);
   }
 
-  function render(state, bps) {
+  function render(state, bps, stale) {
     var dark = THEME === "dark";
     var bg = dark ? "#0a0a0b" : "#fff";
     var text = dark ? "#f5f5f6" : "#0a0a0a";
@@ -147,6 +147,12 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
         '<span>' + escapeHtml(SHOWN) + '</span>' +
         '<span style="color:' + muted + ';font:500 11px/1 ui-monospace,' +
         'SFMono-Regular,Menlo,Consolas,monospace;">' + escapeHtml(label) + bpsStr + '</span>' +
+        (stale
+          ? '<span title="Live read unavailable; last good state" style="color:' +
+            muted + ';font:500 12px/1 ui-monospace,SFMono-Regular,' +
+            'Menlo,Consolas,monospace;text-transform:uppercase;' +
+            'letter-spacing:.06em;">stale</span>'
+          : '') +
         '<span style="color:' + muted + ';margin-left:auto;padding-left:8px;' +
         'border-left:1px solid ' + border + ';">Pegana \\u2197</span>' +
       '</a>';
@@ -225,7 +231,21 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
   // has no peg) renders "Not tracked" and stops polling: Pegana publishes no
   // peg verdict for either.
   var timer = null;
+  // Last good verdict this page has seen. A soft-fail (a 429 from the
+  // visitor's per-IP API budget, a 5xx, a network error) re-renders it with a
+  // muted "stale" marker instead of flipping the badge to Unknown while the
+  // API still has a verdict. It is dropped once its own snapshot ages past
+  // the freshness gate, so a long outage still ends in Unknown.
+  var lastGood = null;
   function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  function softFail() {
+    if (lastGood && lastGood.updatedAt && !isStaleTs(lastGood.updatedAt)) {
+      render(lastGood.state, lastGood.bps, true);
+      return;
+    }
+    lastGood = null;
+    render("UNKNOWN", null);
+  }
   function poll() {
     var url = API + "/v1/assets/" + encodeURIComponent(ASSET);
     fetch(url, { headers: { Accept: "application/json" }, credentials: "omit" })
@@ -234,18 +254,25 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
         return r.ok ? r.json() : null;
       })
       .then(function (data) {
-        if (!data) { render("UNKNOWN", null); return; }
+        if (!data) { softFail(); return; }
         if (data.notTracked || data["class"] === "synth_lev") {
           stop();
           render("NOT_TRACKED", null);
           return;
         }
-        if (isStaleTs(data.updated_at)) { render("UNKNOWN", null); return; }
+        if (isStaleTs(data.updated_at)) { lastGood = null; render("UNKNOWN", null); return; }
         var state = data.state || data.peg_state || "UNKNOWN";
         var bps = reconcileBps(data.discount, data.intrinsic_usd, data.market_usd);
+        // Remember only a verdict with its own timestamp: isStaleTs(null) is
+        // false, so one without could be replayed as "stale" forever.
+        if (state !== "UNKNOWN" && data.updated_at) {
+          lastGood = { state: state, bps: bps, updatedAt: data.updated_at };
+        } else {
+          lastGood = null;
+        }
         render(state, bps);
       })
-      .catch(function () { render("UNKNOWN", null); });
+      .catch(softFail);
   }
 
   // Initial render (loading state) + first poll + 30s cadence (AC54).

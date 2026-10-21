@@ -9,6 +9,11 @@ Regenerated from the current OpenAPI spec at <https://api.pegana.xyz/openapi.jso
 
 ### Breaking
 
+- BREAKING for strict typed clients: on `SimulateDepegResponse`,
+  `liquidatable_usd` and `positions` are now nullable (`string | null` in
+  TypeScript, `str | None` in Python). Both are `null` when `coverage`
+  is `unknown` (no fresh health-factor bands): the cascade is not known, which
+  is not the same as zero. Handle `null` before parsing the decimal string.
 - Code that constructs `LoopExposureResponse`, `SystemicSignal` or `StateResp`
   itself (TypeScript object literals) must now pass the new required fields:
   `cascade_coverage` on the first two, `since_is_lower_bound` on `StateResp`.
@@ -26,6 +31,14 @@ now fails at compile time instead:
 
 ### Added
 
+- Optional `truncated`, `next_to` and `next_from` on the time-series
+  list envelope (`ApiList_HistoryPoint`, `ApiList_AssetCard` and
+  `ApiList_CalibrationHealth`). When `truncated` is `true`, repeat the request
+  with `from=<next_from>&to=<next_to>` to get the next, older page. Always
+  send `from` when paging: the default `from` is now minus 24h, so paging
+  without it returns 400 `invalid_range` once `next_to` is older than 24h.
+- Typed `404` (`ApiError`) responses on `GET /v1/audit` and
+  `GET /v1/audit.csv`.
 - `GET /v1/audit` query parameters for cursor paging and filtering: `asset`,
   `since`, `until`, `before`, `before_id`. `state` also accepts `UNKNOWN`.
 - `cascade_updated_at` on the `LoopExposureResponse` and `SystemicSignal`

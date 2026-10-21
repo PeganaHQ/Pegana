@@ -20,13 +20,13 @@ class AuditDetailResponse:
     `alert_evidence` row exists). The runtime body is assembled via `json!` for
     LEFT-JOIN flexibility; these structs mirror it field-for-field so
     `/openapi.json` documents the REAL shape instead of two opaque objects. Kept
-    in lockstep with the `json!` body manually — the 202/410 responses use a
+    in lockstep with the `json!` body manually; the 202/410 responses use a
     different shape (see the endpoint's other documented responses).
 
         Attributes:
             alert (AuditAlert): The `alert` object inside a 200 receipt body (`GET /v1/audit/{alert_id}`).
                 Decimal money fields are JSON strings (preserves precision).
-            evidence (AuditEvidence): The `evidence` object inside a 200 receipt body — the frozen inputs and
+            evidence (AuditEvidence): The `evidence` object inside a 200 receipt body; the frozen inputs and
                 methodology pin that make the alert independently verifiable.
             evidence_status (str): Always `"ready"` on a 200.
     """

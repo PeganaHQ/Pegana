@@ -39,6 +39,34 @@ const POSITIVE_INT = /^[1-9][0-9]{0,19}$/;
 // the widget always sends them in one order.
 const ALLOWED_PARAMS = new Set(["inputMint", "outputMint", "amount", "slippageBps"]);
 
+// Jupiter's rate-limit headers, passed through on a failure so the client (and
+// anyone debugging) sees the real budget. Seen on api.jup.ag and lite-api.jup.ag:
+// x-ratelimit-remaining, x-ratelimit-current, x-ratelimit-reset (epoch secs).
+function rateLimitHeaders(upstream: Headers): Record<string, string> {
+  const out: Record<string, string> = {};
+  upstream.forEach((value, key) => {
+    if (key.toLowerCase().startsWith("x-ratelimit-")) out[key.toLowerCase()] = value;
+  });
+  return out;
+}
+
+// Retry-After for an upstream 429: Jupiter's own when it sends one, else the
+// seconds until its x-ratelimit-reset epoch. Neither present: no header, and
+// the client falls back to its own backoff schedule.
+function retryAfterHeader(
+  upstream: Headers,
+  nowMs: number = Date.now(),
+): Record<string, string> {
+  const own = upstream.get("retry-after");
+  if (own) return { "retry-after": own };
+  const reset = Number(upstream.get("x-ratelimit-reset"));
+  if (Number.isFinite(reset) && reset > 0) {
+    const secs = Math.ceil(reset - nowMs / 1000);
+    if (secs > 0 && secs <= 3600) return { "retry-after": String(secs) };
+  }
+  return {};
+}
+
 function badRequest(message: string) {
   return NextResponse.json(
     { error: message },
@@ -100,21 +128,21 @@ export async function GET(request: Request) {
     });
 
     const body = await res.text();
+    const rateHeaders = rateLimitHeaders(res.headers);
     if (!res.ok) {
-      // Failures are NOT cached. They used to carry the same s-maxage as a
-      // good quote, so a Jupiter 429 (the usual failure: the widget's burst of
-      // sizes) was pinned at the edge and the client's retry read the cached
-      // failure back. A 429 is passed on as 503 + Retry-After so the client
-      // can back off instead of reading a 200.
+      // Failures are NOT cached (no-store). A cached failure would be pinned
+      // at the edge and every client retry would read it back; a Jupiter 429
+      // (the usual failure) clears within seconds. A 429 is passed on as 503
+      // with Jupiter's own rate-limit headers so the client backs off for the
+      // real window, not an invented one.
       return NextResponse.json(
         { error: "Quote unavailable", upstreamStatus: res.status },
         {
           status: 503,
           headers: {
             "cache-control": "no-store",
-            ...(res.status === 429
-              ? { "retry-after": res.headers.get("retry-after") ?? "2" }
-              : {}),
+            ...rateHeaders,
+            ...(res.status === 429 ? retryAfterHeader(res.headers) : {}),
           },
         },
       );
@@ -124,15 +152,19 @@ export async function GET(request: Request) {
       status: res.status,
       headers: {
         "content-type": res.headers.get("content-type") ?? "application/json",
-        // Hobby budget: every edge miss is a function invocation (1M a month
-        // on Hobby, shared with every page render). The ladder asks for five
-        // sizes, so with steady traffic one asset cost five invocations per
-        // cache window: 43k a day at 10s, more than the whole daily share of
-        // the quota. At 30s it is a third of that. The upstream fetch is
-        // no-store, so a quote the CDN serves is at most 60s old (30s fresh +
-        // 30s stale while one request refreshes it), up from 40s. The ladder
-        // is an indicative depth read, not peg data.
-        "cache-control": "s-maxage=30, stale-while-revalidate=30",
+        // No x-ratelimit-* here: this response is cached at the edge for up
+        // to 3 minutes, so the budget it reported would be stale for every
+        // later viewer. They are passed through on (uncached) failures only.
+        // A good quote is cached at the edge for 60s and served stale for up
+        // to 120s more while one request refreshes it, so a quote shown is at
+        // most 3 minutes old. Exit depth at $1k to $1M sizes does not move on
+        // a sub-minute scale, and the ladder is an indicative depth read, not
+        // peg data. The window matters for budget: the free Jupiter org gives
+        // about 1 request per second, shared with the box indexer, and every
+        // edge miss is also a function invocation on the Hobby quota.
+        // Equal ladders share keys because the widget rounds each amount to
+        // three significant figures (quoteAmountBaseUnits).
+        "cache-control": "s-maxage=60, stale-while-revalidate=120",
       },
     });
   } catch (error) {

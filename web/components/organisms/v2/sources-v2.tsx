@@ -66,7 +66,7 @@ export function SourcesV2() {
   const cards: StatCard[] = [
     {
       value: stats?.assets_tracked != null ? String(stats.assets_tracked) : "-",
-      label: "assets monitored across stables, LSTs, yield, CDP and synthetic classes",
+      label: "assets monitored across stables, LSTs, yield, CDP and delta-neutral classes",
       accent: true,
     },
     {

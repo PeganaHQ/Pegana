@@ -1,6 +1,7 @@
 "use client";
 import useSWR from "swr";
 import { api, type AlertsQuery } from "@/lib/api/client";
+import { usePollInterval } from "@/lib/api/poll-policy";
 
 // Consumers requesting the plain (unfiltered) global feed with a small row
 // count (<=60) all fetch the SAME underlying data and render different slices
@@ -32,9 +33,11 @@ export function useAlerts(opts?: {
     ? () => api.alerts({ limit: SHARED_LIMIT })
     : () => api.alerts(query);
 
-  // 60s: receipts are written on state transitions, minutes to days apart,
-  // and the live state itself arrives over the WebSocket.
-  const swr = useSWR(key, fetcher, { refreshInterval: 60_000 });
+  // Receipts are written on state transitions, minutes to days apart, and a
+  // transition seen on the WebSocket triggers a refresh of this key. Interval
+  // per lib/api/poll-policy.ts.
+  const refreshInterval = usePollInterval("alerts");
+  const swr = useSWR(key, fetcher, { refreshInterval });
 
   if (shared && swr.data) {
     return { ...swr, data: swr.data.slice(0, limit) };
@@ -44,9 +47,10 @@ export function useAlerts(opts?: {
 
 /** Full window by server-side paging; see `api.alertsWindow`. */
 export function useAlertsWindow(opts: { since: string; maxPages?: number }) {
+  const refreshInterval = usePollInterval("alerts");
   return useSWR(
     ["alerts-window", opts.since, opts.maxPages ?? 10].join("|"),
     () => api.alertsWindow(opts),
-    { refreshInterval: 60_000 },
+    { refreshInterval },
   );
 }

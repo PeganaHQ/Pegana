@@ -67,7 +67,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[Any | ApiError]:
-    """`GET /v1/ws` — upgrade to a WebSocket carrying the live peg-state stream.
+    """`GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
 
      Not a JSON endpoint: a successful handshake returns `101 Switching
     Protocols`. After upgrade the server pushes `{op:"update", ...}` and
@@ -98,7 +98,7 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
 ) -> Any | ApiError | None:
-    """`GET /v1/ws` — upgrade to a WebSocket carrying the live peg-state stream.
+    """`GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
 
      Not a JSON endpoint: a successful handshake returns `101 Switching
     Protocols`. After upgrade the server pushes `{op:"update", ...}` and
@@ -125,7 +125,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[Any | ApiError]:
-    """`GET /v1/ws` — upgrade to a WebSocket carrying the live peg-state stream.
+    """`GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
 
      Not a JSON endpoint: a successful handshake returns `101 Switching
     Protocols`. After upgrade the server pushes `{op:"update", ...}` and
@@ -154,7 +154,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
 ) -> Any | ApiError | None:
-    """`GET /v1/ws` — upgrade to a WebSocket carrying the live peg-state stream.
+    """`GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
 
      Not a JSON endpoint: a successful handshake returns `101 Switching
     Protocols`. After upgrade the server pushes `{op:"update", ...}` and

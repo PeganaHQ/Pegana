@@ -118,7 +118,7 @@ export default async function LstDirectoryPage() {
           <h2 className="text-[19px] font-medium tracking-[-0.01em] text-[var(--v2-text)]">
             The universe
           </h2>
-          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--v2-dim)]">
+          <p className="font-mono text-[12px] uppercase tracking-[0.08em] text-[var(--v2-dim)]">
             Ranked by TVL &middot; verdict where Pegana covers it
           </p>
         </div>
@@ -126,7 +126,7 @@ export default async function LstDirectoryPage() {
         {verdictsUnavailable && (
           <p
             role="status"
-            className="mb-4 flex items-center gap-2 border border-st-drift/40 px-4 py-3 font-mono text-[11.5px] leading-[1.6] text-st-drift"
+            className="mb-4 flex items-center gap-2 border border-st-drift/40 px-4 py-3 font-mono text-[12px] leading-[1.6] text-st-drift"
           >
             <span
               aria-hidden
@@ -143,7 +143,7 @@ export default async function LstDirectoryPage() {
         />
 
         {source === "directory" && (
-          <p className="mt-4 font-mono text-[11px] leading-[1.6] text-[var(--v2-dim)]">
+          <p className="mt-4 font-mono text-[12px] leading-[1.6] text-[var(--v2-dim)]">
             Universe, TVL &amp; APY from{" "}
             <a
               href="https://lst-directory.com"

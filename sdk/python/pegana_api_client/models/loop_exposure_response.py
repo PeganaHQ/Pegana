@@ -21,7 +21,7 @@ class LoopExposureResponse:
     """Cross-protocol leverage exposure for an asset.
 
     Attributes:
-        advisory_note (str): ADR-0036 inv.9 — this is a model estimate, not a verifiable receipt.
+        advisory_note (str): ADR-0036 inv.9; this is a model estimate, not a verifiable receipt.
         asset (str):
         by_protocol (list[LoopByProtocol]):
         cascade_coverage (str): Coverage of the `cascade` alone, the same value `simulate-depeg` reports

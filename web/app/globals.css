@@ -637,8 +637,12 @@
 @media (min-width: 1024px) {
   .app-chrome-glass {
     background: rgba(10, 10, 11, 0.72);
+    /* Unprefixed only: the build (Lightning CSS) adds the -webkit- copy
+       itself. Written as the pair, unprefixed first, it treated the second as
+       an override and shipped only `-webkit-backdrop-filter`, which Chrome
+       ignores, so the desktop topbar had no blur at all (computed `none` on
+       /dashboard at 1440, 2026-10-21). */
     backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
   }
 }
 

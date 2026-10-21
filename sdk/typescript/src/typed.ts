@@ -2,7 +2,7 @@
 //
 // Covers every `/v1` endpoint with per-operation typed `data`/`error`, driven by
 // `src/schema.d.ts` (auto-generated from the live OpenAPI 3.1 spec at
-// https://api.pegana.xyz/openapi.json — regenerate with `bun run gen`). This is
+// https://api.pegana.xyz/openapi.json; regenerate with `bun run gen`). This is
 // the v0.2.0 surface; the stable v0.1 receipt-verification helpers
 // (`PeganaClient`, `getAudit`/`getAuditIndex`/`getOnchain`/`verifyAlert`) remain
 // exported from `./index` unchanged for backward compatibility.
@@ -56,9 +56,9 @@ function trimTrailingSlashes(url: string): string {
  * ```
  *
  * Conventions (ADR-0043): LIST endpoints return the envelope
- * `{ ok, generated_at, count, data }` — read `.data` (or {@link unwrapList});
+ * `{ ok, generated_at, count, data }`; read `.data` (or {@link unwrapList});
  * SINGLE resources are bare. Money fields are exact decimal STRINGS (never
- * floats) — parse with a decimal library for arithmetic.
+ * floats); parse with a decimal library for arithmetic.
  */
 export function createPeganaApi(opts: PeganaApiOptions = {}): Client<paths> {
   const client = createClient<paths>({
@@ -91,7 +91,7 @@ export function unwrapList<T>(envelope: { data: T[] } | null | undefined): T[] {
 /**
  * DISPLAY-ONLY coercion of a Pegana money/decimal STRING to a number. Pegana
  * serialises monetary values as exact decimal strings (trailing zeros trimmed,
- * USD rounded to cents) — NEVER floats. Use only for rendering; for arithmetic
+ * USD rounded to cents); NEVER floats. Use only for rendering; for arithmetic
  * or comparison parse with a decimal library (e.g. decimal.js) to avoid
  * IEEE-754 precision loss on large values.
  */

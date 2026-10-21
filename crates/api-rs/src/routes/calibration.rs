@@ -27,12 +27,12 @@ use utoipa::ToSchema;
 /// `percentile_cont` ordered-set aggregates; now an exact histogram, see the
 /// query, which is about 3x cheaper but still a full 8-day scan). Its PK is `(asset, ts)`, so a `ts`-only predicate gets no index
 /// seek, and an ordered-set aggregate must materialise and sort every value per
-/// group — it cannot stream. Measured at ~4.5s in prod, and it is NOT
+/// group; it cannot stream. Measured at ~4.5s in prod, and it is NOT
 /// indexable away.
 ///
 /// That made the endpoint an unauthenticated denial-of-wallet: at the 300/min
 /// per-IP limit, one IP demands 300 x 4.5s = 1350 connection-seconds per minute
-/// against a 25-connection pool's 1500 — ~90% of the API's entire DB capacity,
+/// against a 25-connection pool's 1500; ~90% of the API's entire DB capacity,
 /// stalling every other route. The `Cache-Control: max-age=30` header did
 /// nothing: Caddy is a bare `reverse_proxy` with no response cache, so every
 /// request reached Postgres.
@@ -45,7 +45,7 @@ use utoipa::ToSchema;
 pub(crate) const CALIBRATION_CACHE_KEY: &str = "v1:calibration:summary";
 
 /// Longer than the 60s writer interval so a normal tick never races expiry.
-/// If the writer dies the key lapses and requests fall back to a live compute —
+/// If the writer dies the key lapses and requests fall back to a live compute;
 /// slow, but correct, and the dead task is itself alarmed. Never serve stale
 /// forever to dodge load.
 pub(crate) const CALIBRATION_CACHE_TTL_SECS: u64 = 90;
@@ -74,11 +74,11 @@ pub(crate) struct CachedCalibration {
 pub struct CalibrationHealth {
     pub symbol: String,
     /// Calibration-status flag (not a health state). `monitoring_only` (beta)
-    /// assets now alert publicly, but their calibration is provisional — the
+    /// assets now alert publicly, but their calibration is provisional; the
     /// flag lets clients label them as beta.
     pub monitoring_only: bool,
-    /// Self-describing form of `monitoring_only`, `provisional` | `calibrated`
-    /// — same vocabulary as the webhook canonical event and the other read
+    /// Self-describing form of `monitoring_only`, `provisional` | `calibrated`;
+    /// same vocabulary as the webhook canonical event and the other read
     /// surfaces. Always present.
     #[schema(value_type = crate::schema::Calibration)]
     pub calibration: String,
@@ -150,7 +150,7 @@ fn classify(p95: Option<i32>, drift: Option<i32>, depeg: Option<i32>) -> &'stati
 /// Trailing-8d p95/p99 of the direction-sensitive effective discount per
 /// asset, joined to the asset's own bands, classified into a `health`
 /// state. Shared by the `/v1/calibration` handler (below) and the periodic
-/// `pegana_calibration_*` gauge task in `main.rs` — one SQL query, two
+/// `pegana_calibration_*` gauge task in `main.rs`; one SQL query, two
 /// consumers, so the metrics never drift from what the endpoint reports.
 pub(crate) async fn compute_calibration_health(
     pg: &PgPool,
@@ -272,7 +272,7 @@ pub(crate) async fn compute_calibration_health(
     summary = "Per-asset calibration self-monitor (p95 vs band, 8d)",
     responses(
         (status = 200, description = "Calibration health per active asset", body = crate::response::ApiList<CalibrationHealth>),
-        (status = 429, description = "Rate limit exceeded — see Retry-After header", body = ApiError),
+        (status = 429, description = "Rate limit exceeded; see Retry-After header", body = ApiError),
         (status = 500, description = "Unexpected server error", body = ApiError)
     )
 )]
@@ -331,7 +331,7 @@ pub async fn summary(State(state): State<Arc<AppState>>) -> Result<impl IntoResp
         .into_response())
 }
 
-/// Serialise + SETEX the calibration payload. Never fails the caller — a Redis
+/// Serialise + SETEX the calibration payload. Never fails the caller; a Redis
 /// hiccup degrades to "the next request recomputes", never to a dropped tick or
 /// a 500.
 pub(crate) async fn write_calibration_cache(
@@ -383,7 +383,7 @@ mod cache_tests {
     }
 
     /// The cache is only safe because the payload survives a JSON round-trip
-    /// intact — `CalibrationHealth` gained `Deserialize` purely for this. Note
+    /// intact; `CalibrationHealth` gained `Deserialize` purely for this. Note
     /// the `Option` fields carry `skip_serializing_if`, so a `None` is absent
     /// rather than null on the wire; this asserts that still decodes.
     #[test]
@@ -413,7 +413,7 @@ mod cache_tests {
 
     /// A cache hit must report WHEN THE DATA WAS COMPUTED, not when the response
     /// was built. Restamping `now` would make a ≤90s-old payload claim to be
-    /// live — the exact staleness lie `generated_at` exists to prevent, on the
+    /// live; the exact staleness lie `generated_at` exists to prevent, on the
     /// product whose whole pitch is honest freshness.
     #[test]
     fn cached_response_reports_compute_time_not_request_time() {

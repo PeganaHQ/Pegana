@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import { getAssetsTool } from "@/tools/get-assets";
 import { getAssetStateTool } from "@/tools/get-asset-state";
 import { handleGetAssetHistory } from "@/tools/get-asset-history";
-import { registryEntry } from "@/shared/asset-registry";
+import { ASSET_REGISTRY, isNonPublicSymbol, registryEntry } from "@/shared/asset-registry";
+import { z } from "zod";
 import { __cacheForTests } from "@/redis";
 import type { DiscountSnapshot } from "@/shared/types";
 
@@ -45,9 +46,65 @@ describe("get_assets", () => {
     __cacheForTests.set("xSOL", snap("xSOL", "-0.357918"));
     const res = await getAssetsTool.handler();
     const symbols = res.structuredContent.assets.map((a) => a.asset);
-    expect(symbols).toEqual(["jitoSOL"]);
-    expect(res.structuredContent.count).toBe(1);
+    expect(symbols).toContain("jitoSOL");
+    expect(symbols).not.toContain("xSOL");
     expect(getAssetsTool.description).toMatch(/synth_lev/);
+  });
+
+  // R3 audit R3-MCP-04: assets with no live snapshot were dropped (57 rows vs
+  // REST's 67). REST /v1/assets lists every active, public asset
+  // (`WHERE a.is_active`, synth_lev excluded), live or not.
+  it("lists every active public asset like REST, UNKNOWN with nulls when there is no live snapshot", async () => {
+    __cacheForTests.set("jitoSOL", snap("jitoSOL", "0.0001"));
+    const res = await getAssetsTool.handler();
+    const expected = ASSET_REGISTRY.filter((e) => e.active && !isNonPublicSymbol(e.symbol)).map(
+      (e) => e.symbol,
+    );
+    const symbols = res.structuredContent.assets.map((a) => a.asset);
+    expect(symbols).toEqual(expected);
+    expect(res.structuredContent.count).toBe(expected.length);
+    expect(symbols).not.toContain("BRZ"); // inactive in assets.toml
+
+    const jito = res.structuredContent.assets.find((a) => a.asset === "jitoSOL")!;
+    expect(jito.state).toBe("PEGGED");
+    expect(jito.discount).toBe("0.0001");
+    expect(jito.stale).toBe(false);
+
+    const usdy = res.structuredContent.assets.find((a) => a.asset === "USDY")!;
+    expect(usdy).toEqual({
+      asset: "USDY",
+      state: "UNKNOWN",
+      discount: null,
+      intrinsic_usd: null,
+      market_usd: null,
+      ts: null,
+      updated_at: null,
+      stale: true,
+    });
+
+    // The published output schema accepts the no-snapshot rows.
+    const parsed = z.object(getAssetsTool.outputSchema).safeParse(res.structuredContent);
+    expect(parsed.success).toBe(true);
+  });
+
+  // Review P3: a cached snapshot for an inactive registry row (active = false
+  // in assets.toml) must not be appended as if it were a new asset.
+  it("never lists an inactive registry asset, even with a cached snapshot", async () => {
+    const inactive = ASSET_REGISTRY.filter((e) => !e.active).map((e) => e.symbol);
+    expect(inactive).toEqual(expect.arrayContaining(["BRZ", "pbUSDC", "sharkSOL"]));
+    for (const sym of inactive) __cacheForTests.set(sym, snap(sym, "0.0001"));
+    const res = await getAssetsTool.handler();
+    const symbols = res.structuredContent.assets.map((a) => a.asset);
+    for (const sym of inactive) expect(symbols).not.toContain(sym);
+    expect(res.structuredContent.count).toBe(
+      ASSET_REGISTRY.filter((e) => e.active && !isNonPublicSymbol(e.symbol)).length,
+    );
+  });
+
+  it("still lists a live asset that is not in this build's registry", async () => {
+    __cacheForTests.set("newSOL", snap("newSOL", "0.0002"));
+    const res = await getAssetsTool.handler();
+    expect(res.structuredContent.assets.map((a) => a.asset)).toContain("newSOL");
   });
 
   // REST 404s xSOL on every /v1/assets route, so the per-symbol tools must not

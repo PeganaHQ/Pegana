@@ -970,3 +970,72 @@ async fn index_limit_capped_at_100() {
         arr.len()
     );
 }
+
+/// Round-3 F4: a receipt is cached `immutable` only once its on-chain fields
+/// are final. A `pending` commit gets `max-age=60`; the same receipt once
+/// committed (status + signature) gets the one-year immutable header.
+#[tokio::test]
+async fn receipt_cache_is_short_until_the_commit_settles() {
+    let Some(base) = base() else { return };
+    let Some(pg) = pg_url() else { return };
+    let pool = PgPool::connect(&pg).await.expect("connect pg");
+    let cc = |resp: &reqwest::Response| {
+        resp.headers()
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    let pending = Uuid::new_v4();
+    seed_alert_at(&pool, pending, "DEPEG", Utc::now())
+        .await
+        .expect("seed alert");
+    seed_evidence_commit(&pool, pending, false, "pending", None)
+        .await
+        .expect("seed ev");
+    let resp = client()
+        .get(format!("{base}/v1/audit/{pending}"))
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status(), 200);
+    let got = cc(&resp);
+    assert_eq!(got, "public, max-age=60", "pending receipt: {got}");
+
+    // The worker's success path: pending -> committed + signature.
+    let sig = "5".repeat(88);
+    sqlx::query(
+        "UPDATE alert_evidence SET commit_status = 'committed', onchain_tx_sig = $1 \
+         WHERE alert_id = $2",
+    )
+    .bind(&sig)
+    .bind(pending)
+    .execute(&pool)
+    .await
+    .expect("commit");
+    let resp = client()
+        .get(format!("{base}/v1/audit/{pending}"))
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status(), 200);
+    let got = cc(&resp);
+    assert!(got.contains("immutable"), "committed receipt: {got}");
+
+    // A never-anchored (not_applicable) receipt is final at once.
+    let drift = Uuid::new_v4();
+    seed_alert_at(&pool, drift, "DRIFT", Utc::now())
+        .await
+        .expect("seed alert");
+    seed_evidence(&pool, drift, false).await.expect("seed ev");
+    let resp = client()
+        .get(format!("{base}/v1/audit/{drift}"))
+        .send()
+        .await
+        .expect("send");
+    assert!(cc(&resp).contains("immutable"));
+
+    cleanup(&pool, pending).await;
+    cleanup(&pool, drift).await;
+}

@@ -5,25 +5,49 @@
 import { cleanBpsSeries, isDeprecated, reconcileBps } from "@/lib/api/format";
 import type { AlertRow, AssetCardData, PegState } from "@/lib/api/types";
 
-export type ClassFilter = "all" | "lst" | "stable" | "synth" | "other";
+/**
+ * Class taxonomy: the canonical CLASS_TABS (lib/hooks/use-screener-state.ts)
+ * plus "retired", the one bucket for receipts whose asset is no longer on the
+ * public peg surface (pbUSDC, xSOL). There is no synth bucket: no synth_lev
+ * asset is listed, so the tab could only ever read 0.
+ */
+export type ClassFilter = "all" | "lst" | "stable" | "retired";
 export type SeverityFilter =
-  | "all"
-  | "DRIFT"
-  | "DEPEG"
-  | "CRITICAL"
-  | "RECOVERY"
-  | "UNKNOWN";
+  "all" | "DRIFT" | "DEPEG" | "CRITICAL" | "RECOVERED" | "UNKNOWN";
 
-type ClassBucket = Exclude<ClassFilter, "all">;
+export type ClassBucket = Exclude<ClassFilter, "all">;
 type SeverityBucket = Exclude<SeverityFilter, "all">;
+
+/**
+ * Symbol -> class for the live asset universe (/v1/assets).
+ *
+ * - `undefined`: trust each row's own `class` (pure callers, tests).
+ * - `null`: the universe is not available (loading, or /v1/assets failed,
+ *   e.g. 429). Every row's class is then unknown, and class buckets must not
+ *   be guessed: the audit mapper has already stamped every row "unknown".
+ */
+export type AssetUniverse = Record<string, string> | null | undefined;
 
 /** Every class lands in exactly one bucket, so the class tabs sum to All. */
 export function classBucket(klass: string | null | undefined): ClassBucket {
   const c = klass ?? "";
   if (c === "lst") return "lst";
   if (c.startsWith("stable_")) return "stable";
-  if (c === "synth_lev") return "synth";
-  return "other";
+  return "retired";
+}
+
+/**
+ * The class bucket of one alert, or `null` when it cannot be known. An asset
+ * missing from a loaded universe is retired (receipts outlive delisting).
+ */
+export function resolveClassBucket(
+  a: AlertRow,
+  universe: AssetUniverse,
+): ClassBucket | null {
+  if (universe === undefined) return classBucket(a.class);
+  if (universe === null) return null;
+  const k = universe[a.asset];
+  return k ? classBucket(k) : "retired";
 }
 
 /**
@@ -40,19 +64,25 @@ export function severityBucket(state: PegState): SeverityBucket {
     case "BLACK_SWAN":
       return "CRITICAL";
     case "PEGGED":
-      return "RECOVERY";
+      return "RECOVERED";
     default:
       return "UNKNOWN";
   }
 }
 
+/**
+ * A class filter can only match when the class is known. With the universe
+ * unavailable, a non-All class filter matches nothing rather than silently
+ * filing every row under the wrong class (callers disable those tabs).
+ */
 export function matchesEventFilters(
   a: AlertRow,
   classFilter: ClassFilter,
   severityFilter: SeverityFilter,
+  universe?: AssetUniverse,
 ): boolean {
   if (isDeprecated(a.asset)) return false;
-  if (classFilter !== "all" && classBucket(a.class) !== classFilter)
+  if (classFilter !== "all" && resolveClassBucket(a, universe) !== classFilter)
     return false;
   if (severityFilter !== "all" && severityBucket(a.to_state) !== severityFilter)
     return false;
@@ -61,44 +91,78 @@ export function matchesEventFilters(
 
 export type EventCounts<K extends string> = Record<K, number | null>;
 
+const NULL_SEVERITY: EventCounts<SeverityFilter> = {
+  all: null,
+  DRIFT: null,
+  DEPEG: null,
+  CRITICAL: null,
+  RECOVERED: null,
+  UNKNOWN: null,
+};
+
 /**
  * Alert counts per tab. `null` (not 0) while the stream has not arrived: a
- * literal "CRITICAL 0" reads as a confirmed fact when nothing loaded.
+ * literal "CRITICAL 0" reads as a confirmed fact when nothing loaded. The
+ * class facets (not All) are also `null` while the asset universe is
+ * unavailable, because every row's class is then unknown.
  */
-export function eventCounts(alerts: AlertRow[] | undefined): {
+export function eventCounts(
+  alerts: AlertRow[] | undefined,
+  universe?: AssetUniverse,
+): {
   byClass: EventCounts<ClassFilter>;
   bySeverity: EventCounts<SeverityFilter>;
 } {
   if (!alerts) {
     return {
-      byClass: { all: null, lst: null, stable: null, synth: null, other: null },
-      bySeverity: {
-        all: null,
-        DRIFT: null,
-        DEPEG: null,
-        CRITICAL: null,
-        RECOVERY: null,
-        UNKNOWN: null,
-      },
+      byClass: { all: null, lst: null, stable: null, retired: null },
+      bySeverity: { ...NULL_SEVERITY },
     };
   }
-  const byClass = { all: 0, lst: 0, stable: 0, synth: 0, other: 0 };
+  const byClass = { all: 0, lst: 0, stable: 0, retired: 0 };
   const bySeverity = {
     all: 0,
     DRIFT: 0,
     DEPEG: 0,
     CRITICAL: 0,
-    RECOVERY: 0,
+    RECOVERED: 0,
     UNKNOWN: 0,
   };
   for (const a of alerts) {
     if (isDeprecated(a.asset)) continue;
     byClass.all += 1;
-    byClass[classBucket(a.class)] += 1;
+    const bucket = resolveClassBucket(a, universe);
+    if (bucket) byClass[bucket] += 1;
     bySeverity.all += 1;
     bySeverity[severityBucket(a.to_state)] += 1;
   }
+  if (universe === null) {
+    return {
+      byClass: { all: byClass.all, lst: null, stable: null, retired: null },
+      bySeverity,
+    };
+  }
   return { byClass, bySeverity };
+}
+
+/**
+ * Retired symbols with their alert counts, most alerts first, for the
+ * Retired tab's tooltip. Empty while the universe is unavailable.
+ */
+export function retiredSymbols(
+  alerts: AlertRow[] | undefined,
+  universe: AssetUniverse,
+): Array<{ symbol: string; count: number }> {
+  if (!alerts || universe === null) return [];
+  const counts = new Map<string, number>();
+  for (const a of alerts) {
+    if (isDeprecated(a.asset)) continue;
+    if (resolveClassBucket(a, universe) !== "retired") continue;
+    counts.set(a.asset, (counts.get(a.asset) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([symbol, count]) => ({ symbol, count }))
+    .sort((x, y) => y.count - x.count || x.symbol.localeCompare(y.symbol));
 }
 
 export interface EventCluster {

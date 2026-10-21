@@ -116,12 +116,15 @@ describe("SystemicImpact display symbol", () => {
 });
 
 describe("SystemicImpact under a 429", () => {
-  it("says rate limited instead of loading forever", () => {
+  it("says live updates are paused instead of loading forever", () => {
     data = undefined;
     error = Object.assign(new Error("API 429"), { status: 429 });
     const { getByTestId, queryByText } = render(<SystemicImpact asset={INF} />);
     expect(getByTestId("loop-impact-error")).toHaveTextContent(
-      /allows 60 requests a minute per IP/,
+      /resume on their own/,
+    );
+    expect(getByTestId("loop-impact-error").textContent ?? "").not.toMatch(
+      /rate limit|requests a minute|429|per IP/i,
     );
     expect(queryByText("Loading leverage exposure")).toBeNull();
     error = undefined;

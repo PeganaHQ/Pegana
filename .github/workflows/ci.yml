@@ -239,6 +239,9 @@ jobs:
       - name: Scan mirrored docs
         if: hashFiles('scripts/tests/public-docs-redaction.test.sh') != ''
         run: bash scripts/tests/public-docs-redaction.test.sh
+      - name: Mirror script tests (exclude parsing, leak grep, link guard)
+        if: hashFiles('scripts/tests/mirror-public.test.sh') != ''
+        run: bash scripts/tests/mirror-public.test.sh
 
   audit-rust:
     name: cargo-audit

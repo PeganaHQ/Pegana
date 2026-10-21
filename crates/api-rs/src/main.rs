@@ -4,6 +4,7 @@
 
 mod error;
 mod extract;
+mod hot_cache;
 mod market_score;
 mod openapi;
 mod oracle_degraded;
@@ -74,8 +75,8 @@ pub struct AppState {
     /// decremented by a RAII guard when the handle task drops.
     pub ws_per_ip: Arc<Mutex<HashMap<IpAddr, u32>>>,
     /// Launch switch (ADR-0020). While `false` the discoverable read surface
-    /// of the calibration ledger — the `GET /v1/audit` INDEX and the
-    /// RSS/Atom/CSV feeds built on it — returns an empty list, keeping the
+    /// of the calibration ledger; the `GET /v1/audit` INDEX and the
+    /// RSS/Atom/CSV feeds built on it; returns an empty list, keeping the
     /// dogfood window quiet. Direct receipt lookups (`/v1/audit/{id}`,
     /// `/onchain`, `/replay-bundle`) stay ungated.
     pub feature_public_alerts: bool,
@@ -337,6 +338,18 @@ async fn main() -> Result<()> {
     );
     rate_limit::spawn_janitor(limits.main.clone());
     rate_limit::spawn_janitor(limits.csv.clone());
+    // Kill switch for the hot-read cache: `API_HOT_CACHE_ENABLED=false` +
+    // `deploy.sh --config-only --services api` turns it off without a rebuild.
+    let response_cache = if cfg.api_hot_cache_enabled {
+        hot_cache::new_response_cache()
+    } else {
+        None
+    };
+    info!(
+        enabled = response_cache.is_some(),
+        "hot-read response cache (API_HOT_CACHE_ENABLED)"
+    );
+    hot_cache::spawn_janitor(response_cache.clone());
 
     // Trust Layer Phase 4 — /v1/audit/* is intentionally cross-origin
     // readable. The path-aware predicate on `cors` (above) handles the
@@ -413,6 +426,14 @@ async fn main() -> Result<()> {
         // follow-up to the Gecko API report, 2026-06-10).
         .fallback(not_found)
         .with_state(state)
+        // Hot-read response cache (hot_cache.rs): single-flight, 2-5s TTL, only
+        // 200s. INSIDE the rate limiter on purpose: `MatchedPath` is set here,
+        // and the rate-limit headers are stamped per request after it, so a
+        // cached body never carries another caller's budget.
+        .layer(axum::middleware::from_fn_with_state(
+            response_cache,
+            hot_cache::middleware,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             limits,
             rate_limit::middleware,
@@ -463,8 +484,8 @@ struct ApiConfig {
     #[serde(default = "default_web_ssr_rate_limit")]
     pub pegana_web_ssr_rate_limit_per_min: u32,
     /// Launch switch (ADR-0020). While `false` (the default, and the
-    /// calibration-window state) the discoverable read surface of the ledger —
-    /// `GET /v1/audit` index and the feeds built on it — returns an empty
+    /// calibration-window state) the discoverable read surface of the ledger;
+    /// `GET /v1/audit` index and the feeds built on it; returns an empty
     /// list. Flipped to `true` at the 2026-06-11 launch.
     #[serde(default = "default_false")]
     pub feature_public_alerts: bool,
@@ -475,12 +496,16 @@ struct ApiConfig {
     #[serde(default = "default_db_max_connections")]
     pub db_max_connections: u32,
     /// Per-connection `statement_timeout`, in milliseconds (0 = unlimited).
-    /// Default 30s — the slowest legitimate endpoint measured in prod is
+    /// Default 30s; the slowest legitimate endpoint measured in prod is
     /// ~4.4s (/v1/calibration), so 30s is ~7x headroom (won't false-cancel a
     /// real query) while still killing a regressed minute-long hang before it
     /// pins a pool slot. Override via DB_STATEMENT_TIMEOUT_MS (+ --config-only).
     #[serde(default = "default_db_statement_timeout_ms")]
     pub db_statement_timeout_ms: u64,
+    /// In-process single-flight cache for the hot anonymous reads
+    /// (hot_cache.rs). On by default; `false` is the no-rebuild rollback.
+    #[serde(default = "default_true")]
+    pub api_hot_cache_enabled: bool,
 }
 fn default_bind() -> String {
     "0.0.0.0:8080".into()
@@ -490,6 +515,9 @@ fn default_rate_limit() -> u32 {
 }
 fn default_web_ssr_rate_limit() -> u32 {
     3000
+}
+fn default_true() -> bool {
+    true
 }
 fn default_false() -> bool {
     false
@@ -543,7 +571,7 @@ async fn not_found() -> impl axum::response::IntoResponse {
         axum::http::StatusCode::NOT_FOUND,
         axum::Json(serde_json::json!({
             "error": "not_found",
-            "message": "no such endpoint — see GET / for the index or /openapi.json for the full surface",
+            "message": "no such endpoint; see GET / for the index or /openapi.json for the full surface",
         })),
     )
 }
@@ -641,7 +669,7 @@ const CALIBRATION_HEALTH_INACTIVE: f64 = -3.0;
 
 /// Maps a `CalibrationHealth.health` label to the `pegana_calibration_health_code`
 /// gauge value: ok=0, watch=1, miscalibrated=2 (the `PeganaAssetMiscalibrated`
-/// alert threshold — `>= 2`), no_data=-1 (source dark, <200 samples in the 8d
+/// alert threshold; `>= 2`), no_data=-1 (source dark, <200 samples in the 8d
 /// window), na=-2 (non-bps thresholds shape, e.g. hyUSD's CR bands). Any
 /// unrecognized label also falls back to -2 so a future health state fails
 /// safe instead of silently reading as "ok".
@@ -729,7 +757,7 @@ fn init_tracing() {
 /// Public, read-only API surfaces that any origin may fetch cross-origin
 /// (embed widget, RSS, third-party verifiers, the CLI trust-root, and the web
 /// app on prod pegana.xyz AND *.vercel.app previews). A new public route MUST
-/// be listed here or the browser silently fails its CORS preflight — the exact
+/// be listed here or the browser silently fails its CORS preflight; the exact
 /// miss that left /v1/calibration unreachable from the web app.
 fn is_public_read_path(path: &str) -> bool {
     path.starts_with("/v1/audit")

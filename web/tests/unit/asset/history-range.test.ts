@@ -138,6 +138,43 @@ describe("historyCoverageNote", () => {
     );
   });
 
+  it("uses the asset's own history start when the API sends one (LSTs begin 2026-10-20)", () => {
+    const lstStart = Date.parse("2026-10-20T10:50:02.497Z");
+    const from = Date.parse("2026-10-14T12:00:00Z"); // a 7D range
+    const note = historyCoverageNote(pts(lstStart), from, false, lstStart);
+    expect(note).toBe(
+      "Showing data from 2026-10-20 10:50 UTC. Pegana's history for this asset begins 2026-10-20 10:50 UTC.",
+    );
+    expect(note).not.toContain("2026-10-17");
+  });
+
+  it("blames the asset's own start for a range between the global and the asset start", () => {
+    const lstStart = Date.parse("2026-10-20T10:50:00Z");
+    const from = Date.parse("2026-10-19T00:00:00Z"); // after the global start
+    expect(historyCoverageNote(pts(lstStart), from, false, lstStart)).toMatch(
+      /history for this asset begins 2026-10-20 10:50 UTC\.$/,
+    );
+    expect(historyCoverageNote([], from, false, lstStart)).toMatch(
+      /^No data in this range\. Pegana's history for this asset begins/,
+    );
+  });
+
+  it("never shows a first hourly bucket as data from before the history start", () => {
+    const lstStart = Date.parse("2026-10-20T10:50:02Z");
+    const firstBucket = Date.parse("2026-10-20T10:00:00Z");
+    const from = Date.parse("2026-09-21T10:00:00Z"); // a 30D range
+    expect(historyCoverageNote(pts(firstBucket), from, false, lstStart)).toBe(
+      "Showing data from 2026-10-20 10:50 UTC. Pegana's history for this asset begins 2026-10-20 10:50 UTC.",
+    );
+  });
+
+  it("falls back to the global start when the asset start is unknown", () => {
+    const from = HISTORY_BEGINS_MS - 10 * 24 * 60 * MIN;
+    expect(historyCoverageNote(pts(HISTORY_BEGINS_MS), from, false, null)).toMatch(
+      /stored history begins 2026-10-17 09:20 UTC\.$/,
+    );
+  });
+
   it("contains no em-dash", () => {
     const note = historyCoverageNote(pts(HISTORY_BEGINS_MS), 0) ?? "";
     expect(note).not.toContain("\u2014");

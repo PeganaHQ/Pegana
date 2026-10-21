@@ -41,3 +41,16 @@ describe("simulate_depeg_impact description", () => {
     expect(tool.description).toMatch(/can exceed/);
   });
 });
+
+// R3 audit R3-MCP-05: verify_alert only fetches the receipt as served; it
+// recomputes no hash. The copy must say so and point to pegana-replay.
+describe("verify_alert description", () => {
+  it("does not present a fetch as cryptographic verification", () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === "verify_alert")!;
+    expect(tool.description).toMatch(/does NOT verify the receipt/);
+    expect(tool.description).toMatch(/recomputes no hash/);
+    expect(tool.description).toContain("pegana-replay");
+    expect(tool.description).not.toMatch(/cryptographic/i);
+    expect(tool.description).not.toMatch(/to verify a specific alert/);
+  });
+});

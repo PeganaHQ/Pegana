@@ -5,18 +5,11 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils/cn";
 
-/** Visible badge text. Uppercased by CSS → "BETA". */
-export const BETA_BADGE_LABEL = "beta";
-
-/**
- * User-facing explanation shown on hover. Deliberately authored HERE rather
- * than echoed from the API's engineer-written `monitoring_reason`, so internal
- * vocabulary (calibration cohorts, percentiles, launch phases, ISO dates)
- * never reaches a user. One honest sentence: the signal is live but the
- * thresholds are still provisional.
- */
-export const BETA_BADGE_BODY =
-  "Provisional calibration. We track this asset live, but its alert thresholds are still being tuned. Readings may be noisier than fully-calibrated assets.";
+// Copy lives in lib/asset/beta-badge-copy.ts so surfaces that cannot use this
+// <button> (a cell inside a stretched link) can share it without pulling in
+// the tooltip.
+import { BETA_BADGE_BODY, BETA_BADGE_LABEL } from "@/lib/asset/beta-badge-copy";
+export { BETA_BADGE_BODY, BETA_BADGE_LABEL };
 
 export function MonitoringBadge({
   className,

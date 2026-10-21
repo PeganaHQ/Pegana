@@ -38,13 +38,13 @@ const FRESHNESS_MINUTES: i64 = 15;
 /// only what it needs.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PegSignal {
-    /// Canonical Solana mint — the join key each signal carries in the batch
+    /// Canonical Solana mint; the join key each signal carries in the batch
     /// `data[]` array (index the array by this).
     pub mint: String,
     pub symbol: String,
     pub name: String,
     pub class: String,
-    /// USD | FX | NAV — how to read fair value without Pegana's taxonomy.
+    /// USD | FX | NAV; how to read fair value without Pegana's taxonomy.
     #[schema(value_type = crate::schema::Anchor)]
     pub anchor: String,
     pub peg_target: String,
@@ -104,7 +104,7 @@ pub struct PegSignal {
         serialize_with = "crate::serde_fmt::opt_dec_norm"
     )]
     pub jitter_bps_24h: Option<Decimal>,
-    /// Composite peg-risk score, 0–100 (higher = riskier) — the single number a
+    /// Composite peg-risk score, 0–100 (higher = riskier); the single number a
     /// consumer (e.g. tokens.xyz's risk block) can surface without Pegana's model.
     /// Derived on `/v1/assets` (`risk_score.rs`); omitted when unavailable.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,7 +121,7 @@ pub struct PegSignal {
     pub updated_at: Option<String>,
     /// Sub-C systemic exposure: how much leverage rides on this token across Solana
     /// lending markets, and how much liquidates at each depeg depth. An ADVISORY
-    /// model estimate (its own `advisory_note`) — namespaced here so it never blurs
+    /// model estimate (its own `advisory_note`); namespaced here so it never blurs
     /// the verifiable peg fields above. Omitted when the token carries no tracked leverage.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub systemic: Option<SystemicSignal>,
@@ -143,7 +143,7 @@ pub struct PegSignal {
 pub struct PegFeedResponse {
     pub ok: bool,
     pub methodology: String,
-    /// RFC3339 build time — an explicit staleness read independent of HTTP headers.
+    /// RFC3339 build time; an explicit staleness read independent of HTTP headers.
     pub generated_at: String,
     pub count: usize,
     pub data: Vec<PegSignal>,
@@ -236,7 +236,7 @@ async fn current_methodology_version(pg: &sqlx::PgPool) -> String {
     .unwrap_or_else(|| "0.1.0".to_string())
 }
 
-/// Deterministic weak ETag over the serialized body — sha256 (stable across
+/// Deterministic weak ETag over the serialized body; sha256 (stable across
 /// processes and std/Rust versions), truncated to 128 bits. Lets high-volume
 /// pollers (tokens.xyz) get cheap 304s.
 fn weak_etag(body: &str) -> String {
@@ -244,7 +244,7 @@ fn weak_etag(body: &str) -> String {
     format!("W/\"{}\"", hex::encode(&digest[..16]))
 }
 
-fn request_not_modified(
+pub(crate) fn request_not_modified(
     req_headers: &HeaderMap,
     etag: &str,
     last_modified: Option<&DateTime<Utc>>,
@@ -279,7 +279,7 @@ fn request_not_modified(
     responses(
         (status = 200, description = "Peg signal for all active assets as a `data` array; index by each signal's `mint`", body = PegFeedResponse),
         (status = 304, description = "Not modified (If-None-Match matched the current ETag)"),
-        (status = 429, description = "Rate limit exceeded — see Retry-After header", body = ApiError),
+        (status = 429, description = "Rate limit exceeded; see Retry-After header", body = ApiError),
         (status = 500, description = "Unexpected server error", body = ApiError)
     )
 )]
@@ -331,7 +331,15 @@ pub async fn feed(
     // Sub-C systemic exposure, keyed by asset symbol — one batch pair of queries
     // for the whole feed. Advisory + resilient: a DB error degrades to an empty map
     // (the feed still serves its verifiable peg fields), never a 500.
-    let systemic_map = systemic_signal_map(&state.pg).await.unwrap_or_default();
+    // A degraded (empty) systemic block must never be cached downstream or by
+    // the in-process hot cache (hot_cache.rs skips `no-store` responses).
+    let (systemic_map, systemic_degraded) = match systemic_signal_map(&state.pg).await {
+        Ok(m) => (m, false),
+        Err(e) => {
+            tracing::warn!(error = %e, "peg feed: systemic block degraded to empty");
+            (Default::default(), true)
+        }
+    };
 
     let now = Utc::now();
     // Newest snapshot across assets → Last-Modified.
@@ -372,7 +380,11 @@ pub async fn feed(
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=5, stale-while-revalidate=10"),
+        HeaderValue::from_static(if systemic_degraded {
+            "no-store"
+        } else {
+            "public, max-age=5, stale-while-revalidate=10"
+        }),
     );
     if let Ok(v) = HeaderValue::from_str(&etag) {
         headers.insert(header::ETAG, v);
@@ -408,7 +420,7 @@ pub async fn feed(
     operation_id = "peg_feed_by_mint",
     summary = "Peg signal for a single asset by mint",
     params(
-        ("mint" = String, Path, description = "SPL mint address (base58) — the tokens.xyz join key.")
+        ("mint" = String, Path, description = "SPL mint address (base58); the tokens.xyz join key.")
     ),
     responses(
         (status = 200, description = "Peg signal for the asset", body = PegSignal),
@@ -428,13 +440,25 @@ pub async fn feed_by_mint(
         .await?
         .ok_or_else(|| ApiError::unknown_asset(&mint))?;
     let mut signal = card_to_signal(card, Utc::now());
-    signal.systemic = systemic_signal_for(&state.pg, &signal.symbol)
-        .await
-        .unwrap_or(None);
+    // Same rule as feed(): a degraded systemic block is served but never cached.
+    let systemic_degraded = match systemic_signal_for(&state.pg, &signal.symbol).await {
+        Ok(s) => {
+            signal.systemic = s;
+            false
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "peg feed by mint: systemic block degraded");
+            true
+        }
+    };
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=5, stale-while-revalidate=10"),
+        HeaderValue::from_static(if systemic_degraded {
+            "no-store"
+        } else {
+            "public, max-age=5, stale-while-revalidate=10"
+        }),
     );
     Ok((headers, Json(signal)))
 }

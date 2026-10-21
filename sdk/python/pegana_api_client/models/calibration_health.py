@@ -18,11 +18,11 @@ class CalibrationHealth:
     Attributes:
         calibration (Calibration): Calibration status of an asset (and of an alert that asset emitted).
 
-            - `provisional` — a "beta" asset: released and alerting publicly, but its
+            - `provisional`: a "beta" asset: released and alerting publicly, but its
               thresholds are not yet validated over a full post-launch calibration
               window. Equivalent to `monitoring_only=true`. Read its alerts as
               experimental.
-            - `calibrated` — a fully calibrated asset that counts in the launch
+            - `calibrated`: a fully calibrated asset that counts in the launch
               denominator.
 
             This is the SAME vocabulary the dispatcher emits on the webhook canonical
@@ -32,7 +32,7 @@ class CalibrationHealth:
         health (str): `ok` | `watch` (p95 in the drift band) | `miscalibrated` (p95 beyond the
             depeg band) | `no_data` | `na` (non-bps thresholds).
         monitoring_only (bool): Calibration-status flag (not a health state). `monitoring_only` (beta)
-            assets now alert publicly, but their calibration is provisional — the
+            assets now alert publicly, but their calibration is provisional; the
             flag lets clients label them as beta.
         symbol (str):
         depeg_bps (int | None | Unset):

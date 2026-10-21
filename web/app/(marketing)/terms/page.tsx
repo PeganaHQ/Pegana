@@ -56,7 +56,8 @@ const SECTIONS: Array<{ title: string; body: ReactNode }> = [
     body: (
       <>
         The public API at <b>api.pegana.xyz</b> is open and unauthenticated. We
-        rate-limit by IP to keep it healthy: 60 REST requests a minute and 20
+        rate-limit by IP to keep it healthy: 240 REST requests a minute per IP
+        (see the RateLimit-Limit header) and 20
         open WebSocket connections per IP. If you want a higher quota, email
         the address at the bottom. We&apos;ll probably say yes if your use case
         is benign. Or run your own instance from the source (see below).

@@ -9,6 +9,7 @@ import {
   HERO_RANGE_PX,
   glassProgress,
   quantizeProgress,
+  scrollGlassProgress,
 } from "@/lib/landing/nav-glass";
 import { MobileMenu } from "@/components/molecules/mobile-menu";
 import { AnimatedBrandMark } from "@/components/atoms/animated-brand-mark";
@@ -45,7 +46,7 @@ const SITE_LINKS = [
 
 // The glass is driven by one CSS custom property, --nav-glass (0 clear .. 1
 // frosted), written straight onto the pill so scrolling never re-renders React.
-// Unset (non-landing routes, no hero, mobile) it falls back to 1: frosted.
+// Unset (landing without a hero, mobile) it falls back to 1: frosted.
 const G = "var(--nav-glass, 1)";
 const GLASS_STYLE: React.CSSProperties = {
   backgroundColor: `rgba(12,12,14,calc(.38 + .38 * ${G}))`,
@@ -55,8 +56,8 @@ const GLASS_STYLE: React.CSSProperties = {
   boxShadow: `0 8px 40px rgba(0,0,0,calc(.35 * ${G}))`,
 };
 // No backdrop-filter support: a more opaque tint, no blur.
-// Exactly what the nav shipped before the dynamic glass: used on mobile, the
-// site variant and any page without a hero.
+// Exactly what the nav shipped before the dynamic glass: used on mobile and on
+// a landing render without a hero.
 const BASE_STYLE: React.CSSProperties = {
   backgroundColor: "rgba(12,12,14,.62)",
   borderColor: "var(--v2-line)",
@@ -93,17 +94,15 @@ export function NavV2({
     }
   }, []);
 
-  // Dynamic glass (landing only, desktop only): progress is derived from the
-  // hero's bottom edge passing under the nav, rAF-throttled, one rect read per
-  // element per frame, written as a CSS variable.
+  // Dynamic glass (desktop only), rAF-throttled and written as a CSS
+  // variable. Landing: progress is derived from the hero's live board (else
+  // its bottom edge) passing under the nav, one rect read per element per
+  // frame. Every other route ("site"): it ramps over the first
+  // SITE_GLASS_RANGE_PX of scroll, so the pill is light at the top of the page
+  // and frosted once content scrolls under it, the same curve as the landing.
   useEffect(() => {
     const pill = pillRef.current;
     if (!pill) return;
-    if (variant !== "landing") {
-      pill.style.removeProperty("--nav-glass");
-      setGlassOn(false);
-      return;
-    }
     let hero: Element | null = null;
     let frame: number | null = null;
     const desktop =
@@ -113,6 +112,18 @@ export function NavV2({
 
     const update = () => {
       frame = null;
+      if (variant !== "landing") {
+        if (!desktop?.matches) {
+          pill.style.removeProperty("--nav-glass");
+          setGlassOn(false);
+          return;
+        }
+        setGlassOn(true);
+        let p = scrollGlassProgress(window.scrollY);
+        if (reduced) p = quantizeProgress(p);
+        pill.style.setProperty("--nav-glass", p.toFixed(3));
+        return;
+      }
       if (!hero || !hero.isConnected) hero = document.querySelector("main > header");
       if (!hero || !desktop?.matches) {
         pill.style.removeProperty("--nav-glass");

@@ -25,7 +25,7 @@ class MarketDepth:
             it.
         insufficient_reason (None | str | Unset): Why `score` is `null`. `None` whenever `score` is `Some`.
         score (int | None | Unset): 0-100, higher = more executable market. `null` when the inputs are too
-            sparse to state a number honestly — read `insufficient_reason` then.
+            sparse to state a number honestly; read `insufficient_reason` then.
     """
 
     caps: list[str]

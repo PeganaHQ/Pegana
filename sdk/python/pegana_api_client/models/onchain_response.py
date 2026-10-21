@@ -14,7 +14,7 @@ class OnchainResponse:
     """On-chain commit pointer.
 
     Attributes:
-        commit_status (str): Always `"committed"` on a 200 — present so a caller can branch on the
+        commit_status (str): Always `"committed"` on a 200; present so a caller can branch on the
             same `commit_status` vocabulary the 404 body uses (ADR-0004).
         explorer_url (str):
         tx_sig (str):

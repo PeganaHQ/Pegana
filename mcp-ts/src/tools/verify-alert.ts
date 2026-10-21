@@ -1,8 +1,12 @@
-// Free tool — proxy to GET /v1/audit/:alert_id.
+// Free tool: proxy to GET /v1/audit/:alert_id.
 //
 // Free, like every tool: the receipt data is already public via the web/API
-// audit page (the trust pitch is "anyone can verify"). Usage signal comes
-// from mcp_call_log telemetry (ADR-0011).
+// audit page. Usage signal comes from mcp_call_log telemetry (ADR-0011).
+//
+// This is a FETCH, not a verification (R3 audit R3-MCP-05): no hash is
+// recomputed and no on-chain anchor is checked here. Independent
+// verification is the pegana-replay CLI (crates/pegana-replay-cli), and the
+// description says so; keep it that way.
 
 import { z } from "zod";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
@@ -136,10 +140,13 @@ export function publicErrorBody(raw: string): string {
 export const verifyAlertTool = {
   name: "verify_alert",
   description:
-    "Free. Fetches the public audit receipt for a given alert UUID. Returns inputs frozen, " +
-    "methodology version, computed outputs, receipt sha256, the replay bundle download URL " +
-    "(`evidence.replay_bundle_url`, when `has_replay_artifact` is true), and the on-chain " +
-    "tx signature (if committed). Use after `subscribe_peg_events` to verify a specific alert, " +
+    "Free. Fetches the public audit receipt for a given alert UUID, exactly as Pegana's API serves it (a proxy of `GET /v1/audit/{id}`). Returns inputs frozen, " +
+    "methodology version, computed outputs, `receipt_sha256`, the replay bundle download URL " +
+    "(`evidence.replay_bundle_url`, when `has_replay_artifact` is true), the on-chain " +
+    "tx signature (if committed) and `commit_status`. " +
+    "This tool does NOT verify the receipt: it recomputes no hash and does not check the on-chain anchor, so what it returns is only as trustworthy as the server that served it. " +
+    "For independent verification run the open-source `pegana-replay` CLI on your own machine (`cargo install pegana-replay --locked`, then `pegana-replay --alert-id <uuid>`): it re-hashes the frozen inputs and verdict, compares the result to `receipt_sha256`, and checks that the on-chain memo anchor carries that hash and was signed by Pegana's pinned ops wallet (`--offline` skips the on-chain check). " +
+    "Use after `subscribe_peg_events` to fetch a specific alert's receipt, " +
     "or to investigate any alert URL the user shares. " +
     "Not every alert has a receipt: some alerts have no persisted receipt, and a just-created alert can lack one for a moment before its receipt lands. For those, this returns `isError: true` with `structuredContent.result` = `{ error: \"api_error\", status: 404, body }` where `body` carries `\"error\":\"evidence_missing\"` (check `subscribe_peg_events`' `evidence_status` first).",
   inputSchema: {

@@ -251,7 +251,7 @@ export default async function MethodologyPage() {
             {VERSION_ROWS.map((r) => (
               <ListRow key={r.label} columns="150px 1fr">
                 <span
-                  className="inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px]"
+                  className="inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[12px]"
                   style={{
                     color: r.color,
                     borderColor: `color-mix(in srgb, ${r.color} 38%, transparent)`,

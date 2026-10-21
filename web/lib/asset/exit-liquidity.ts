@@ -108,7 +108,7 @@ export function nextQuotePrice(
 /**
  * Input amount in base units for a USD size, rounded to three significant
  * figures. Every visitor on the same asset then asks for the same amount, so
- * the proxy's 30s CDN cache (`s-maxage=30`) can serve repeats instead of each
+ * the proxy's 60s CDN cache (`s-maxage=60`) can serve repeats instead of each
  * request reaching Jupiter. The rounding moves the size by at most 0.5%. That
  * is below the precision of the impact percentage, but not of the dollar
  * amount received: use `scaleOutToRequestedSize` before showing `outAmount`

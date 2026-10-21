@@ -39,7 +39,8 @@ import type { AssetCardData, PegState } from "@/lib/api/types";
 // resolves through lib/api/base.ts exactly as the live board does.
 
 // 30s, not 10s: at 10s this one card cost 6 of a tab's API requests per
-// minute against a 60/min per-IP budget (measured 2026-10-21). While the
+// minute against what was then a 60/min per-IP budget (measured 2026-10-21;
+// production is now 240/min). While the
 // socket is live, frames carry the updates and REST only backstops them.
 const POLL_MS = 30_000;
 const POLL_WHILE_LIVE_MS = 60_000;

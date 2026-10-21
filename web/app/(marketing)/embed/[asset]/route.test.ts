@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Tests for GET /embed/[asset] — minimal iframe badge.
  *
@@ -8,7 +9,7 @@
  * - XSS escaping on asset symbol
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { GET } from "./route";
+import { GET, __resetLastGoodForTests } from "./route";
 
 function makeRequest(asset: string): Request {
   return new Request(
@@ -22,6 +23,8 @@ function makeContext(asset: string) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  __resetLastGoodForTests();
 });
 
 describe("GET /embed/[asset] - CSP + Content-Type", () => {
@@ -116,5 +119,141 @@ describe("GET /embed/[asset] - verify link", () => {
     const res = await GET(makeRequest("USDC") as never, makeContext("USDC"));
     const body = await res.text();
     expect(body).toContain("/audit?asset=USDC");
+  });
+});
+
+describe("GET /embed/[asset] - soft-fail never pins Unknown", () => {
+  const fresh = () => new Date().toISOString();
+
+  /** fetch stub routed by URL: /state and the asset detail answer separately. */
+  function stubApi(opts: {
+    state: () => Response | Promise<Response>;
+    detail: () => Response | Promise<Response>;
+  }) {
+    const fn = vi.fn(async (input: RequestInfo | URL) => {
+      const u = String(input);
+      return u.endsWith("/state") ? opts.state() : opts.detail();
+    });
+    vi.stubGlobal("fetch", fn);
+    return fn;
+  }
+
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status });
+
+  it("serves the last good verdict, marked stale, when /state then 429s", async () => {
+    stubApi({
+      state: () =>
+        json({ state: "DRIFT", discount: "0.0024", updated_at: fresh() }),
+      detail: () => new Response(null, { status: 503 }),
+    });
+    const first = await GET(makeRequest("jitoSOL") as never, makeContext("jitoSOL"));
+    const firstBody = await first.text();
+    expect(firstBody).toContain("Drift");
+    expect(firstBody).not.toContain('class="stl"');
+    expect(first.headers.get("Cache-Control")).toBe(
+      "public, s-maxage=60, stale-while-revalidate=60",
+    );
+
+    stubApi({
+      state: () => json({ error: "rate_limited" }, 429),
+      detail: () => new Response(null, { status: 503 }),
+    });
+    const res = await GET(makeRequest("jitoSOL") as never, makeContext("jitoSOL"));
+    const body = await res.text();
+    expect(body).toContain("Drift");
+    expect(body).not.toContain("Unknown");
+    expect(body).toContain('class="stl"');
+    expect(res.headers.get("Cache-Control")).toBe("public, s-maxage=10");
+  });
+
+  it("falls back to the asset-detail read when this instance has no last good", async () => {
+    stubApi({
+      state: () => new Response(null, { status: 502 }),
+      detail: () =>
+        json({
+          symbol: "sHYUSD",
+          class: "stable_yield",
+          state: "DRIFT",
+          discount: "0.0024",
+          updated_at: fresh(),
+        }),
+    });
+    const res = await GET(makeRequest("eHYUSD") as never, makeContext("eHYUSD"));
+    const body = await res.text();
+    expect(body).toContain("Drift");
+    expect(body).toContain('class="stl"');
+    // The display alias still prints, the canonical symbol is what is fetched.
+    expect(body).toContain("eHYUSD");
+    expect(body).toContain("/audit?asset=sHYUSD");
+  });
+
+  it("an Unknown fallback is held at the edge for 10s at most, with no stale window", async () => {
+    stubApi({
+      state: () => json({ error: "rate_limited" }, 429),
+      detail: () => json({ error: "rate_limited" }, 429),
+    });
+    const res = await GET(makeRequest("jitoSOL") as never, makeContext("jitoSOL"));
+    expect(await res.text()).toContain("Unknown");
+    const cc = res.headers.get("Cache-Control") ?? "";
+    expect(cc).toBe("public, s-maxage=10");
+    expect(cc).not.toContain("stale-while-revalidate");
+  });
+
+  it("never remembers or falls back to a verdict with a null updated_at", async () => {
+    stubApi({
+      state: () => json({ state: "DRIFT", discount: "0.0024", updated_at: null }),
+      detail: () => new Response(null, { status: 503 }),
+    });
+    const first = await GET(makeRequest("jitoSOL") as never, makeContext("jitoSOL"));
+    expect(await first.text()).toContain("Drift");
+
+    stubApi({
+      state: () => json({ error: "rate_limited" }, 429),
+      detail: () =>
+        json({ symbol: "jitoSOL", class: "lst", state: "DRIFT", updated_at: null }),
+    });
+    const res = await GET(makeRequest("jitoSOL") as never, makeContext("jitoSOL"));
+    const body = await res.text();
+    expect(body).toContain("Unknown");
+    expect(body).not.toContain('class="stl"');
+    expect(res.headers.get("Cache-Control")).toBe("public, s-maxage=10");
+  });
+
+  it("styles the stale marker at 12px in an AA colour", async () => {
+    stubApi({
+      state: () => json({ state: "PEGGED", updated_at: fresh() }),
+      detail: () => json({ symbol: "USDC", class: "stable_fiat", state: "PEGGED" }),
+    });
+    const res = await GET(makeRequest("USDC") as never, makeContext("USDC"));
+    const css = (await res.text()).match(/\.stl\{[^}]*\}/)?.[0] ?? "";
+    expect(css).toContain("12px");
+    // #8f8aa3 on the #0a0a0b badge is 5.97:1 (AA needs 4.5:1).
+    expect(css).toContain("color:#8f8aa3");
+  });
+
+  it("does not serve a last good verdict past the freshness gate", async () => {
+    const old = new Date(Date.now() - 60 * 60_000).toISOString();
+    stubApi({
+      state: () => json({ error: "x" }, 503),
+      detail: () =>
+        json({ symbol: "jitoSOL", class: "lst", state: "DRIFT", updated_at: old }),
+    });
+    const res = await GET(makeRequest("jitoSOL") as never, makeContext("jitoSOL"));
+    expect(await res.text()).toContain("Unknown");
+  });
+
+  it("reads /state with no-store and the SSR token header", async () => {
+    vi.stubEnv("PEGANA_WEB_SSR_TOKEN", "tok");
+    const fn = stubApi({
+      state: () => json({ state: "PEGGED", updated_at: fresh() }),
+      detail: () => json({ symbol: "USDC", class: "stable", state: "PEGGED" }),
+    });
+    await GET(makeRequest("USDC") as never, makeContext("USDC"));
+    const call = fn.mock.calls.find((c) => String(c[0]).endsWith("/state"))!;
+    const init = (call as unknown as [string, RequestInit])[1];
+    expect(init.cache).toBe("no-store");
+    expect((init.headers as Record<string, string>)["x-pegana-ssr-token"]).toBe("tok");
+    vi.unstubAllEnvs();
   });
 });

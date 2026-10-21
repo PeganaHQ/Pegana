@@ -90,11 +90,35 @@ describe("NavV2 dynamic glass", () => {
     expect(glass()).toBe("");
   });
 
-  it("the site variant never tracks a hero", async () => {
+  it("the site variant ramps off scroll position, not a hero", async () => {
     mount("site");
     stubRects();
+    const at = async (y: number) => {
+      Object.defineProperty(window, "scrollY", { value: y, configurable: true, writable: true });
+      await scrollTo(700);
+    };
+    await at(0);
+    expect(glass()).toBe("0.000");
+    await at(60);
+    expect(Number(glass())).toBeCloseTo(0.5, 2);
+    await at(900);
+    expect(glass()).toBe("1.000");
+    const style = screen.getByTestId("nav-pill").getAttribute("style") ?? "";
+    expect(style).toContain("calc(.38 + .38 * var(--nav-glass, 1))");
+    Object.defineProperty(window, "scrollY", { value: 0, configurable: true, writable: true });
+  });
+
+  it("the site variant keeps the static frosted style on mobile", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }),
+    });
+    mount("site");
     await scrollTo(700);
     expect(glass()).toBe("");
+    const style = screen.getByTestId("nav-pill").getAttribute("style") ?? "";
+    expect(style).toContain("blur(20px)");
   });
 
   it("reduced motion jumps between the endpoints", async () => {
@@ -162,7 +186,17 @@ describe("NavV2 fallback is pixel-identical to the previous nav", () => {
   const style = () => screen.getByTestId("nav-pill").getAttribute("style") ?? "";
   const norm = (t: string) => t.replace(/\s+/g, " ").replace(/rgba\(12,\s*12,\s*14,\s*0?\.62\)/, "rgba(12,12,14,.62)");
 
-  it("site variant keeps the old inline values and no saturate", async () => {
+  // The site variant runs the dynamic glass on desktop since 2026-10-21 (owner
+  // ask: same glass on every page). Below the navpill breakpoint it keeps the
+  // previous static values, which is what these two pin.
+  const mobile = () => {
+    (window as unknown as { matchMedia: unknown }).matchMedia = (q: string) => ({
+      matches: false, media: q, addEventListener() {}, removeEventListener() {},
+    });
+  };
+
+  it("site variant on mobile keeps the old inline values and no saturate", async () => {
+    mobile();
     mount("site");
     stubRects();
     await scrollTo(700);
@@ -173,6 +207,7 @@ describe("NavV2 fallback is pixel-identical to the previous nav", () => {
   });
 
   it("fallback never goes through calc or the glass variable, with the exact old blur and shadow", async () => {
+    mobile();
     mount("site");
     stubRects();
     await scrollTo(700);

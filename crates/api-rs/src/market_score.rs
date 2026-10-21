@@ -110,8 +110,8 @@ const LIQUIDITY_CURVE: &[Point] = &[
     },
 ];
 
-/// 24h USD volume. Distinguishes a deep-but-dormant pool (large TVL, no trades
-/// — several LSTs look exactly like this) from a genuinely traded market.
+/// 24h USD volume. Distinguishes a deep-but-dormant pool (large TVL, no trades;
+/// several LSTs look exactly like this) from a genuinely traded market.
 const VOLUME_CURVE: &[Point] = &[
     Point {
         value: 0.0,
@@ -139,7 +139,7 @@ const VOLUME_CURVE: &[Point] = &[
     },
 ];
 
-/// Unique holders — an adoption/distribution proxy. Thresholds sit far above
+/// Unique holders; an adoption/distribution proxy. Thresholds sit far above
 /// tokens.xyz's memecoin-oriented ones (they top out at 5k; USDC has 7.9M).
 const HOLDER_CURVE: &[Point] = &[
     Point {
@@ -194,7 +194,7 @@ pub struct MarketDepthComponents {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct MarketDepth {
     /// 0-100, higher = more executable market. `null` when the inputs are too
-    /// sparse to state a number honestly — read `insufficient_reason` then.
+    /// sparse to state a number honestly; read `insufficient_reason` then.
     pub score: Option<u8>,
     /// Which hard facts capped the score, if any. Empty when nothing capped it.
     pub caps: Vec<String>,
@@ -448,7 +448,7 @@ mod tests {
     }
 
     /// REGRESSION: the case that proved the first cap values were decorative.
-    /// dumSOL, measured 2026-08-10 — $132.6M of liquidity against $40 of 24h
+    /// dumSOL, measured 2026-08-10; $132.6M of liquidity against $40 of 24h
     /// volume. Liquidity's 50% weight alone floated this to ~52 ("healthy") in
     /// the first draft. A pool nobody trades is not a market you can exit.
     #[test]
@@ -480,7 +480,7 @@ mod tests {
         }
     }
 
-    /// Zero is a real observation of "no volume", NOT missing data — it must
+    /// Zero is a real observation of "no volume", NOT missing data; it must
     /// score, and it must trigger the dormant cap rather than being ignored.
     #[test]
     fn zero_volume_is_scored_not_skipped() {

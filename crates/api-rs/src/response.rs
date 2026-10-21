@@ -30,6 +30,25 @@ pub struct ApiList<T> {
     /// absence of events. Omitted elsewhere.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_start: Option<String>,
+    /// Time-series lists only (`/v1/assets/{symbol}/history`): `true` when the
+    /// window holds more rows than `limit`, so `data` stops before `from`.
+    /// Always present there (`false` when the window fit). Omitted elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
+    /// Present only when `truncated` is `true`: RFC3339 (microsecond, `Z`)
+    /// instant just before the oldest row returned. Repeat the request with
+    /// `from=<next_from>&to=<next_to>` (same `bucket`, `limit`) to get the
+    /// next, older page; no row is skipped or repeated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_to: Option<String>,
+    /// Present only when `truncated` is `true`: the EFFECTIVE lower bound of
+    /// this window (RFC3339, microsecond, `Z`), i.e. the `from` the request
+    /// sent or the default it got (now minus 24h). Pass it back as `from`
+    /// with `next_to`: the default `from` is `Utc::now() - 24h`, not
+    /// `to - 24h`, so paging without `from` keeps `from` at now-24h and, once
+    /// `next_to` is older than 24h, the request returns 400 `invalid_range`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_from: Option<String>,
 }
 
 impl<T> ApiList<T> {
@@ -40,6 +59,9 @@ impl<T> ApiList<T> {
             count: data.len(),
             data,
             history_start: None,
+            truncated: None,
+            next_to: None,
+            next_from: None,
         }
     }
 
@@ -49,11 +71,25 @@ impl<T> ApiList<T> {
         self
     }
 
+    /// Attach the time-series truncation signal (see `truncated`, `next_to`
+    /// and `next_from`). The cursors are dropped when the window fit.
+    pub fn with_truncation(
+        mut self,
+        truncated: bool,
+        next_to: Option<String>,
+        next_from: Option<String>,
+    ) -> Self {
+        self.truncated = Some(truncated);
+        self.next_to = if truncated { next_to } else { None };
+        self.next_from = if truncated { next_from } else { None };
+        self
+    }
+
     /// Same envelope, but stamped with WHEN THE DATA WAS COMPUTED rather than
     /// when the response was built.
     ///
     /// Required by any handler served from a cache. `generated_at` is documented
-    /// above as "an explicit build-time staleness read" — a cached payload
+    /// above as "an explicit build-time staleness read"; a cached payload
     /// re-wrapped with `new()` would claim `now` for data that may be up to a
     /// TTL old, which is exactly the staleness lie this field exists to prevent.
     /// On a product whose pitch is honest freshness, that matters more than the
@@ -65,6 +101,9 @@ impl<T> ApiList<T> {
             count: data.len(),
             data,
             history_start: None,
+            truncated: None,
+            next_to: None,
+            next_from: None,
         }
     }
 }
@@ -106,7 +145,7 @@ mod tests {
     }
 
     /// The list envelope is exactly `{ ok:true, generated_at:<rfc3339 ms Z>,
-    /// count:N, data:[...] }` — top-level object (never a bare array), `count`
+    /// count:N, data:[...] }`; top-level object (never a bare array), `count`
     /// mirrors `data.len()`, and `generated_at` is the normalised millisecond-Z
     /// timestamp. This is the wire contract every list endpoint now returns.
     #[test]
@@ -149,7 +188,7 @@ mod tests {
     }
 
     /// Empty list still serialises as the object envelope with `count:0` and an
-    /// empty `data` array — NOT `null`, NOT a bare `[]` — so a consumer branches
+    /// empty `data` array; NOT `null`, NOT a bare `[]`; so a consumer branches
     /// on one shape regardless of result size (feature-gated `/v1/audit`,
     /// unknown-symbol `/history`).
     #[test]
@@ -161,8 +200,8 @@ mod tests {
         assert!(v["data"].as_array().unwrap().is_empty());
     }
 
-    /// The single-resource envelope is `{ ok:true, generated_at, data:{...} }`
-    /// — no `count`, `data` is the object itself (F3 object endpoints).
+    /// The single-resource envelope is `{ ok:true, generated_at, data:{...} }`;
+    /// no `count`, `data` is the object itself (F3 object endpoints).
     #[test]
     fn one_envelope_shape() {
         let env = ApiOne::new(Item {

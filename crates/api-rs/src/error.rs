@@ -22,7 +22,7 @@ use utoipa::ToSchema;
 pub struct ApiError {
     /// Stable, machine-readable code. Branch on this, never on `message`.
     pub error: String,
-    /// Human-readable explanation. NOT stable — for humans/logs; do not parse.
+    /// Human-readable explanation. NOT stable; for humans/logs; do not parse.
     pub message: String,
     /// The offending asset symbol, present only for asset-scoped errors.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,7 +30,7 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    /// 404 — the symbol is not in the tracked universe at all.
+    /// 404; the symbol is not in the tracked universe at all.
     pub fn unknown_asset(symbol: impl Into<String>) -> Self {
         let symbol = symbol.into();
         Self {
@@ -40,7 +40,7 @@ impl ApiError {
         }
     }
 
-    /// 404 `unknown_asset` — the asset is tracked internally but is not part of
+    /// 404 `unknown_asset`; the asset is tracked internally but is not part of
     /// the public peg surface: a leveraged synthetic (`synth_lev`, e.g. xSOL)
     /// has no peg, so it is excluded from every public asset route, the feed,
     /// stats and the WebSocket stream. Same code as an untracked symbol, so
@@ -56,7 +56,7 @@ impl ApiError {
         }
     }
 
-    /// 404 — the symbol IS tracked but no discount snapshot is stored for it
+    /// 404; the symbol IS tracked but no discount snapshot is stored for it
     /// (distinct from unknown). This happens both before the first reading and
     /// when the asset's sources have produced nothing for the whole retention
     /// window, so the message must not promise one is coming ("yet"). List
@@ -73,7 +73,7 @@ impl ApiError {
         }
     }
 
-    /// 404 `no_data` — tracked, no stored discount snapshot, and the cause is the
+    /// 404 `no_data`; tracked, no stored discount snapshot, and the cause is the
     /// MARKET leg: the intrinsic (NAV) is fresh but there is no reliable market
     /// tick. List endpoints report it as UNKNOWN with `state_reason`
     /// `market_unavailable`.
@@ -88,7 +88,7 @@ impl ApiError {
         }
     }
 
-    /// 400 — a symbol or mint path/query parameter that cannot name any asset
+    /// 400; a symbol or mint path/query parameter that cannot name any asset
     /// (bad characters, a NUL byte, wrong length). Rejected before it reaches
     /// Postgres, which answers a NUL byte with an error (was an HTTP 500).
     /// The input is not echoed back.
@@ -100,7 +100,7 @@ impl ApiError {
         }
     }
 
-    /// 400 — an inverted or empty time window (`from` after `to`).
+    /// 400; an inverted or empty time window (`from` after `to`).
     pub fn invalid_range(message: impl Into<String>) -> Self {
         Self {
             error: "invalid_range".into(),
@@ -109,19 +109,16 @@ impl ApiError {
         }
     }
 
-    /// 400 — an unsupported `?bucket=` value.
+    /// 400; an unsupported `?bucket=` value.
     pub fn invalid_bucket(got: &str, valid: &[&str]) -> Self {
         Self {
             error: "invalid_bucket".into(),
-            message: format!(
-                "invalid bucket '{got}' — valid values: {}",
-                valid.join(", ")
-            ),
+            message: format!("invalid bucket '{got}'; valid values: {}", valid.join(", ")),
             asset: None,
         }
     }
 
-    /// 400 — the query string could not be deserialized: a missing required
+    /// 400; the query string could not be deserialized: a missing required
     /// param or an unparseable value. Replaces axum's default `text/plain`
     /// `QueryRejection` so every error on the public surface stays JSON
     /// (Gecko API report 2026-06-10). Raised by `crate::extract::ValQuery`.
@@ -133,7 +130,7 @@ impl ApiError {
         }
     }
 
-    /// 400 — a generic bad request with a specific human reason (validation
+    /// 400; a generic bad request with a specific human reason (validation
     /// failure on a query parameter, e.g. an unsupported `shock_bps`).
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self {
@@ -143,7 +140,7 @@ impl ApiError {
         }
     }
 
-    /// 500 — an internal failure from any non-sqlx source. Logs the cause; the
+    /// 500; an internal failure from any non-sqlx source. Logs the cause; the
     /// body stays opaque. (`db` is the sqlx-specific shortcut with the same shape.)
     pub fn internal<E: std::fmt::Debug>(e: E) -> Self {
         tracing::error!(?e, "internal error");
@@ -154,7 +151,7 @@ impl ApiError {
         }
     }
 
-    /// 500 — an internal/database failure. Logs the cause; the body stays opaque.
+    /// 500; an internal/database failure. Logs the cause; the body stays opaque.
     pub fn db(e: sqlx::Error) -> Self {
         tracing::error!(?e, "db error");
         Self {
@@ -164,7 +161,7 @@ impl ApiError {
         }
     }
 
-    /// HTTP status derived from the code — single source of truth, kept out of
+    /// HTTP status derived from the code; single source of truth, kept out of
     /// the serialized body.
     fn status(&self) -> StatusCode {
         match self.error.as_str() {
