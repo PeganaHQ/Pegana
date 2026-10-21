@@ -93,7 +93,7 @@ export function WhatsNewPopup() {
             className="h-1.5 w-1.5 rounded-full"
             style={{ background: "var(--v2-iri)", boxShadow: "0 0 8px 1px rgba(251,111,174,0.5)" }}
           />
-          <span className="v2-iri-text font-mono text-[10px] uppercase tracking-[0.14em]">V1 is live</span>
+          <span className="v2-iri-text font-mono text-[12px] uppercase tracking-[0.14em]">V1 is live</span>
         </div>
 
         <p className="mt-2.5 text-[13.5px] leading-[1.45] text-[var(--v2-text)]">
@@ -103,7 +103,7 @@ export function WhatsNewPopup() {
         <Link
           href="/whats-new"
           onClick={dismiss}
-          className="group mt-3 inline-flex items-center gap-1 font-mono text-[11.5px] font-medium uppercase tracking-[0.06em] text-[var(--v2-muted)] transition-colors duration-200 hover:text-[var(--v2-peg)]"
+          className="group mt-3 inline-flex items-center gap-1 font-mono text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--v2-muted)] transition-colors duration-200 hover:text-[var(--v2-peg)]"
         >
           See what's new
           <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5">→</span>

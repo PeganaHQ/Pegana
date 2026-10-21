@@ -57,7 +57,7 @@ export function PillPrimary({
       {icon && (
         <span
           aria-hidden
-          className="-my-1 ml-0.5 -mr-2.5 grid h-[22px] w-[22px] place-items-center rounded-full bg-[rgba(20,17,24,.09)] text-[11px] transition-transform duration-500 ease-[var(--v2-ease-phys)] group-hover:translate-x-0.5"
+          className="-my-1 ml-0.5 -mr-2.5 grid h-[22px] w-[22px] place-items-center rounded-full bg-[rgba(20,17,24,.09)] text-[12px] transition-transform duration-500 ease-[var(--v2-ease-phys)] group-hover:translate-x-0.5"
         >
           →
         </span>
@@ -112,7 +112,7 @@ export function EyebrowPillV2({
   return (
     <span
       className={cn(
-        "mb-9 inline-flex rounded-full border border-[var(--v2-line)] px-3.5 py-1.5 font-mono text-[10.5px] font-medium uppercase tracking-[0.18em] text-[var(--v2-dim)]",
+        "mb-9 inline-flex rounded-full border border-[var(--v2-line)] px-3.5 py-1.5 font-mono text-[12px] font-medium uppercase tracking-[0.18em] text-[var(--v2-dim)]",
         className,
       )}
     >
@@ -180,7 +180,7 @@ export function StatePillV2({ state }: { state: PegState | null }) {
   return (
     <span
       className={cn(
-        "inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10.5px] font-medium",
+        "inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[12px] font-medium",
         m.pillClass,
       )}
     >

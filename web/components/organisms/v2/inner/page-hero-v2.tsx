@@ -43,7 +43,7 @@ export function PageHeroV2({
         {lede}
       </p>
       {meta && meta.length > 0 && (
-        <div className="mt-[30px] flex flex-wrap gap-[18px] font-mono text-[11.5px] text-[var(--v2-dim)]">
+        <div className="mt-[30px] flex flex-wrap gap-[18px] font-mono text-[12px] text-[var(--v2-dim)]">
           {meta.map((m, i) => (
             <span key={i}>{m}</span>
           ))}

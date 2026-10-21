@@ -33,7 +33,7 @@ line-2          rgba(255,255,255,.16)   interactive borders
 text            #f5f5f6
 muted           #a3a3ad
 dim             #80808a   (AA-safe; #70707a fails WCAG AA at 4.04:1)
-nav-glass       rgba(12,12,14,.62) + backdrop-blur(20px)
+nav-glass       dynamic: tint .38 / blur 12px (light) to tint .76 / blur 28px / saturate 1.1 (frosted), see section 3
 ```
 
 Semantic status (data only, never decoration):
@@ -82,6 +82,18 @@ Ship via `next/font/local` (woff2 in repo). No italics. No serif.
 
 - Interactive = pills (radius 100px). Containers = 14-22px radius. Hairline borders.
 - Glass (backdrop-blur) ONLY on the fixed navbar. Everything else flat panels.
+- Nav glass is dynamic on the landing (desktop): one `--nav-glass` property (0 to 1) ramps the
+  pill from light (tint .38, blur 12px) over the hero intro to frosted (tint .76, blur 28px,
+  saturate 1.1) as the live board reaches the nav (`web/lib/landing/nav-glass.ts`; falls back
+  to the hero's bottom edge when no board is found). Never opaque. Mobile, non-landing routes
+  and pages without a hero keep the static base glass (tint .62, blur 20px); without
+  backdrop-filter support the pill uses a more opaque tint and no blur. Reduced motion jumps
+  between the two endpoints instead of ramping.
+- **Backdrop-root rule.** A backdrop-filter only samples content up to its nearest backdrop-root
+  ancestor, so NO ancestor of a backdrop-filter element may have `view-transition-name`,
+  `filter`, `opacity < 1`, `mask`, `clip-path`, `mix-blend-mode` or `will-change: opacity|filter`.
+  The nav pill carries its own `view-transition-name` for exactly this reason: on `<nav>` the
+  blur sampled nothing.
 - No drop shadows on cards except the floating objects, which carry a deep ambient shadow +
   `inset 0 1px 0 rgba(255,255,255,.05-.08)` top highlight. There are three: the hero board, the
   receipt, and (added 2026-08-11) the app's floating mobile tab bar, which genuinely floats over
@@ -111,11 +123,11 @@ to `{duration: 0}` under reduced motion.
 | Hero entrance | orientation | staggered on LOAD (not scroll): 100ms + i*110ms; fade + translateY(18px) + blur(5px) → 0 |
 | Scroll reveals (.rv) | hierarchy | IntersectionObserver once, threshold .1, stagger i%6*70ms, same fade/blur |
 | Live pips pulse | real state semantics | 2.2s opacity blink, only on non-pegged states |
-| Recompute sweep | "the same lines, re-derived" | one 2.8s gradient sweep across the step-02 card; decorative only |
-| Nav hide/show | keep the fixed pill off content | translateY(-110%) after 160px of downward scroll, restore on upward; 200ms |
+| Nav glass ramp | the pill stays legible over content | `--nav-glass` 0 to 1, scroll-linked to the live board's top edge (120px range), written to the element so scrolling never re-renders React |
+| Verdict replay (trust) | FREEZE, RECOMPUTE, MATCH of the real USDe event | plays once on entering the viewport (threshold .4), not scroll-linked: freeze 600ms, sweep 2400ms, match 700ms |
 | Micro-hovers | affordance | links, rows and cards change border/background in ≤200ms; no transforms beyond 1px |
 
-**Reduced-motion matrix (mandatory):** recompute sweep OFF · reveals instant · nav hide snaps ·
+**Reduced-motion matrix (mandatory):** verdict replay shows its final state · reveals instant · nav glass jumps between endpoints ·
 no marquee, no pinning, no scroll-jacking anywhere on the landing (all three were retired
 2026-10-19). Mobile: the hero stacks, the board hides four of seven columns, the topology
 scales, and every section remains static.
@@ -126,8 +138,9 @@ Canonical numbers live in `docs/landing-remake-spec.md`; this is the map. Contai
 Every section boundary is a **background-temperature change** (`v2-band-1..5`, all neutral zinc),
 never a divider. Total page height ≤ 6 viewports at 1440×900.
 
-1. **Nav** — floating glass pill, links Product/Methodology/Verify/Developers/Docs, one
-   `OPEN DASHBOARD` CTA. Hides on downward scroll, restores on upward (≤200ms).
+1. **Nav**: floating dynamic-glass pill (light over the hero intro, frosted once the live
+   board reaches it, never opaque; see section 3), links Product/Methodology/Verify/
+   Developers/Docs, one `OPEN DASHBOARD` CTA. Does not hide on scroll.
 2. **Hero** — two columns. Left: h1 "Prove the peg of every asset you hold." (48-56px, w500,
    ls -1.4px, measure ≤580), sub ≤21 words, one solid-white CTA + one underlined text link,
    "free and open source" line. No gradient phrase, no uppercase-mono pill pair, no caption
@@ -138,13 +151,19 @@ never a divider. Total page height ≤ 6 viewports at 1440×900.
    staking tokens); ONE encoding and ONE legend (band proximity); no in-card dashboard CTA.
 4. **Sources** — static grid of the **13 ingestion tasks**, each card = name + contribution +
    cadence. No marquee.
-5. **Product** — two-level chrome: four glyph squares (REST/WS/MCP/CLI) outside; text+icon
-   variant tabs inside the panel. Code 14/21 Geist Mono with a dimmed line-number gutter and
-   4-5 syntax hues. COPY copies the visible variant. Equal panel heights. Bold lead-in bullets,
-   not green ticks.
-6. **Trust** — STATIC three-step band (no pin, no scroll-jack). Each step visually encodes its
-   verb: frozen receipt card / re-derived lines with a sweep / diff view where the hashes lock.
-   Punchline "Byte-identical, or it fails loudly." is section-level type.
+5. **Product (section A)**: live verdict playground, "One verdict, four open surfaces." A
+   token selector (8 curated tokens: jitoSOL, mSOL, JupSOL, INF, USDC, USDT, PYUSD, USDe)
+   whose hover popover opens on top and lists the tokens as tiles. Beside it the real
+   `/v1` verdict for the chosen asset (state, discount against its thresholds, reason,
+   freshness; live over WebSocket with a polling fallback), plus a REST/WebSocket/MCP/CLI
+   surface switch showing the matching request line with a COPY button. Not a screenshot.
+6. **Trust (section B)**: "Don't trust the score. Replay it." A choreographed
+   FREEZE, RECOMPUTE, MATCH replay of the real USDe 2025-10-10 event (data generated by
+   `web/scripts/gen-usde-replay.mjs`, nothing interpolated): the series draws in, a cursor
+   sweeps it and each receipt blooms as it is reached, then the receipt's sha256 is
+   recomputed in the browser. "match" is shown only after the verification actually resolves
+   (a mismatch is shown as such). Plays once on entering the viewport; static final state
+   under reduced motion.
 7. **Candor** — eyebrow "what pegana does not claim" + 3 rows. Claim dimmed at 14px, correction
    full-weight at 20-24px. No strikethrough.
 8. **Close** — naked-numeral stat band (assets / sources / endpoints / free), one receipt line,
@@ -155,7 +174,8 @@ never a divider. Total page height ≤ 6 viewports at 1440×900.
 
 - **ZERO em-dashes** anywhere visible. Use period, comma or colon. (Data-null cells use `-`.)
 - **Marketing type floor:** no text below 12px, and body type (≥14px) must be the majority of
-  sized text. Enforced by `web/tests/unit/design/marketing-type-floor.test.ts`.
+  sized text. The 12px floor is enforced for `web/components/organisms/v2/**` by
+  `web/tests/unit/lib/type-floor.test.ts`.
 - Middle-dot `·` max 1 per line.
 - Max 2 eyebrows on the page (currently: trust section + candor pill).
 - Hero sub ≤ 21 words. Section headlines ≤ 8 words.
@@ -170,7 +190,7 @@ never a divider. Total page height ≤ 6 viewports at 1440×900.
 |---|---|
 | Board rows | `useAssets()` → `/v1/assets` (worst-first per class group; keep UNKNOWN visible) |
 | Close stat band | `useStats()` → `/v1/stats` for assets; sources = `SOURCE_ITEMS.length`; endpoints = 21 (unique `/v1` paths, verified against the router) |
-| Receipt scene | real sUSD replay bundle (`tests/fixtures/replay-bundle-sample.json`) |
+| Trust replay | recorded USDe 2025-10-10 event (`web/lib/landing/usde-replay-data.ts`, generated from `docs/backtests/2025-10-10-usde-depeg/`) |
 | Asset-detail pane | `useAsset('jitosol')` or representative live asset |
 | Fallback | existing `MockDataBanner` honest-degradation pattern |
 
@@ -181,7 +201,7 @@ never a divider. Total page height ≤ 6 viewports at 1440×900.
   Lenis still wraps the landing for smooth scrolling only; it is OFF under reduced-motion.
 - The hero canvases (`reveal-mask`, distance field) and the wave close were retired with the
   remake. The topology is a static SVG; the only landing animations are reveals, live pips,
-  the recompute sweep, the nav hide and micro-hovers.
+  the verdict replay, the nav glass ramp and micro-hovers.
 - CSP: no inline event handlers; scripts through the bundle (nonce handled by existing setup).
 - Reuse: `useAssets/useStats/useAsset` hooks, `MockDataBanner`, `web/public/logos/*.svg`,
   wave path from `brand-mark.tsx`. The old v3 landing organisms are replaced, not edited.

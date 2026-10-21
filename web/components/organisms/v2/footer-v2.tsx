@@ -69,7 +69,7 @@ export function FooterV2() {
         <div className="grid grid-cols-1 gap-8 max-[759px]:grid-cols-2 min-[760px]:max-[999px]:grid-cols-3 min-[1000px]:grid-cols-[1.6fr_1fr_1fr_1fr]">
           <div className="max-[759px]:col-span-2 min-[760px]:max-[999px]:col-span-3 min-[1000px]:col-span-1">
             <BrandLockupV2 gradientId="v2-footer-wave" chroma />
-            <p className="mt-3 max-w-[32ch] text-[13.5px] leading-[1.6] text-[var(--v2-dim)]">
+            <p className="mt-3 max-w-[32ch] text-[14px] leading-[1.6] text-[var(--v2-dim)]">
               Verifiable peg-risk infrastructure for Solana. Every verdict
               explainable, replayable, inspectable.
             </p>
@@ -79,7 +79,7 @@ export function FooterV2() {
               {/* h3, not h4: marketing pages stop at h2, so an h4 here skipped a level
                   on every single page (verified on /about: h1 -> h2 -> h3 -> h2 ->
                   h4 x5). h3 is the correct next level under the page content. */}
-              <h3 className="mb-3.5 font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--v2-muted)] max-[759px]:mb-2.5">
+              <h3 className="mb-3.5 font-mono text-[12px] uppercase tracking-[0.12em] text-[var(--v2-muted)] max-[759px]:mb-2.5">
                 {col.title}
               </h3>
               {col.items.map((item) => (
@@ -97,7 +97,7 @@ export function FooterV2() {
           ))}
         </div>
 
-        <div className="mt-12 flex flex-wrap items-center justify-between gap-2.5 border-t border-[var(--v2-line)] pt-[22px] font-mono text-[11.5px] text-[var(--v2-dim)] max-[759px]:gap-[14px]">
+        <div className="mt-12 flex flex-wrap items-center justify-between gap-2.5 border-t border-[var(--v2-line)] pt-[22px] font-mono text-[12px] text-[var(--v2-dim)] max-[759px]:gap-[14px]">
           <span className="flex flex-wrap items-center gap-[18px]">
             <span>© {new Date().getFullYear()} Pegana. All rights reserved.</span>
             <Link
