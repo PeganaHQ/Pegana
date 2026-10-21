@@ -32,6 +32,7 @@ import {
 } from "lightweight-charts";
 import { PillTabs } from "@/components/molecules/pill-tabs";
 import { useHistoryRange } from "@/lib/hooks/use-history-range";
+import { useHistoryStart } from "@/lib/hooks/use-history-start";
 import { historyCoverageNote } from "@/lib/asset/history-range";
 import { formatGap, isPlausibleDiscount, spreadSignClass } from "@/lib/api/format";
 import {
@@ -261,8 +262,14 @@ export const AssetChart = forwardRef<AssetChartHandle, AssetChartProps>(
     // page's own 24h prefetch and this chart share one request.
     const { data: range, isLoading } = useHistoryRange(symbol, bucket);
     const data = range?.points;
+    const historyStart = useHistoryStart(symbol);
     const coverageNote = range
-      ? historyCoverageNote(range.points, range.fromMs, range.truncated)
+      ? historyCoverageNote(
+          range.points,
+          range.fromMs,
+          range.truncated,
+          historyStart,
+        )
       : null;
 
     // The API returns rows newest-first and may have duplicate seconds; LWC

@@ -7,6 +7,7 @@ import { siteOrigin } from "@/lib/seo/site-origin";
 import { lookupAsset } from "@/lib/asset/fetch-asset";
 import { publicSurfaceOf } from "@/lib/asset/public-surface";
 import { notTrackedResponse } from "@/lib/embed/not-tracked";
+import { embedCacheControl } from "@/lib/embed/cache";
 
 const API_BASE = apiBase();
 const SITE_URL = siteOrigin();
@@ -313,6 +314,17 @@ export async function GET(
   const bps = asset && !stale ? reconcileBps(asset).bps : null;
   const color = STATE_COLOR[state] ?? STATE_COLOR.UNKNOWN;
   const sparkPath = toSparkPath(sparkPoints, 240, 28);
+  // State-conditional edge TTL: a stale "PEGGED" on a partner's deposit page
+  // is the worst failure mode, so non-PEGGED verdicts use 15s and PEGGED 60s.
+  // An Unknown (often a soft-fail: the API was unavailable) is held at most
+  // 10s with no stale-while-revalidate (lib/embed/cache.ts), so a recovered
+  // API shows through within seconds instead of minutes.
+  const cacheControl = embedCacheControl({
+    state,
+    degraded: lookup.kind === "unavailable",
+    liveSeconds: state === "PEGGED" ? 60 : 15,
+    swrSeconds: 120,
+  });
 
   // SVG format: flat badge for GitHub README <img> use.
   if (format === "svg") {
@@ -322,11 +334,10 @@ export async function GET(
       bps,
       color,
     });
-    const sMaxAgeSvg = state === "PEGGED" ? 60 : 15;
     return new Response(svgBody, {
       headers: {
         "Content-Type": "image/svg+xml; charset=utf-8",
-        "Cache-Control": `public, s-maxage=${sMaxAgeSvg}, stale-while-revalidate=120`,
+        "Cache-Control": cacheControl,
         // SVG badges are fetched as <img> — not framed — so frame-ancestors
         // is not the relevant directive here. We still set it for defence-in-
         // depth (prevents SVG being misused in a frame context).
@@ -346,16 +357,13 @@ export async function GET(
     color,
   });
 
-  // State-conditional cache TTL: a stale "PEGGED" on a partner's deposit page
-  // is the worst failure mode. Non-PEGGED states use a shorter window (15s) so
-  // an active depeg propagates fast. PEGGED → 60s is safe (partner pages look
-  // fine with a short stale). X-Frame-Options: ALLOWALL dropped — the
-  // frame-ancestors CSP directive is the authoritative cross-origin mechanism.
-  const sMaxAge = state === "PEGGED" ? 60 : 15;
+  // Cache policy: see cacheControl above. X-Frame-Options: ALLOWALL dropped;
+  // the frame-ancestors CSP directive is the authoritative cross-origin
+  // mechanism.
   return new Response(body, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": `public, s-maxage=${sMaxAge}, stale-while-revalidate=120`,
+      "Cache-Control": cacheControl,
       "Content-Security-Policy": "frame-ancestors *;",
     },
   });

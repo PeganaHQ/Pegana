@@ -243,6 +243,9 @@ export interface BoardRow {
   /** The asset is banded on collateral ratio (hyUSD), so the spread has no
    *  proximity reading; the cell says so instead of "-". */
   crBand: boolean;
+  /** Monitoring-only (provisional calibration): the board marks it BETA, as
+   *  the dashboard, screener and asset page already do. */
+  monitoringOnly: boolean;
   updatedLabel: string;
   amberTint: boolean;
   /** Hourly-averaged discount series for the "Spread · 24h" cell, oldest ->
@@ -374,6 +377,7 @@ function toBoardRow(asset: AssetCardData, nowMs: number): BoardRow {
     spreadBps: bps == null ? null : -bps,
     gaugePct,
     crBand: isCollateralRatioThresholds(asset.thresholds),
+    monitoringOnly: asset.monitoring_only === true,
     updatedLabel: timeAgoShort(asset.updated_at, nowMs),
     amberTint: state === "DRIFT" && !benignPremium,
     // Same `discount` convention the old per-row fetch used (the API builds it

@@ -76,4 +76,29 @@ describe("ReceiptVerifier", () => {
     expect(text.toLowerCase()).toContain("receipt returned by the api");
     expect(text.toLowerCase()).not.toContain("committed receipt");
   });
+
+  it("a 429 reads as a calm pause, never the limit or the status code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response('{"error":"rate_limited","message":"60 requests a minute"}', {
+          status: 429,
+          headers: { "retry-after": "60" },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    const { container } = render(
+      <ReceiptVerifier alertId="test-alert" apiBase="https://api.test" />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /verify receipt hash in browser/i }),
+    );
+    await waitFor(() => {
+      expect(container.textContent).toContain("Verification is paused");
+    });
+    expect(container.textContent ?? "").not.toMatch(
+      /rate.?limit|requests a minute|429/i,
+    );
+  });
 });

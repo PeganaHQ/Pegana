@@ -17,7 +17,14 @@
 #     so detection takes 10 min at best and can take longer.
 #   - GitHub disables scheduled workflows in a public repo after 60 days with
 #     no repository activity; the regular mirror sync PRs keep it alive.
+#   - A newly merged schedule can take hours to fire its first run.
 #   - It detects "unreachable / not ready", not wrong data.
+#
+# Optional Telegram notification: set the repo secrets UPTIME_TELEGRAM_BOT_TOKEN
+# and UPTIME_TELEGRAM_CHAT_ID and the probe also sends a Telegram message when
+# an outage issue is opened, about once an hour while it stays open, and once
+# when it recovers (the run that closes the issue). Without them the step is
+# skipped.
 #
 # Only GitHub-owned actions are used (allowed by the public repo's selected
 # actions policy), pinned to a full SHA (sha_pinning_required=true).
@@ -26,7 +33,9 @@ name: uptime-probe
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    # Offset from :00/:10 so the run is not queued in GitHub's busiest minutes,
+    # where scheduled runs are delayed or dropped.
+    - cron: "3-59/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -86,6 +95,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Open, update or close the uptime issue
+        id: issue
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           FAILING: ${{ steps.probe.outputs.failing }}
@@ -112,6 +122,10 @@ jobs:
                   body: `Recovered at ${now}: every endpoint answers 200.\n\n${report}\n[probe run](${runUrl})` });
                 await github.rest.issues.update({ owner, repo, issue_number: issue.number, state: 'closed' });
                 core.notice(`Closed #${issue.number}: recovered`);
+                // One "recovered" message, only from the run that closes
+                // the issue (a healthy run with no open issue sends nothing).
+                core.setOutput('notify', 'true');
+                core.setOutput('kind', 'recovered');
               }
               return;
             }
@@ -131,6 +145,8 @@ jobs:
               if (Date.now() - new Date(last).getTime() >= 60 * 60 * 1000) {
                 await github.rest.issues.createComment({ owner, repo, issue_number: issue.number,
                   body: `Still failing. ${body}` });
+                core.setOutput('notify', 'true');
+                core.setOutput('kind', 'down');
               }
               core.setFailed(`Outage ongoing (#${issue.number})`);
               return;
@@ -154,4 +170,45 @@ jobs:
               core.warning(`Could not assign ${assignee}: ${e.message}`);
               created = await github.rest.issues.create(params);
             }
+            core.setOutput('notify', 'true');
+            core.setOutput('kind', 'down');
             core.setFailed(`Opened #${created.data.number}: ${failing} endpoint(s) down`);
+
+      - name: Notify Telegram (optional)
+        # Secrets cannot be tested in `if:`; the script below skips when unset.
+        # Fires when the issue step opened a new outage issue, posted its
+        # hourly "still failing" update, or closed the issue on recovery, so a
+        # long outage pings Telegram about once an hour (not every 10 minutes)
+        # and ends with one "recovered" message. always(): that step ends
+        # with core.setFailed on an outage, which would skip this one.
+        if: always() && steps.issue.outputs.notify == 'true'
+        shell: bash
+        env:
+          TG_TOKEN: ${{ secrets.UPTIME_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.UPTIME_TELEGRAM_CHAT_ID }}
+          REPORT: ${{ steps.probe.outputs.report }}
+          KIND: ${{ steps.issue.outputs.kind }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [[ -z "${TG_TOKEN:-}" || -z "${TG_CHAT:-}" ]]; then
+            echo "Telegram secrets not set; skipping."
+            exit 0
+          fi
+          if [[ "${KIND:-down}" == "recovered" ]]; then
+            headline="Pegana uptime probe: recovered, every endpoint answers 200"
+          else
+            headline="Pegana uptime probe: endpoint(s) down"
+          fi
+          text="${headline}"$'\n\n'"${REPORT}"$'\n'"${RUN_URL}"
+          # The token is only ever expanded inside the URL passed to curl, with
+          # xtrace off, and curl output is discarded so it cannot be echoed.
+          if curl -sS --max-time 15 -o /dev/null --fail \
+               --data-urlencode "chat_id=${TG_CHAT}" \
+               --data-urlencode "text=${text}" \
+               --data-urlencode "disable_web_page_preview=true" \
+               "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" 2>/dev/null; then
+            echo "Telegram notification sent."
+          else
+            echo "::warning::Telegram notification failed (check the secrets)."
+          fi

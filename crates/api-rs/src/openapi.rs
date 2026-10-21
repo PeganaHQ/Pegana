@@ -36,13 +36,14 @@ use utoipa::OpenApi;
         version = "1.0.0",
         description = "The peg-risk oracle for Solana. Read real-time peg state, \
                        history, and delivery health across the live \
-                       mainnet asset universe spanning 6 classes — LSTs, fiat / CDP / \
+                       mainnet asset universe spanning 6 classes; LSTs, fiat / CDP / \
                        delta-neutral / yield-bearing / FX stables, and a \
                        leveraged synthetic. Some assets are flagged \
                        `monitoring_only` (beta): their alerts are live but the \
                        calibration is provisional. Public read \
                        endpoints require no key and ARE rate-limited per IP \
-                       (60/min global by default, 10/min on /v1/audit.csv; the \
+                       (60/min global by default (production: 240), 10/min on \
+                       /v1/audit.csv; the \
                        live budget is the RateLimit-Limit header); exceeding the \
                        limit returns 429 with a Retry-After header. \
                        Every state transition emits a public receipt at \
@@ -53,7 +54,7 @@ use utoipa::OpenApi;
                        recovery transitions are never anchored, and some \
                        historical severe receipts carry no anchor. Check \
                        `onchain_tx_sig` or GET /v1/audit/{id}/onchain. EVERY \
-                       error response across the API is JSON — the envelope is \
+                       error response across the API is JSON; the envelope is \
                        `{error, message, asset?}` (the `ApiError` schema); branch \
                        on the stable `error` code, never on `message`; some codes \
                        add extra keys (e.g. `got`, `hint`, `alert_id`). Any \
@@ -164,9 +165,9 @@ use utoipa::OpenApi;
         (name = "Assets", description = "Public read access to asset state, history, and metadata"),
         (name = "Stats", description = "Aggregate counters and delivery health"),
         (name = "WebSocket", description = "Live state stream"),
-        (name = "audit", description = "Public receipts for alerts — methodology version, inputs frozen, replay bundles. All endpoints public, no auth, cacheable. ADR-0006 four-state response on /v1/audit/:id (200/202/404/410); ADR-0014 bounds (90-day max, 100-row max, 50k-row cap)."),
-        (name = "methodology", description = "Public lifecycle status of the active methodology — version + status (active/deprecated/broken) + optional fix_url when broken. Consumed by web/app/api/methodology to power the home-page trust strip."),
-        (name = "peg", description = "Peg-signal feed for tokens.xyz / aggregator consumption — a `data` array of per-asset signals (each carries its own `mint`). Public, no auth, cacheable. Honest beta status via `calibration` + `monitoring_only`; freshness via `updated_at` + `stale`."),
+        (name = "audit", description = "Public receipts for alerts; methodology version, inputs frozen, replay bundles. All endpoints public, no auth, cacheable. ADR-0006 four-state response on /v1/audit/:id (200/202/404/410); ADR-0014 bounds (90-day max, 100-row max, 50k-row cap)."),
+        (name = "methodology", description = "Public lifecycle status of the active methodology; version + status (active/deprecated/broken) + optional fix_url when broken. Consumed by web/app/api/methodology to power the home-page trust strip."),
+        (name = "peg", description = "Peg-signal feed for tokens.xyz / aggregator consumption; a `data` array of per-asset signals (each carries its own `mint`). Public, no auth, cacheable. Honest beta status via `calibration` + `monitoring_only`; freshness via `updated_at` + `stale`."),
     )
 )]
 pub struct ApiDoc;
@@ -241,7 +242,7 @@ mod tests {
     /// Codegen guard (Gecko API report 2026-06-10): OpenAPI operationIds MUST
     /// be globally unique. utoipa derives operationId from the handler fn name
     /// by default, so two handlers both named `list` (assets + audit) or
-    /// `detail` (assets + audit) silently collided — SDK generators
+    /// `detail` (assets + audit) silently collided; SDK generators
     /// (openapi-typescript-codegen, openapi-generator, Speakeasy, Fern) overwrite
     /// on duplicate operationId and drop one of each pair. Any new generically
     /// named handler fails here until it gets an explicit `operation_id = "..."`.
@@ -253,7 +254,7 @@ mod tests {
             let id = id.unwrap_or_else(|| panic!("{method} {path} has no operationId"));
             if let Some(prev) = seen.insert(id.clone(), format!("{method} {path}")) {
                 panic!(
-                    "duplicate operationId `{id}`: [{method} {path}] collides with [{prev}] — \
+                    "duplicate operationId `{id}`: [{method} {path}] collides with [{prev}]; \
                      give one an explicit operation_id = \"...\" in #[utoipa::path]"
                 );
             }
@@ -384,7 +385,7 @@ mod tests {
     }
 
     /// Lockstep guard (deep-audit 2026-06-10): the audit-detail receipt schema
-    /// must mirror the runtime `json!` body — real typed sub-objects, not the
+    /// must mirror the runtime `json!` body; real typed sub-objects, not the
     /// old opaque `{alert:{}, evidence:{}}`. If the handler body and these
     /// structs drift, this is the early warning.
     #[test]
@@ -426,9 +427,36 @@ mod tests {
         }
     }
 
+    /// Round-3 F1: simulate-depeg's `liquidatable_usd` / `positions` are
+    /// required-but-nullable (null = unknown coverage, not zero), so generated
+    /// SDKs type them as optional values instead of strings that are always set.
+    #[test]
+    fn simulate_depeg_totals_are_nullable() {
+        let doc = ApiDoc::openapi();
+        let json = serde_json::to_value(&doc).unwrap();
+        let schema = &json["components"]["schemas"]["SimulateDepegResponse"];
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        for k in ["liquidatable_usd", "positions"] {
+            let prop = &schema["properties"][k];
+            let text = prop.to_string();
+            assert!(text.contains("null"), "{k} must be nullable: {text}");
+            let desc = prop["description"].as_str().unwrap_or_default();
+            assert!(
+                desc.contains("`null`") && desc.contains("unknown"),
+                "{k} must say null means unknown, not zero: {text}"
+            );
+            assert!(required.contains(&k), "{k} is always serialized");
+        }
+    }
+
     /// Envelope contract guard (F1 of the `/v1` reshape): every list endpoint's
-    /// 200 body is the uniform `ApiList` envelope — a top-level OBJECT with
-    /// `ok` / `generated_at` / `count` and a `data` ARRAY — not a bare array.
+    /// 200 body is the uniform `ApiList` envelope; a top-level OBJECT with
+    /// `ok` / `generated_at` / `count` and a `data` ARRAY; not a bare array.
     /// utoipa 5 registers each generic instantiation as a named component
     /// (`ApiList_AssetCard`, …) and `$ref`s it; resolving the ref proves the
     /// component exists (no dangling `$ref`) and carries the envelope shape.
@@ -447,7 +475,7 @@ mod tests {
                     let target = &schemas[name];
                     assert!(
                         !target.is_null(),
-                        "dangling $ref `{r}` — component `{name}` not in the spec"
+                        "dangling $ref `{r}`; component `{name}` not in the spec"
                     );
                     target.clone()
                 }
@@ -474,13 +502,13 @@ mod tests {
             for key in ["ok", "generated_at", "count", "data"] {
                 assert!(
                     props.get(key).is_some(),
-                    "{path} 200 envelope missing `{key}` — schema was {schema}"
+                    "{path} 200 envelope missing `{key}`; schema was {schema}"
                 );
             }
             assert_eq!(
                 props["data"]["type"].as_str(),
                 Some("array"),
-                "{path} 200 `data` must be an array — schema was {schema}"
+                "{path} 200 `data` must be an array; schema was {schema}"
             );
         }
     }
@@ -522,7 +550,7 @@ mod tests {
         assert_eq!(
             paths.len(),
             24,
-            "unique OpenAPI path count changed — a route may be missing its #[utoipa::path]"
+            "unique OpenAPI path count changed; a route may be missing its #[utoipa::path]"
         );
     }
 }

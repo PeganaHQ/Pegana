@@ -74,7 +74,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[Any | AuditDetailResponse | AuditGoneResponse | AuditPendingResponse]:
-    """`GET /v1/audit/{alert_id}` — single receipt with ADR-0006 four-state
+    """`GET /v1/audit/{alert_id}`; single receipt with ADR-0006 four-state
     discrimination.
 
      Returns `Response` (not `Json`) so each status path can carry distinct
@@ -108,7 +108,7 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
 ) -> Any | AuditDetailResponse | AuditGoneResponse | AuditPendingResponse | None:
-    """`GET /v1/audit/{alert_id}` — single receipt with ADR-0006 four-state
+    """`GET /v1/audit/{alert_id}`; single receipt with ADR-0006 four-state
     discrimination.
 
      Returns `Response` (not `Json`) so each status path can carry distinct
@@ -137,7 +137,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[Any | AuditDetailResponse | AuditGoneResponse | AuditPendingResponse]:
-    """`GET /v1/audit/{alert_id}` — single receipt with ADR-0006 four-state
+    """`GET /v1/audit/{alert_id}`; single receipt with ADR-0006 four-state
     discrimination.
 
      Returns `Response` (not `Json`) so each status path can carry distinct
@@ -169,7 +169,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
 ) -> Any | AuditDetailResponse | AuditGoneResponse | AuditPendingResponse | None:
-    """`GET /v1/audit/{alert_id}` — single receipt with ADR-0006 four-state
+    """`GET /v1/audit/{alert_id}`; single receipt with ADR-0006 four-state
     discrimination.
 
      Returns `Response` (not `Json`) so each status path can carry distinct

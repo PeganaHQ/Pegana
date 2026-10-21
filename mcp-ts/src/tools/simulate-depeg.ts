@@ -21,7 +21,7 @@ export const simulateDepegTool = {
   description:
     "Free. Estimates the cross-protocol liquidation CASCADE if an asset depegs: `{ asset, shock_bps, loop_exposure_usd, liquidatable_usd, positions, coverage, by_protocol[], advisory_note }`. " +
     "`shock_bps` MUST be one of 100|250|500|1000|2000 (a preset grid, no continuous sweep). `liquidatable_usd` = TOTAL collateral (not only the leveraged share) of the positions in health-factor bands that cross their liquidation threshold at that shock, across Kamino + Jupiter Lend. `loop_exposure_usd` is the leveraged collateral only (same as `get_loop_exposure`), so `liquidatable_usd` can exceed it; do not read their ratio as a share. " +
-    "This is an ADVISORY model estimate, NOT a verifiable peg receipt; risky bands may be privacy-suppressed (coverage:partial), and slippage/bad-debt is not yet modelled. Anonymous + aggregate only (ADR-0036). `stale: true` (with `data_age_sec`) means the liquidation bands are older than 2h: treat the estimate as last-known, not current. Example: { symbol: \"hyUSD\", shock_bps: 500 }.",
+    "This is an ADVISORY model estimate, NOT a verifiable peg receipt; risky bands may be privacy-suppressed (coverage:partial), and slippage/bad-debt is not yet modelled. Anonymous + aggregate only (ADR-0036). `stale: true` (with `data_age_sec`) means the liquidation bands are older than 2h: treat the estimate as last-known, not current. When `coverage` is `unknown` (no fresh health-factor bands) the liquidatable amount is not known: `liquidatable_usd` and `positions` are null on API builds that report it that way, which is different from `\"0\"` (nothing liquidates). Example: { symbol: \"jitoSOL\", shock_bps: 500 }.",
   inputSchema: {
     symbol: symbolSchema().describe("Case-sensitive asset symbol (run get_assets to enumerate)."),
     shock_bps: z
@@ -38,18 +38,24 @@ export const simulateDepegTool = {
     loop_exposure_usd: z
       .string()
       .describe("Leveraged collateral stacked on the asset (USD decimal string), for context."),
+    // Nullable (back-compatible widening): the API reports null, not "0",
+    // when coverage is unknown and the liquidatable amount is not known.
     liquidatable_usd: z
       .string()
+      .nullable()
       .describe(
-        "Total collateral (USD decimal string) of positions in HF bands that liquidate at this shock. Not limited to the leveraged share, so it can exceed loop_exposure_usd.",
+        "Total collateral (USD decimal string) of positions in HF bands that liquidate at this shock. Not limited to the leveraged share, so it can exceed loop_exposure_usd. Null when coverage is unknown (amount not known, not zero).",
       ),
-    positions: z.string(),
+    positions: z
+      .string()
+      .nullable()
+      .describe("Bucketed position count (e.g. `<5`, `5-20`, `>50`). Null when coverage is unknown."),
     coverage: z.string(),
     by_protocol: z.array(
       z.object({
         protocol: z.string(),
-        liquidatable_usd: z.string(),
-        positions: z.string(),
+        liquidatable_usd: z.string().nullable(),
+        positions: z.string().nullable(),
       }),
     ),
     advisory_note: z.string(),

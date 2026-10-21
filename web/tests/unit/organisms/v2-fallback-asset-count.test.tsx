@@ -67,7 +67,7 @@ describe("V2 asset count when the live list is unavailable", () => {
     expect(screen.queryByText("69")).toBeNull();
     expect(
       screen.getByText(
-        "assets monitored across stables, LSTs, yield, CDP and synthetic classes",
+        "assets monitored across stables, LSTs, yield, CDP and delta-neutral classes",
       ),
     ).toBeInTheDocument();
   });

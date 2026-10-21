@@ -12,7 +12,7 @@ import {
 import { PillGhost } from "@/components/organisms/v2/shared";
 import { cn } from "@/lib/utils/cn";
 import { displaySymbol } from "@/lib/asset/display-symbol";
-import { apiBase } from "@/lib/api/base";
+import { api } from "@/lib/api/client";
 
 // Re-platformed onto V5 (Wave 2B, 2026-07-16): PageHeroV2 header, pill-tab
 // pickers (`.v2-in-ptabs`/`.v2-in-ptab`, same pattern as /agents'
@@ -36,8 +36,6 @@ const FALLBACK_ASSETS = [
   "USDe",
 ];
 
-const API_BASE = apiBase();
-
 const THEME_OPTIONS = ["dark", "light"] as const;
 const SPARKLINE_OPTIONS: ReadonlyArray<{ value: boolean; label: string }> = [
   { value: true, label: "On" },
@@ -52,22 +50,23 @@ export function EmbedClient() {
 
   // Populate the picker from the live universe (/v1/assets) so the generator
   // always reflects 63+ assets instead of the hardcoded 10-symbol fallback.
+  // Goes through the shared client so it joins the tab-wide 429 gate
+  // (lib/api/freshness.ts) and the shared /v1/assets request.
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_BASE}/v1/assets`, {
-      headers: { Accept: "application/json" },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body: { data: Array<{ symbol: string }> } | null) => {
-        if (cancelled || !body) return;
-        const symbols = body.data
+    api
+      .assets()
+      .then((list) => {
+        if (cancelled) return;
+        const symbols = list
           .map((a) => a.symbol)
           .filter((s) => typeof s === "string" && s.length > 0)
           .sort();
         if (symbols.length > 0) setAssets(symbols);
       })
       .catch(() => {
-        // API unreachable — stay on FALLBACK_ASSETS, no error surface needed.
+        // API unreachable or asked us to slow down: stay on FALLBACK_ASSETS,
+        // no error surface needed.
       });
     return () => {
       cancelled = true;
@@ -226,7 +225,7 @@ export function EmbedClient() {
 
             <SubsectionV2 label="Markdown (for README / GitHub Pages)">
               <CodeBlockV2 label="README.md" code={markdownSnippet} />
-              <p className="mt-3 font-mono text-[10.5px] uppercase tracking-[0.08em] text-[var(--v2-muted)]">
+              <p className="mt-3 font-mono text-[12px] uppercase tracking-[0.08em] text-[var(--v2-muted)]">
                 SVG badge - works as a static &lt;img&gt; in GitHub READMEs and
                 any markdown renderer. The Theme + Sparkline controls above
                 don&apos;t apply here: the SVG always renders a compact flat
@@ -310,7 +309,7 @@ function FieldV2({
 }) {
   return (
     <div>
-      <label className="block font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--v2-muted)]">
+      <label className="block font-mono text-[12px] uppercase tracking-[0.1em] text-[var(--v2-muted)]">
         {label}
       </label>
       <div className="mt-2.5">{children}</div>
@@ -327,7 +326,7 @@ function SubsectionV2({
 }) {
   return (
     <div>
-      <h3 className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--v2-muted)]">
+      <h3 className="mb-3 font-mono text-[12px] uppercase tracking-[0.12em] text-[var(--v2-muted)]">
         {label}
       </h3>
       {children}
@@ -356,23 +355,23 @@ function SeenOnStrip() {
       className="mt-10 border-y border-[var(--v2-line)] py-6 sm:mt-12 sm:py-7"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-7">
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--v2-muted)]">
+        <span className="font-mono text-[12px] uppercase tracking-[0.14em] text-[var(--v2-muted)]">
           Drop on any peg-sensitive surface
         </span>
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Inline, always-visible framing — carries the "these are examples,
               not adopters" meaning in the label itself, not a footnote. */}
-          <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--v2-muted)]">
+          <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-[var(--v2-muted)]">
             e.g.
           </span>
           {SEEN_ON_TARGETS.map((t) => (
             <span
               key={t.name}
-              className="inline-flex items-center gap-2 rounded-full border border-dashed border-[var(--v2-line2)] px-2.5 py-1.5 font-mono text-[11px] text-[var(--v2-muted)]"
+              className="inline-flex items-center gap-2 rounded-full border border-dashed border-[var(--v2-line2)] px-2.5 py-1.5 font-mono text-[12px] text-[var(--v2-muted)]"
             >
               <span
                 aria-hidden
-                className="grid h-5 w-5 place-items-center rounded-full border border-dashed border-[var(--v2-line2)] text-[9px] font-medium tracking-[0.04em] text-[var(--v2-muted)]"
+                className="grid h-6 w-6 place-items-center rounded-full border border-dashed border-[var(--v2-line2)] text-[12px] font-medium tracking-[0.04em] text-[var(--v2-muted)]"
               >
                 {t.mono}
               </span>
@@ -384,7 +383,7 @@ function SeenOnStrip() {
           </PillGhost>
         </div>
       </div>
-      <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--v2-muted)]">
+      <p className="mt-3 font-mono text-[12px] uppercase tracking-[0.08em] text-[var(--v2-muted)]">
         Example integrations - not adopters. Ping us when you ship and
         we&apos;ll wire a backlink to your dashboard.
       </p>

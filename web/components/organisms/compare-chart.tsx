@@ -11,6 +11,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useHistoryRange } from "@/lib/hooks/use-history-range";
+import { useHistoryStart } from "@/lib/hooks/use-history-start";
 import { historyCoverageNote } from "@/lib/asset/history-range";
 import type { ChartBucket } from "@/lib/asset/chart-bucket";
 
@@ -66,22 +67,33 @@ export function CompareChart({
   const r1 = useHistoryRange(symbols[1] ?? null, range, pageCap);
   const r2 = useHistoryRange(symbols[2] ?? null, range, pageCap);
   const r3 = useHistoryRange(symbols[3] ?? null, range, pageCap);
+  // Each series' own history start, so a later-added asset's note names its
+  // real first row instead of the global one.
+  const h0 = useHistoryStart(symbols[0] ?? null);
+  const h1 = useHistoryStart(symbols[1] ?? null);
+  const h2 = useHistoryStart(symbols[2] ?? null);
+  const h3 = useHistoryStart(symbols[3] ?? null);
   const s0 = { data: r0.data?.points, isLoading: r0.isLoading };
   const s1 = { data: r1.data?.points, isLoading: r1.isLoading };
   const s2 = { data: r2.data?.points, isLoading: r2.isLoading };
   const s3 = { data: r3.data?.points, isLoading: r3.isLoading };
   const responses = [s0, s1, s2, s3];
   const coverageNote = useMemo(() => {
-    for (const r of [r0.data, r1.data, r2.data, r3.data].slice(
-      0,
-      symbols.length,
-    )) {
+    const starts = [h0, h1, h2, h3];
+    for (const [i, r] of [r0.data, r1.data, r2.data, r3.data]
+      .slice(0, symbols.length)
+      .entries()) {
       if (!r) continue;
-      const note = historyCoverageNote(r.points, r.fromMs, r.truncated);
+      const note = historyCoverageNote(
+        r.points,
+        r.fromMs,
+        r.truncated,
+        starts[i] ?? null,
+      );
       if (note) return note;
     }
     return null;
-  }, [symbols.length, r0.data, r1.data, r2.data, r3.data]);
+  }, [symbols.length, r0.data, r1.data, r2.data, r3.data, h0, h1, h2, h3]);
 
   const seriesData = useMemo<Record<string, Sample[]>>(() => {
     // Depend on the stable per-series `.data` refs below, not the `responses`

@@ -19,19 +19,28 @@ T = TypeVar("T", bound="SimulateDepegResponse")
 class SimulateDepegResponse:
     """
     Attributes:
-        advisory_note (str): ADR-0036 inv.9 — advisory model estimate, not a verifiable receipt.
+        advisory_note (str): ADR-0036 inv.9; advisory model estimate, not a verifiable receipt.
         asset (str):
-        by_protocol (list[SimulateByProtocol]):
-        coverage (str): `full` | `partial` | `unknown`. `partial` whenever risky bands were
-            k-floor-dropped or dominance-suppressed (the honest ADR-0036 posture).
-        liquidatable_usd (str): Collateral (USD) of this asset in every borrowing position (looped or
+        by_protocol (list[SimulateByProtocol]): Per-protocol breakdown. Empty when `coverage` is `unknown`.
+        coverage (str): `partial` | `unknown`. `partial` whenever fresh bands exist (risky
+            bands may be k-floor-dropped or dominance-suppressed, the honest
+            ADR-0036 posture, so this is never `full`). `unknown` when no
+            health-factor band is fresh: `liquidatable_usd` and `positions` are then
+            `null` and `by_protocol` is empty, like the omitted `/loop-exposure`
+            cascade.
+        liquidatable_usd (None | str): Collateral (USD) of this asset in every borrowing position (looped or
             not) whose health-factor band crosses 1 at this shock. Not a subset of
             `loop_exposure_usd`: a plain deposit-and-borrow position counts here but
             not there, so this value can exceed `loop_exposure_usd`.
+
+            `null` when `coverage` is `unknown` (no fresh health-factor bands): the
+            cascade is NOT KNOWN, which is not the same as zero. Never read `null`
+            as "nothing liquidates".
         loop_exposure_usd (str): Total leveraged collateral across protocols (context, from loop-exposure).
             Counts leverage loops only (e.g. Kamino multiply pairs), so it is a
             NARROWER basis than `liquidatable_usd` and is not its upper bound.
-        positions (str): Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
+        positions (None | str): Bucketed range of affected positions (ADR-0036 inv.8; never a raw
+            count). `null` when `coverage` is `unknown`: unknown, not "<5".
         shock_bps (int):
         updated_at (None | str | Unset):
     """
@@ -40,9 +49,9 @@ class SimulateDepegResponse:
     asset: str
     by_protocol: list[SimulateByProtocol]
     coverage: str
-    liquidatable_usd: str
+    liquidatable_usd: None | str
     loop_exposure_usd: str
-    positions: str
+    positions: None | str
     shock_bps: int
     updated_at: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -59,10 +68,12 @@ class SimulateDepegResponse:
 
         coverage = self.coverage
 
+        liquidatable_usd: None | str
         liquidatable_usd = self.liquidatable_usd
 
         loop_exposure_usd = self.loop_exposure_usd
 
+        positions: None | str
         positions = self.positions
 
         shock_bps = self.shock_bps
@@ -110,11 +121,21 @@ class SimulateDepegResponse:
 
         coverage = d.pop("coverage")
 
-        liquidatable_usd = d.pop("liquidatable_usd")
+        def _parse_liquidatable_usd(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        liquidatable_usd = _parse_liquidatable_usd(d.pop("liquidatable_usd"))
 
         loop_exposure_usd = d.pop("loop_exposure_usd")
 
-        positions = d.pop("positions")
+        def _parse_positions(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        positions = _parse_positions(d.pop("positions"))
 
         shock_bps = d.pop("shock_bps")
 

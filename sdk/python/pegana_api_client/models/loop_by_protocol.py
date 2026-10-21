@@ -20,11 +20,11 @@ class LoopByProtocol:
         coverage (str):
         protocol (str):
         ts (datetime.datetime):
-        collateral_lev_usd (None | str | Unset): Leveraged collateral (USD) — the "loop" exposure to this asset.
+        collateral_lev_usd (None | str | Unset): Leveraged collateral (USD); the "loop" exposure to this asset.
         collateral_usd (None | str | Unset): Total collateral supplied (USD), of which `collateral_lev_usd` is
             leveraged.
         debt_usd (None | str | Unset): Asset borrowed/shorted (USD).
-        positions (None | str | Unset): k-floored obligation-count RANGE (ADR-0036 inv.7 — never a raw count).
+        positions (None | str | Unset): k-floored obligation-count RANGE (ADR-0036 inv.7; never a raw count).
     """
 
     coverage: str

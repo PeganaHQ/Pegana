@@ -12,7 +12,11 @@ import { pool } from "@/db";
 import { normalizePegState } from "@/shared/types";
 import { normalizeDecimal } from "@/shared/decimal";
 import { symbolSchema } from "@/shared/symbol";
-import { isNonPublicSymbol, missingSnapshotMessage } from "@/shared/asset-registry";
+import {
+  isNonPublicSymbol,
+  missingSnapshotMessage,
+  registryEntry,
+} from "@/shared/asset-registry";
 
 const PEG_STATES = [
   "PEGGED",
@@ -125,6 +129,16 @@ function evidenceStatusOf(v: string | undefined): EvidenceStatus | undefined {
     : undefined;
 }
 
+/**
+ * "not tracked" error naming every unknown symbol, worded like the other
+ * tools (missingSnapshotMessage) so agents can match one phrase.
+ */
+function unknownSymbolsMessage(symbols: string[]): string {
+  if (symbols.length === 1) return missingSnapshotMessage(symbols[0]!, "events");
+  const list = symbols.map((s) => `'${s}'`).join(", ");
+  return `Error: assets ${list} not tracked. Use get_assets() to list tracked symbols.`;
+}
+
 /** Test seam: reset the privilege fallback between cases. */
 export function __resetReceiptStateForTests(): void {
   receiptStateUnreadable = false;
@@ -140,6 +154,7 @@ export const subscribePegEventsTool = {
     "Polling pattern: call with `since_ts = next_cursor` on each subsequent call to walk the stream without gaps. " +
     'Example: `{ symbols: ["jitoSOL", "USDe"], since_ts: 0, threshold_bps: 25 }` → all state transitions for jitoSOL or USDe where |discount| ≥ 25bps. ' +
     "Use this for alerting agents, peg-aware trading bots, or post-incident review. " +
+    "Returns `isError: true` naming the symbol(s) if any requested symbol is not tracked (symbols are case-sensitive; call `get_assets` to enumerate them). " +
     "Each event includes `evidence_url`, the public audit page for the alert, and `evidence_status`: only `ready` events have a verifiable receipt (some alerts have no persisted receipt, `missing`; a just-created alert can show `missing` for a moment before its receipt lands).",
   inputSchema: {
     symbols: z
@@ -227,6 +242,21 @@ export async function handleSubscribePegEvents(
       receiptStateUnreadable = true;
       result = await eventsPool.query<AlertEventRow>(eventsSql(false), params);
     }
+  }
+  // R3 audit R3-MCP-03: an unknown or mistyped symbol used to return success
+  // with zero events, indistinguishable from "no transitions yet". Same rule
+  // as get_asset_history: a symbol is unknown when this build's registry does
+  // not list it AND the query returned no row for it (an asset added after
+  // this build still has rows, so a registry miss alone is not enough).
+  const seen = new Set(result.rows.map((r) => r.asset));
+  const unknown = [...new Set(args.symbols)].filter(
+    (s) => !registryEntry(s) && !seen.has(s),
+  );
+  if (unknown.length > 0) {
+    return {
+      content: [{ type: "text" as const, text: unknownSymbolsMessage(unknown) }],
+      isError: true as const,
+    };
   }
   // Defence in depth: never emit rows for an off-surface asset (xSOL), even if
   // the symbol filter is ever widened or dropped.

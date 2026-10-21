@@ -5,7 +5,7 @@ description: "Soft per-IP limit with RateLimit-* headers on every response, so y
 
 Public read endpoints require no API key but **are** rate-limited per IP:
 
-- **60 requests/min** globally per IP (the live `RateLimit-Limit` value; always read the header rather than hard-coding it).
+- **240 requests a minute per IP** globally (see the `RateLimit-Limit` header; always read the header rather than hard-coding it).
 - **10 requests/min** on `GET /v1/audit.csv` (the bulk export, per ADR-0014).
 - `GET /healthz` and `GET /readyz` are exempt, so uptime monitors can poll freely.
 
@@ -42,7 +42,7 @@ Exceeding the limit returns **`429`** with the JSON [error envelope](/guides/err
 long, then resume.
 
 ```json
-{ "error": "rate_limited", "message": "rate limit exceeded — retry after the window resets (see Retry-After)" }
+{ "error": "rate_limited", "message": "rate limit exceeded; retry after the window resets (see Retry-After)" }
 ```
 
 <Warning>

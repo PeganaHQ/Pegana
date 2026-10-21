@@ -33,13 +33,13 @@ pub enum PegState {
     DEPEG,
     CRITICAL,
     BLACK_SWAN,
-    /// Startup sentinel — emitted before the first discount snapshot exists, or
+    /// Startup sentinel; emitted before the first discount snapshot exists, or
     /// when every input feed is too stale/degraded to compute a discount.
     UNKNOWN,
 }
 
 /// Pyth oracle confidence bucket. Mirrors `pyth_confidence_label`. Scopes the
-/// PRICE-ORACLE confidence interval only (conf/price ratio) — NOT market-quote
+/// PRICE-ORACLE confidence interval only (conf/price ratio); NOT market-quote
 /// or route-depth reliability.
 #[derive(ToSchema)]
 #[allow(non_camel_case_types, dead_code)]
@@ -47,18 +47,18 @@ pub enum Confidence {
     high,
     medium,
     low,
-    /// A missing / stale / zero feed — confidence could not be computed. Ranks
+    /// A missing / stale / zero feed; confidence could not be computed. Ranks
     /// strictest, so a partially-degraded multi-feed asset collapses here.
     unknown,
 }
 
 /// Calibration status of an asset (and of an alert that asset emitted).
 ///
-/// - `provisional` — a "beta" asset: released and alerting publicly, but its
+/// - `provisional`: a "beta" asset: released and alerting publicly, but its
 ///   thresholds are not yet validated over a full post-launch calibration
 ///   window. Equivalent to `monitoring_only=true`. Read its alerts as
 ///   experimental.
-/// - `calibrated` — a fully calibrated asset that counts in the launch
+/// - `calibrated`: a fully calibrated asset that counts in the launch
 ///   denominator.
 ///
 /// This is the SAME vocabulary the dispatcher emits on the webhook canonical
@@ -87,14 +87,14 @@ pub fn calibration_label(monitoring_only: bool) -> &'static str {
 /// Peg anchor tells a consumer how to interpret the asset's fair value WITHOUT
 /// knowing Pegana's internal taxonomy:
 ///
-/// - `"USD"` — the asset targets exactly $1 (fiat-backed, RWA, delta-neutral,
+/// - `"USD"`: the asset targets exactly $1 (fiat-backed, RWA, delta-neutral,
 ///   and CDP stablecoins). A discount from $1 IS the risk signal.
 ///
-/// - `"FX"` — the asset targets a fixed non-USD fiat exchange rate (e.g.
+/// - `"FX"`: the asset targets a fixed non-USD fiat exchange rate (e.g.
 ///   EURC→EUR, BRZ→BRL). Read `peg_target` for the specific currency. A
 ///   discount from the FX rate IS the risk signal.
 ///
-/// - `"NAV"` — the asset's fair value is its intrinsic redemption/net-asset
+/// - `"NAV"`: the asset's fair value is its intrinsic redemption/net-asset
 ///   value, which is NOT a fixed fiat rate (LSTs, yield-bearing stables,
 ///   synthetic leverage). The discount is relative to NAV, and NAV itself
 ///   moves.
@@ -105,12 +105,12 @@ pub fn calibration_label(monitoring_only: bool) -> &'static str {
 #[derive(ToSchema)]
 #[allow(non_camel_case_types, dead_code, clippy::upper_case_acronyms)]
 pub enum Anchor {
-    /// Fixed $1 target — fiat-backed, RWA, delta-neutral, CDP stablecoins.
+    /// Fixed $1 target; fiat-backed, RWA, delta-neutral, CDP stablecoins.
     USD,
     /// Fixed non-USD fiat exchange-rate peg (e.g. EURC→EUR, BRZ→BRL).
     /// Read `peg_target` for the specific currency.
     FX,
-    /// Intrinsic redemption/net-asset value — LSTs, yield-bearing stables,
+    /// Intrinsic redemption/net-asset value; LSTs, yield-bearing stables,
     /// synthetic leverage. Fair value is NOT pegged to a fixed fiat rate.
     NAV,
 }
@@ -118,7 +118,7 @@ pub enum Anchor {
 /// Which direction of the signed `discount` can move this asset's published
 /// `state`.
 ///
-/// - `"below"` — only a discount (market BELOW the peg/anchor) is a risk
+/// - `"below"`: only a discount (market BELOW the peg/anchor) is a risk
 ///   signal. A premium never escalates the state. This covers USD and FX
 ///   anchors, and also every NAV class today (LSTs, yield-bearing stables,
 ///   synthetic leverage): for those the engine treats a premium as
@@ -126,7 +126,7 @@ pub enum Anchor {
 ///   `discount` on them is NOT a missed alert. An implausibly large premium on
 ///   an LST or yield stable is reported as `UNKNOWN` (`state_reason:
 ///   premium_sanity`), not as a depeg.
-/// - `"either"` — both a discount and a premium can escalate the state.
+/// - `"either"`: both a discount and a premium can escalate the state.
 ///   Reserved for a NAV-anchored class without the premium carve-out; no
 ///   tracked class uses it today.
 #[derive(ToSchema)]
@@ -144,7 +144,7 @@ pub enum RiskSide {
 /// hold an anchor.
 ///
 /// On an unexpected anchor string (should not occur given the closed set) this
-/// returns `"below"` — the conservative default that avoids implying a premium
+/// returns `"below"`; the conservative default that avoids implying a premium
 /// is safe when we don't know the anchor semantics.
 pub fn risk_side_for_anchor(anchor: &str) -> &'static str {
     match anchor {
@@ -170,8 +170,8 @@ pub fn risk_side_for_class(class: &str) -> &'static str {
 /// Map `asset_class` (as the text string stored in and returned by Postgres)
 /// to the consumer-facing `anchor` value (`"USD"`, `"FX"`, or `"NAV"`).
 ///
-/// Delegates to `AssetClass::anchor()` — the canonical, compile-time-
-/// exhaustive mapping in `common-verify` — so this function is the ONLY place
+/// Delegates to `AssetClass::anchor()`; the canonical, compile-time-
+/// exhaustive mapping in `common-verify`; so this function is the ONLY place
 /// that bridges the stringly-typed Postgres text to the typed enum.  On a
 /// successful parse the enum's exhaustive `match` handles the mapping; on an
 /// unknown/future class string the conservative `"NAV"` fallback fires here

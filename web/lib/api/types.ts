@@ -192,6 +192,9 @@ export interface AssetStateResp {
   asset: string;
   state: PegState;
   since: string;
+  /** The asset's first stored history row. Later than the global history
+   *  start for assets added after the 2026-10-17 rebuild. */
+  history_start?: string | null;
   discount: string;
   intrinsic_usd: string;
   market_usd: string;

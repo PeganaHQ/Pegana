@@ -64,7 +64,7 @@ pub fn opt_dec_18<S: Serializer>(v: &Option<Decimal>, s: S) -> Result<S::Ok, S::
 /// USD-aggregate `Decimal` → decimal string rounded to the cent, then
 /// normalized so whole amounts stay clean (`1000000` not `1000000.00`).
 /// For `market_cap`, `loop_exposure_usd`, `liquidatable_usd`, `collateral_usd`,
-/// `debt_usd` — where sub-cent precision is noise.
+/// `debt_usd`; where sub-cent precision is noise.
 pub fn dec_money2<S: Serializer>(v: &Decimal, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(&v.round_dp(2).normalize().to_string())
 }

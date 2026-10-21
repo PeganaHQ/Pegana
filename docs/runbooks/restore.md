@@ -78,8 +78,8 @@ any non-zero exit (when `SENTRY_DSN` is set).
 A custom-format dump of a TimescaleDB database restores cleanly only into the
 **same TimescaleDB extension version** it was taken with. The 2026-09-30 dump
 failed exactly this way (`hypertable_num_dimensions_check` and FK violations
-in `_timescaledb_catalog` when restored into 2.29.0; see
-[`2026-10-20-audit-history-restore-plan.md`](../ops/2026-10-20-audit-history-restore-plan.md)).
+in `_timescaledb_catalog` when restored into 2.29.0; the dated restore plan is
+withheld from the public mirror).
 A database's extension version is whatever `CREATE`/`ALTER EXTENSION` last
 set, which can lag the image, so the image pin alone does not tell you the
 dump's version.

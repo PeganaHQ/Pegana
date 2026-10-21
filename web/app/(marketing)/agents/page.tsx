@@ -43,28 +43,80 @@ async function loadMethodologyVersion(): Promise<string | null> {
   }
 }
 
-const VERIFY_CODE = `const receipt = await mcp.callTool("verify_alert", {
-  alert_id: alertUuid,
-});
+// Both samples run as-is on @modelcontextprotocol/sdk 1.32 against the live
+// server (bun, 2026-10-21): Client + StreamableHTTPClientTransport, and
+// callTool({ name, arguments }).
+const VERIFY_CODE = `import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-// verify_alert wraps its output: { result: { alert, evidence, evidence_status } }
-const { evidence, evidence_status } = receipt.structuredContent.result;
-if (!evidence) throw new Error(\`receipt not ready: \${evidence_status}\`);
+// From subscribe_peg_events (event.id) or the last segment of /audit/<id>.
+const alertId = "d60a7d12-2941-4cbe-ad0b-87c1ea781340";
+
+const mcp = new Client({ name: "my-agent", version: "1.0.0" });
+await mcp.connect(
+  new StreamableHTTPClientTransport(new URL("https://mcp.pegana.xyz/")),
+);
+
+const res = await mcp.callTool({
+  name: "verify_alert",
+  arguments: { alert_id: alertId },
+});
+// The receipt is wrapped: { result: { alert, evidence, evidence_status } }.
+// Pending, failed and missing receipts come back in the same \`result\` field.
+const { result } = res.structuredContent as { result: any };
+if (res.isError || result.evidence_status !== "ready") {
+  throw new Error(\`receipt not ready: \${JSON.stringify(result)}\`);
+}
+const { alert, evidence } = result;
+console.log(\`\${alert.asset}: \${alert.from_state} -> \${alert.to_state}\`);
 console.log("methodology:", evidence.methodology_version);
 console.log("receipt sha256:", evidence.receipt_sha256);
-console.log("on-chain:", evidence.onchain_tx_sig ?? "pending");`;
+console.log("on-chain:", evidence.onchain_tx_sig ?? evidence.commit_status);
+await mcp.close();`;
 
-const SUBSCRIBE_CODE = `const events = await mcp.callTool("subscribe_peg_events", {
-  symbols: ["USDe", "PYUSD", "USDS"],
-  since_ts: lastCursor,
-  threshold_bps: 50,
+const SUBSCRIBE_CODE = `import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+type PegEvent = {
+  id: string;
+  asset: string;
+  to_state: "PEGGED" | "DRIFT" | "DEPEG" | "CRITICAL" | "BLACK_SWAN" | "UNKNOWN";
+  evidence_url: string;
+};
+
+const mcp = new Client({ name: "my-agent", version: "1.0.0" });
+await mcp.connect(
+  new StreamableHTTPClientTransport(new URL("https://mcp.pegana.xyz/")),
+);
+
+// Severe states halt. UNKNOWN means no trustworthy signal: fail safe, halt too.
+const HALT = new Set(["DEPEG", "CRITICAL", "BLACK_SWAN", "UNKNOWN"]);
+let cursor = 0; // persist next_cursor between polls
+
+const res = await mcp.callTool({
+  name: "subscribe_peg_events",
+  // No threshold_bps: a move to UNKNOWN can carry a small discount, and a
+  // threshold would filter out the very event the fail-safe needs.
+  arguments: { symbols: ["USDe", "PYUSD", "USDS"], since_ts: cursor },
 });
+if (res.isError) throw new Error(JSON.stringify(res.structuredContent));
+const { events, next_cursor } = res.structuredContent as {
+  events: PegEvent[];
+  next_cursor: number;
+};
+cursor = next_cursor;
 
-for (const e of events.structuredContent.events) {
-  if (e.to_state === "DRIFT" || e.to_state === "DEPEG") {
-    await haltAllocation(e.asset); // cite e.evidence_url
+// Events arrive oldest first: act on each asset's latest state only.
+const latest = new Map<string, PegEvent>();
+for (const e of events) latest.set(e.asset, e);
+for (const e of latest.values()) {
+  if (HALT.has(e.to_state)) {
+    console.log(\`halt \${e.asset}: \${e.to_state}, evidence \${e.evidence_url}\`);
+  } else {
+    console.log(\`ok \${e.asset}: \${e.to_state}\`);
   }
-}`;
+}
+await mcp.close();`;
 
 const REST_CODE = `curl -s ${REST_BASE}/v1/audit/<UUID> | jq .
 
@@ -172,7 +224,7 @@ export default async function AgentsPage() {
           the endpoint into your MCP client.
         </p>
         <CodeBlockV2 label="mcp endpoint" code={MCP_CODE} />
-        <p className="font-mono text-[11.5px] text-[var(--v2-dim)]">
+        <p className="font-mono text-[12px] text-[var(--v2-dim)]">
           Pegana is a verifiable computation log. Not SOC 2, not a regulatory
           audit, not financial advice.
         </p>

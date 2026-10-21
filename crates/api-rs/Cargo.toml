@@ -52,6 +52,9 @@ utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid", "decimal"
 # Receipt hashing / feed-id hex (shared with the methodology contract).
 sha2 = "0.10"
 hex = "0.4"
+# Query-string parsing for the hot-cache key (hot_cache.rs); already in the
+# lockfile via url/reqwest, so no new crate is downloaded.
+form_urlencoded = "1"
 
 [dev-dependencies]
 toml = { workspace = true }

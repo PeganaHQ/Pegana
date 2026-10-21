@@ -48,7 +48,7 @@ describe("subscribe_peg_events", () => {
       { symbols: ["USDC"], since_ts: 0 },
       pool,
     );
-    const sc = res.structuredContent;
+    const sc = res.structuredContent!;
     expect(sc.count).toBe(2);
     expect(typeof sc.events[0]!.ts).toBe("number");
     expect(sc.events[0]!.ts).toBe(1792500662.543249);
@@ -97,7 +97,7 @@ describe("subscribe_peg_events", () => {
       { ...base, id: "d", ts: 4, evidence_status: "failed_permanent" },
     ]);
     const res = await handleSubscribePegEvents({ symbols: ["USDC"], since_ts: 0 }, pool);
-    expect(res.structuredContent.events.map((e) => e.evidence_status)).toEqual([
+    expect(res.structuredContent!.events.map((e) => e.evidence_status)).toEqual([
       "missing",
       "ready",
       "pending",
@@ -105,7 +105,7 @@ describe("subscribe_peg_events", () => {
     ]);
     expect(calls[0]!.sql).toMatch(/FROM alert_evidence ae WHERE ae\.alert_id = alert_events\.id/);
     expect(calls[0]!.sql).toMatch(/failed_permanently_at IS NOT NULL/);
-    expect(outputSchema.safeParse(res.structuredContent).success).toBe(true);
+    expect(outputSchema.safeParse(res.structuredContent!).success).toBe(true);
   });
 
   it("serves events without evidence_status when the DB role cannot read receipts (42501)", async () => {
@@ -122,8 +122,8 @@ describe("subscribe_peg_events", () => {
       },
     };
     const first = await handleSubscribePegEvents({ symbols: ["USDC"], since_ts: 0 }, pool);
-    expect(first.structuredContent.events[0]).not.toHaveProperty("evidence_status");
-    expect(outputSchema.safeParse(first.structuredContent).success).toBe(true);
+    expect(first.structuredContent!.events[0]).not.toHaveProperty("evidence_status");
+    expect(outputSchema.safeParse(first.structuredContent!).success).toBe(true);
     // The fallback sticks: no second failing query on the next call.
     await handleSubscribePegEvents({ symbols: ["USDC"], since_ts: 0 }, pool);
     expect(calls.filter((q) => q.includes("alert_evidence"))).toHaveLength(1);
@@ -150,6 +150,48 @@ describe("subscribe_peg_events", () => {
     );
   });
 
+  // R3 audit R3-MCP-03: a typo used to succeed with zero events.
+  it("rejects an unknown or mistyped symbol with the 'not tracked' wording", async () => {
+    __resetReceiptStateForTests();
+    const { pool } = poolReturning([]);
+    const res = await handleSubscribePegEvents({ symbols: ["USDC", "jitosol"], since_ts: 0 }, pool);
+    expect(res).toMatchObject({ isError: true });
+    expect(res.content[0]!.text).toBe(
+      "Error: asset 'jitosol' not tracked. Use get_assets() to list tracked symbols.",
+    );
+  });
+
+  it("names every unknown symbol when several are unknown", async () => {
+    __resetReceiptStateForTests();
+    const { pool } = poolReturning([]);
+    const res = await handleSubscribePegEvents(
+      { symbols: ["FOO", "USDC", "BAR", "FOO"], since_ts: 0 },
+      pool,
+    );
+    expect(res).toMatchObject({ isError: true });
+    expect(res.content[0]!.text).toBe(
+      "Error: assets 'FOO', 'BAR' not tracked. Use get_assets() to list tracked symbols.",
+    );
+  });
+
+  it("still succeeds with zero events for tracked symbols", async () => {
+    __resetReceiptStateForTests();
+    const { pool } = poolReturning([]);
+    const res = await handleSubscribePegEvents({ symbols: ["USDC", "jitoSOL"], since_ts: 0 }, pool);
+    expect(res).not.toHaveProperty("isError");
+    expect(res.structuredContent).toEqual({ count: 0, next_cursor: 0, events: [] });
+  });
+
+  it("accepts a symbol missing from this build's registry when it has rows", async () => {
+    __resetReceiptStateForTests();
+    const { pool } = poolReturning([
+      { id: "c", asset: "newSOL", from_state: "PEGGED", to_state: "DRIFT", discount: "0.002", ts: 3 },
+    ]);
+    const res = await handleSubscribePegEvents({ symbols: ["newSOL"], since_ts: 0 }, pool);
+    expect(res).not.toHaveProperty("isError");
+    expect(res.structuredContent!.count).toBe(1);
+  });
+
   it("filters xSOL rows out of results", async () => {
     __resetReceiptStateForTests();
     const base = { from_state: "PEGGED", to_state: "DRIFT", discount: "0.002" };
@@ -158,8 +200,8 @@ describe("subscribe_peg_events", () => {
       { ...base, id: "b", asset: "USDC", ts: 2 },
     ]);
     const res = await handleSubscribePegEvents({ symbols: ["USDC"], since_ts: 0 }, pool);
-    expect(res.structuredContent.events.map((e) => e.asset)).toEqual(["USDC"]);
-    expect(res.structuredContent.count).toBe(1);
+    expect(res.structuredContent!.events.map((e) => e.asset)).toEqual(["USDC"]);
+    expect(res.structuredContent!.count).toBe(1);
   });
 
   it("advances next_cursor past a page that is entirely filtered out", async () => {
@@ -170,7 +212,7 @@ describe("subscribe_peg_events", () => {
       { ...base, id: "b", asset: "xSOL", ts: 9 },
     ]);
     const res = await handleSubscribePegEvents({ symbols: ["USDC"], since_ts: 1 }, pool);
-    expect(res.structuredContent.count).toBe(0);
-    expect(res.structuredContent.next_cursor).toBe(9);
+    expect(res.structuredContent!.count).toBe(0);
+    expect(res.structuredContent!.next_cursor).toBe(9);
   });
 });

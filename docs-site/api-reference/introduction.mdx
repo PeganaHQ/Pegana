@@ -26,7 +26,7 @@ Every endpoint is **public** — no `Authorization` header, no API key. See
 
 ## Rate limit
 
-Per-IP sliding window: currently **60 req/min** on REST (see the `RateLimit-Limit` header). WebSocket allows **20 concurrent
+Per-IP sliding window: currently **240 requests a minute per IP** on REST (see the `RateLimit-Limit` header). WebSocket allows **20 concurrent
 connections per IP**. Liveness / readiness probes are exempt.
 
 Need more? Email `rafael@pegana.xyz`.

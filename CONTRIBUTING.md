@@ -17,7 +17,7 @@ Pegana is open source under the MIT license. Issues and pull requests are welcom
 
 ## Making a change
 
-Read [CLAUDE.md](CLAUDE.md) for the repository layout and the full command list. The short
+Read the [README](README.md) for the repository layout and the commands. The short
 version of the gates a pull request must pass:
 
 ```bash

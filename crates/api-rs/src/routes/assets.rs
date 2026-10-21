@@ -22,7 +22,7 @@ use utoipa::{IntoParams, ToSchema};
 /// The list is a single global object the dashboard polls on every load; at
 /// p50 ~1.2s the per-asset LATERAL joins (latest snapshot + intrinsic
 /// fallback + 24h sparkline) dominate. A 5s server-side cache absorbs the
-/// repeated identical reads without user-visible staleness — the engine
+/// repeated identical reads without user-visible staleness; the engine
 /// only writes new snapshots on the order of seconds and the dashboard's own
 /// refresh cadence is far slower. Only the *unfiltered* request is cached;
 /// `?class=`/`?peg=` variants fall through to Postgres (they're rare and the
@@ -32,7 +32,7 @@ pub(crate) const ASSETS_LIST_CACHE_TTL_SECS: u64 = 5;
 
 /// Last-known-good payload for `/v1/assets`, read ONLY when the Postgres query
 /// itself fails. Deliberately a different key with a different lifetime from
-/// `ASSETS_LIST_CACHE_KEY` — the two solve different problems and conflating
+/// `ASSETS_LIST_CACHE_KEY`; the two solve different problems and conflating
 /// them would be a bug:
 ///
 ///   - `ASSETS_LIST_CACHE_KEY` (5s) is a latency optimisation. Missing is the
@@ -79,15 +79,15 @@ pub struct AssetCard {
     pub name: String,
     pub mint: String,
     pub class: String,
-    /// Peg anchor — how to interpret the asset's fair value without knowing
+    /// Peg anchor; how to interpret the asset's fair value without knowing
     /// Pegana's internal taxonomy.
     ///
-    /// - `"USD"` — fixed $1 target (fiat-backed, RWA, delta-neutral, CDP
+    /// - `"USD"`: fixed $1 target (fiat-backed, RWA, delta-neutral, CDP
     ///   stablecoins). A discount from $1 IS the risk signal.
-    /// - `"FX"` — fixed non-USD fiat exchange-rate peg (e.g. EURC→EUR,
+    /// - `"FX"`: fixed non-USD fiat exchange-rate peg (e.g. EURC→EUR,
     ///   BRZ→BRL). Read `peg_target` for the specific currency. A discount
     ///   from the FX rate IS the risk signal.
-    /// - `"NAV"` — intrinsic redemption / net-asset value, NOT a fixed fiat
+    /// - `"NAV"`: intrinsic redemption / net-asset value, NOT a fixed fiat
     ///   rate (LSTs, yield-bearing stables, synthetic leverage). NAV itself
     ///   moves; the discount is relative to it.
     ///
@@ -135,12 +135,12 @@ pub struct AssetCard {
     )]
     pub discount_raw: Option<Decimal>,
 
-    /// Derived 0-100 peg-risk score — a single sortable/thresholdable number for
+    /// Derived 0-100 peg-risk score; a single sortable/thresholdable number for
     /// integrators, ALONGSIDE (never replacing) `state`. Anchored to the committed
     /// `state` so it never disagrees with the classification (PEGGED ≤ 24, DRIFT
     /// 25-49, DEPEG 50-74, CRITICAL 75-94, BLACK_SWAN 95-100), interpolated within
     /// the band by the effective discount magnitude. `null` when `state` is
-    /// UNKNOWN/absent, no discount exists, or thresholds are the CDP CR-form —
+    /// UNKNOWN/absent, no discount exists, or thresholds are the CDP CR-form;
     /// we never fabricate a score (ADR-0019). Deterministic + reproducible from
     /// the other published fields; NOT part of any receipt hash. See
     /// `crates/api-rs/src/risk_score.rs`.
@@ -161,7 +161,7 @@ pub struct AssetCard {
 
     /// Stake-pool SOL per share for LSTs (decimal string, at most 18 decimal
     /// places like the USD legs, trailing zeros trimmed). Omitted for non-LST
-    /// assets. Reflects the LATEST intrinsic snapshot — read together with
+    /// assets. Reflects the LATEST intrinsic snapshot; read together with
     /// `updated_at` for freshness. NAV decomposition is
     /// `intrinsic_usd = sol_per_lst × SOL/USD`.
     #[serde(
@@ -173,7 +173,7 @@ pub struct AssetCard {
     /// Pyth oracle confidence bucket: `high` | `medium` | `low` | `unknown`.
     /// Scopes the PRICE-ORACLE confidence interval only (conf/price ratio), NOT
     /// market-quote / route-depth reliability. Omitted when no discount snapshot
-    /// exists yet. Reflects the LATEST snapshot — an omitted value means "no
+    /// exists yet. Reflects the LATEST snapshot; an omitted value means "no
     /// current signal" and MUST NOT be rendered as a positive bucket; the client
     /// gates on `updated_at` freshness before showing it (hardening H1/H9).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,7 +186,7 @@ pub struct AssetCard {
     /// CDP collateral-ratio form `{"cr_drift","cr_depeg","cr_critical",
     /// "cr_black_swan"}` for hyUSD. This is the AUTHORITATIVE source the
     /// client should key band-gauge / chart threshold lines / "closest to
-    /// breaking" sort off — replacing any hand-maintained client table. The
+    /// breaking" sort off; replacing any hand-maintained client table. The
     /// column is re-synced to the engine's calibrated `assets.toml` values by
     /// migration `0042_resync_asset_thresholds`. Omitted only if the column
     /// is NULL (never, given the `NOT NULL` constraint) or fails to decode.
@@ -208,7 +208,7 @@ pub struct AssetCard {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub monitoring_since: Option<String>,
 
-    /// Consumer-facing calibration label, `provisional` | `calibrated` — the
+    /// Consumer-facing calibration label, `provisional` | `calibrated`; the
     /// self-describing form of `monitoring_only` (`provisional` ⇔
     /// `monitoring_only=true`), in the SAME vocabulary the dispatcher emits on
     /// the webhook canonical event. Always present.
@@ -219,7 +219,7 @@ pub struct AssetCard {
     /// 24h (BSRV-02), in the same signed-fraction units as `discount`
     /// (e.g. `0.0123` = 123 bps). Computed as
     /// `max(greatest(abs(min_discount), abs(max_discount)))` over the
-    /// `discount_1m` aggregate — discount is signed, so the abs is required to
+    /// `discount_1m` aggregate; discount is signed, so the abs is required to
     /// catch the worst tick in EITHER direction. Trailing 24h, INDEPENDENT of
     /// the current-snapshot 15-min freshness bound on `discount`. Omitted when
     /// no `discount_1m` rows exist in the window.
@@ -255,20 +255,20 @@ pub struct AssetCard {
     pub sustained: Option<bool>,
 
     /// Advisory machine-readable reason for the snapshot's state. Explanatory
-    /// only — never a verdict input and not part of any receipt hash.
+    /// only; never a verdict input and not part of any receipt hash.
     ///
     /// **Emitted today:**
-    /// - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
+    /// - `premium_sanity`: engine NAV-sanity override: smoothed discount exceeded
     ///   the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
     ///   suspect).
-    /// - `stale_source` — API layer: no discount snapshot in the last 15 min
+    /// - `stale_source`: API layer: no discount snapshot in the last 15 min
     ///   (sources or engine dark), state collapsed to UNKNOWN.
-    /// - `market_unavailable` — API layer: no discount snapshot in the last 15
+    /// - `market_unavailable`: API layer: no discount snapshot in the last 15
     ///   min, but the intrinsic leg IS fresh and no market tick exists in that
     ///   window (thin market, no reliable quote). State UNKNOWN; `intrinsic_usd`
     ///   and `updated_at` are the fresh intrinsic reading, `market_usd` is null.
     ///
-    /// **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
+    /// **Reserved; not yet emitted (planned for depth-gate / oracle-crosscheck
     /// work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
     /// nominal`.
     ///
@@ -286,18 +286,18 @@ pub struct AssetCard {
     pub risk_side: String,
 
     /// Circulating supply of the mint (`rust_decimal`, serialized as a JSON
-    /// string), scaled by `decimals`. This is a SIZE/CONTEXT signal — NOT a
-    /// peg-safety signal — and is NEVER an input to `discount`/`state`/
+    /// string), scaled by `decimals`. This is a SIZE/CONTEXT signal; NOT a
+    /// peg-safety signal; and is NEVER an input to `discount`/`state`/
     /// thresholds. Sourced from the on-chain SPL Mint account's `supply`
     /// field by the isolated `token_supply` indexer task on a slow (~10 min)
     /// cadence (migration 0065). No freshness bound is enforced on this
-    /// field the way `updated_at` is for `discount` — supply changes slowly
-    /// by nature. `null` until the mint has been observed at least once —
+    /// field the way `updated_at` is for `discount`; supply changes slowly
+    /// by nature. `null` until the mint has been observed at least once;
     /// serialized as `null` (like `discount`), not omitted.
     #[serde(serialize_with = "crate::serde_fmt::opt_dec_norm")]
     pub circulating_supply: Option<Decimal>,
 
-    /// Market capitalization in USD = `circulating_supply × market_usd` — a
+    /// Market capitalization in USD = `circulating_supply × market_usd`; a
     /// SIZE/CONTEXT signal for gauging relative scale across assets, NOT a
     /// peg-safety signal and NEVER an input to `discount`/`state`/thresholds.
     /// `None` whenever either factor is missing (no `circulating_supply`
@@ -311,7 +311,7 @@ pub struct AssetCard {
     /// much size an exit can absorb, NOT a peg-safety signal and NEVER an input
     /// to `discount`/`state`/thresholds. `null` when tokens.xyz has no market
     /// for the mint (7 of 69 active assets as of 2026-08-10) or it has not been
-    /// observed yet — `null` NEVER means zero (ADR-0019). Read together with
+    /// observed yet; `null` NEVER means zero (ADR-0019). Read together with
     /// `market_context_at` for freshness.
     #[serde(serialize_with = "crate::serde_fmt::opt_dec_money2")]
     pub liquidity_usd: Option<Decimal>,
@@ -336,7 +336,7 @@ pub struct AssetCard {
     /// quoted price? Computed purely from the three context fields above (see
     /// `crates/api-rs/src/market_score.rs`), so any consumer can recompute it.
     ///
-    /// NOT a peg score and NOT anchored to `state` — that is `risk_score`'s job.
+    /// NOT a peg score and NOT anchored to `state`; that is `risk_score`'s job.
     /// A deeply liquid asset trading well below NAV scores high here and DEPEG
     /// there; that disagreement is intended. Omitted when no market context has
     /// been observed at all.
@@ -344,11 +344,11 @@ pub struct AssetCard {
     pub market_depth: Option<crate::market_score::MarketDepth>,
 
     /// Advisory, API-synthesized, OUT-OF-HASH "amber" annotation from the
-    /// independent Pyth oracle leg — sits BELOW the hard Pyth-confidence gate
+    /// independent Pyth oracle leg; sits BELOW the hard Pyth-confidence gate
     /// (500bps -> UNKNOWN). Computed purely from data already on this row
     /// (see `oracle_degraded.rs`); NEVER a receipt input and NEVER touches
     /// `discount`/`state`/thresholds. Only ever populated on the
-    /// single-asset detail endpoints (`/v1/assets/{symbol}` + by-mint) — the
+    /// single-asset detail endpoints (`/v1/assets/{symbol}` + by-mint); the
     /// `/v1/assets` list has no oracle asof-join, so this is always omitted
     /// there. Omitted (not `null`) whenever the asset carries no subscribed
     /// oracle feed, the tick is already hard-gated to UNKNOWN, or nothing
@@ -364,14 +364,14 @@ pub struct AssetCard {
     operation_id = "list_assets",
     summary = "List all active assets with their latest peg snapshot",
     description = "Returns every active asset with its latest discount, state, and \
-                   peg-snapshot. This is the dashboard screener endpoint — for the \
+                   peg-snapshot. This is the dashboard screener endpoint; for the \
                    public receipt ledger of peg state-transition alerts, use `GET /v1/audit` \
                    instead.",
     params(ListQuery),
     responses(
         (status = 200, description = "All active assets with their latest snapshot", body = crate::response::ApiList<AssetCard>),
         (status = 400, description = "Invalid query parameter", body = ApiError),
-        (status = 429, description = "Rate limit exceeded — see Retry-After header", body = ApiError),
+        (status = 429, description = "Rate limit exceeded; see Retry-After header", body = ApiError),
         (status = 500, description = "Unexpected server error", body = ApiError)
     )
 )]
@@ -436,7 +436,7 @@ pub async fn list(
             // plus `generated_at` (stamped at the ORIGINAL compute time, not
             // now — claiming freshness we do not have would be the one thing
             // worse than the 500).
-            tracing::error!(error = %e, "assets list query failed — trying last-known-good");
+            tracing::error!(error = %e, "assets list query failed; trying last-known-good");
             metrics::counter!("pegana_api_assets_list_db_failures_total").increment(1);
 
             if cacheable {
@@ -616,7 +616,7 @@ fn row_to_card(r: sqlx::postgres::PgRow) -> AssetCard {
 
 /// The assets-list SQL, shared by the `list` handler and the cache pre-warmer.
 /// `$1` = class filter, `$2` = peg_target filter (NULL on both = the unfiltered
-/// global list — the cacheable shape).
+/// global list; the cacheable shape).
 const ASSETS_LIST_SQL: &str = r#"
         SELECT
             a.symbol, a.name, a.mint, a.class::text AS class,
@@ -777,7 +777,7 @@ pub async fn fetch_assets_list(
 
 /// Recompute the unfiltered assets list and write it to the shared Redis cache
 /// under the handler's key/TTL. The background pre-warmer calls this just under
-/// the TTL so the cache never expires cold — no user request pays the cold
+/// the TTL so the cache never expires cold; no user request pays the cold
 /// Postgres (LATERAL-join) cost. Best-effort + read-only; a Redis/DB hiccup
 /// only means the next user request repopulates via the handler's read-through.
 pub async fn refresh_assets_list_cache(pg: &PgPool, redis: &redis::Client) -> anyhow::Result<()> {
@@ -800,7 +800,7 @@ pub async fn refresh_assets_list_cache(pg: &PgPool, redis: &redis::Client) -> an
     operation_id = "asset_detail",
     summary = "Get an asset by symbol",
     params(
-        ("symbol" = String, Path, description = "Asset symbol — case-insensitive; resolved to canonical casing (e.g. `jitoSOL`, `USDC`, `hyUSD`)")
+        ("symbol" = String, Path, description = "Asset symbol; case-insensitive; resolved to canonical casing (e.g. `jitoSOL`, `USDC`, `hyUSD`)")
     ),
     responses(
         (status = 200, description = "Latest snapshot for the asset", body = AssetCard),
@@ -827,7 +827,7 @@ pub async fn detail(
     tag = "Assets",
     summary = "Get an asset by mint address",
     params(
-        ("mint" = String, Path, description = "SPL mint address (base58) — the canonical on-chain identifier. Resolves to the same card as /v1/assets/{symbol}.")
+        ("mint" = String, Path, description = "SPL mint address (base58); the canonical on-chain identifier. Resolves to the same card as /v1/assets/{symbol}.")
     ),
     responses(
         (status = 200, description = "Latest snapshot for the asset", body = AssetCard),
@@ -874,7 +874,7 @@ const HF_BAND_MAX_AGE_HOURS: i64 = 3;
 #[derive(Serialize, ToSchema, sqlx::FromRow)]
 pub struct LoopByProtocol {
     pub protocol: String,
-    /// Leveraged collateral (USD) — the "loop" exposure to this asset.
+    /// Leveraged collateral (USD); the "loop" exposure to this asset.
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "crate::serde_fmt::opt_dec_money2"
@@ -892,7 +892,7 @@ pub struct LoopByProtocol {
         serialize_with = "crate::serde_fmt::opt_dec_money2"
     )]
     pub debt_usd: Option<Decimal>,
-    /// k-floored obligation-count RANGE (ADR-0036 inv.7 — never a raw count).
+    /// k-floored obligation-count RANGE (ADR-0036 inv.7; never a raw count).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(rename = "position_bucket")]
     pub positions: Option<String>,
@@ -955,7 +955,7 @@ pub struct LoopExposureResponse {
     /// used. Absent when there is no cascade.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cascade_updated_at: Option<String>,
-    /// ADR-0036 inv.9 — this is a model estimate, not a verifiable receipt.
+    /// ADR-0036 inv.9; this is a model estimate, not a verifiable receipt.
     pub advisory_note: String,
 }
 
@@ -971,7 +971,7 @@ fn oldest_band_ts(bands: &[HfBandRow]) -> Option<DateTime<Utc>> {
     operation_id = "asset_loop_exposure",
     summary = "Cross-protocol leverage exposure for an asset (advisory)",
     params(
-        ("symbol" = String, Path, description = "Asset symbol — case-insensitive.")
+        ("symbol" = String, Path, description = "Asset symbol; case-insensitive.")
     ),
     responses(
         (status = 200, description = "Latest leverage-exposure rollup (empty + coverage:unknown when no data)", body = LoopExposureResponse),
@@ -1038,7 +1038,7 @@ pub async fn loop_exposure(
         cascade,
         updated_at: as_of.map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
         cascade_updated_at: oldest_band_ts(&bands).map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
-        advisory_note: "advisory model estimate — not a verifiable receipt".to_string(),
+        advisory_note: "advisory model estimate: not a verifiable receipt".to_string(),
     };
 
     let mut headers = HeaderMap::new();
@@ -1057,7 +1057,7 @@ pub async fn loop_exposure(
 // off from the signed receipt. Bad-debt (slippage/profitability) is a documented
 // v1 gap (needs the materialized DEX slippage curve).
 
-/// ADR-0036 inv.8 — only these shocks are accepted (no continuous sweep).
+/// ADR-0036 inv.8; only these shocks are accepted (no continuous sweep).
 const SHOCK_BPS_GRID: [i32; 5] = [100, 250, 500, 1000, 2000];
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -1095,7 +1095,7 @@ pub struct SimulateByProtocol {
     pub positions: String,
 }
 
-/// One rung of the depeg-cascade at a preset shock — the compact form carried by
+/// One rung of the depeg-cascade at a preset shock; the compact form carried by
 /// the `/loop-exposure` endpoint and the tokens.xyz feed's `systemic` block so a
 /// consumer gets the whole escalation ($0 → $Nm as the depeg deepens) in one read.
 #[derive(Debug, Serialize, ToSchema, Clone)]
@@ -1109,7 +1109,7 @@ pub struct CascadeRung {
     /// the comparable denominator is `collateral_usd`.
     #[serde(serialize_with = "crate::serde_fmt::dec_money2")]
     pub liquidatable_usd: Decimal,
-    /// Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
+    /// Bucketed range of affected positions (ADR-0036 inv.8; never a raw count).
     pub positions: String,
 }
 
@@ -1126,15 +1126,27 @@ pub struct SimulateDepegResponse {
     /// not) whose health-factor band crosses 1 at this shock. Not a subset of
     /// `loop_exposure_usd`: a plain deposit-and-borrow position counts here but
     /// not there, so this value can exceed `loop_exposure_usd`.
-    #[serde(serialize_with = "crate::serde_fmt::dec_money2")]
-    pub liquidatable_usd: Decimal,
-    /// Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
-    pub positions: String,
-    /// `full` | `partial` | `unknown`. `partial` whenever risky bands were
-    /// k-floor-dropped or dominance-suppressed (the honest ADR-0036 posture).
+    ///
+    /// `null` when `coverage` is `unknown` (no fresh health-factor bands): the
+    /// cascade is NOT KNOWN, which is not the same as zero. Never read `null`
+    /// as "nothing liquidates".
+    #[serde(serialize_with = "crate::serde_fmt::opt_dec_money2")]
+    #[schema(value_type = Option<String>, required = true, nullable = true)]
+    pub liquidatable_usd: Option<Decimal>,
+    /// Bucketed range of affected positions (ADR-0036 inv.8; never a raw
+    /// count). `null` when `coverage` is `unknown`: unknown, not "<5".
+    #[schema(required = true, nullable = true)]
+    pub positions: Option<String>,
+    /// `partial` | `unknown`. `partial` whenever fresh bands exist (risky
+    /// bands may be k-floor-dropped or dominance-suppressed, the honest
+    /// ADR-0036 posture, so this is never `full`). `unknown` when no
+    /// health-factor band is fresh: `liquidatable_usd` and `positions` are then
+    /// `null` and `by_protocol` is empty, like the omitted `/loop-exposure`
+    /// cascade.
     pub coverage: String,
+    /// Per-protocol breakdown. Empty when `coverage` is `unknown`.
     pub by_protocol: Vec<SimulateByProtocol>,
-    /// ADR-0036 inv.9 — advisory model estimate, not a verifiable receipt.
+    /// ADR-0036 inv.9; advisory model estimate, not a verifiable receipt.
     pub advisory_note: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
@@ -1151,7 +1163,7 @@ fn coarse_bucket(buckets: &[String]) -> String {
     }
 }
 
-/// The single-shock liquidation rollup over the k-floored bands — the shared core
+/// The single-shock liquidation rollup over the k-floored bands; the shared core
 /// of both `simulate_depeg` (one shock, full per-protocol breakdown) and
 /// `cascade_over_bands` (every preset shock, compact rungs). A band at midpoint
 /// health-factor `h` liquidates once the collateral shock `s` drives `h·(1−s) < 1`.
@@ -1186,7 +1198,41 @@ fn liquidatable_at_shock(
     (liquidatable_usd, by_protocol, coarse_bucket(&all_buckets))
 }
 
-/// The full depeg cascade across every preset shock — used by `/loop-exposure`
+/// `simulate-depeg`'s answer for one shock over the fresh bands.
+struct ShockEstimate {
+    liquidatable_usd: Option<Decimal>,
+    positions: Option<String>,
+    coverage: &'static str,
+    by_protocol: Vec<SimulateByProtocol>,
+}
+
+/// Coverage is `unknown` with no fresh band at all; otherwise `partial` (the
+/// k-floor, dominance suppression and single-pass model mean this is never a
+/// full total). With `unknown` coverage the totals are `None` (JSON `null`)
+/// and `by_protocol` is empty: running the rollup over zero bands would report
+/// `"0"` / `"<5"`, which an LLM agent reads as "a 20% depeg liquidates
+/// nothing" when the truth is "not known". Same rule as `/loop-exposure`,
+/// which omits the cascade (`cascade_over_bands`).
+fn shock_estimate(bands: &[HfBandRow], shock_bps: i32) -> ShockEstimate {
+    let (_, cascade_coverage) = exposure_coverage(true, !bands.is_empty());
+    if cascade_coverage == "unknown" {
+        return ShockEstimate {
+            liquidatable_usd: None,
+            positions: None,
+            coverage: cascade_coverage,
+            by_protocol: Vec::new(),
+        };
+    }
+    let (liquidatable_usd, by_protocol, positions) = liquidatable_at_shock(bands, shock_bps);
+    ShockEstimate {
+        liquidatable_usd: Some(liquidatable_usd),
+        positions: Some(positions),
+        coverage: cascade_coverage,
+        by_protocol,
+    }
+}
+
+/// The full depeg cascade across every preset shock; used by `/loop-exposure`
 /// and the feed's `systemic` block. Empty bands ⇒ NO rungs. A ladder of `$0`
 /// rungs would read as "nothing liquidates" when the truth is "not known" (the
 /// HF enumerator has not run, or its bands are past the 3h freshness bound).
@@ -1255,7 +1301,7 @@ pub struct SystemicSignal {
     /// than 3 hours are never used). Absent when the cascade has no bands.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cascade_updated_at: Option<String>,
-    /// ADR-0036 inv.9 — advisory, not a verifiable receipt.
+    /// ADR-0036 inv.9; advisory, not a verifiable receipt.
     pub advisory_note: String,
 }
 
@@ -1329,11 +1375,11 @@ fn build_systemic(exposure: &[ExposureTuple], bands: &[HfBandRow]) -> Option<Sys
         cascade_coverage: cascade_coverage.to_string(),
         updated_at: as_of.map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
         cascade_updated_at: oldest_band_ts(bands).map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
-        advisory_note: "advisory model estimate — not a verifiable receipt".to_string(),
+        advisory_note: "advisory model estimate: not a verifiable receipt".to_string(),
     })
 }
 
-/// Batch `asset → SystemicSignal` for every leveraged asset — one pair of queries
+/// Batch `asset → SystemicSignal` for every leveraged asset; one pair of queries
 /// for the whole feed. Assets with no leverage are simply absent from the map.
 pub async fn systemic_signal_map(
     pg: &PgPool,
@@ -1415,11 +1461,11 @@ pub async fn systemic_signal_for(
     operation_id = "asset_simulate_depeg",
     summary = "Simulate a depeg's cross-protocol liquidation cascade (advisory)",
     params(
-        ("symbol" = String, Path, description = "Asset symbol — case-insensitive."),
+        ("symbol" = String, Path, description = "Asset symbol; case-insensitive."),
         SimulateDepegQuery
     ),
     responses(
-        (status = 200, description = "Cascade estimate for the shock", body = SimulateDepegResponse),
+        (status = 200, description = "Cascade estimate for the shock. With coverage `unknown` (no fresh health-factor bands) `liquidatable_usd` and `positions` are null (unknown, NOT zero) and `by_protocol` is empty", body = SimulateDepegResponse),
         (status = 400, description = "bad_request (shock_bps not in {100,250,500,1000,2000}), invalid_query (shock_bps missing or not an integer) or invalid_asset (malformed symbol)", body = ApiError),
         (status = 404, description = "unknown_asset: symbol not tracked, inactive, or not public (synth_lev, e.g. xSOL)", body = ApiError)
     )
@@ -1465,27 +1511,18 @@ pub async fn simulate_depeg(
     // Oldest input, not freshest: the estimate is only as current as its
     // stalest band (bands past the 3h bound are already excluded above).
     let as_of: Option<DateTime<Utc>> = oldest_band_ts(&bands);
-    let (liquidatable_usd, by_protocol, positions_affected) =
-        liquidatable_at_shock(&bands, q.shock_bps);
-
-    // Coverage: unknown with no band data at all; otherwise partial — the k-floor
-    // + dominance suppression + single-pass model mean this is never a full total.
-    let coverage = if bands.is_empty() {
-        "unknown"
-    } else {
-        "partial"
-    };
+    let estimate = shock_estimate(&bands, q.shock_bps);
 
     let body = SimulateDepegResponse {
         asset: canonical,
         shock_bps: q.shock_bps,
         loop_exposure_usd,
-        liquidatable_usd,
-        positions: positions_affected,
-        coverage: coverage.to_string(),
-        by_protocol,
+        liquidatable_usd: estimate.liquidatable_usd,
+        positions: estimate.positions,
+        coverage: estimate.coverage.to_string(),
+        by_protocol: estimate.by_protocol,
         advisory_note:
-            "advisory model estimate — not a verifiable receipt; risky bands may be suppressed \
+            "advisory model estimate: not a verifiable receipt; risky bands may be suppressed \
              for privacy, and bad-debt/slippage is not yet modelled"
                 .to_string(),
         updated_at: as_of.map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
@@ -1513,7 +1550,7 @@ fn card_response(card: AssetCard) -> impl IntoResponse {
 
 /// Resolve a possibly-mis-cased symbol to its canonical catalog casing via the
 /// `assets_symbol_lower_uidx` functional index (migration 0045). NO is_active
-/// filter — state() and history() serve preserved snapshots for soft-deleted
+/// filter; state() and history() serve preserved snapshots for soft-deleted
 /// assets, so case resolution must not narrow the served set (detail() keeps
 /// its own `a.is_active` in fetch_card). The canonical string is then bound
 /// into the exact-case hot-table queries, so they stay on the existing
@@ -1562,11 +1599,11 @@ fn public_symbol(row: Option<(String, String)>) -> Result<Option<String>, ApiErr
 }
 
 /// Fetch the full `AssetCard` for an active asset, looked up by `column`
-/// (`"a.symbol"` or `"a.mint"`). `column` is ALWAYS a compile-time literal —
-/// never user input — so interpolating it is injection-safe; the looked-up
+/// (`"a.symbol"` or `"a.mint"`). `column` is ALWAYS a compile-time literal;
+/// never user input; so interpolating it is injection-safe; the looked-up
 /// value stays bound as `$1`. Keeps `a.is_active`, so by-mint has the same
 /// live-view semantics as by-symbol detail. Mirror of `list`'s
-/// intrinsic-snapshot fallback — see its comment for the rationale.
+/// intrinsic-snapshot fallback; see its comment for the rationale.
 pub(crate) async fn fetch_card(
     pg: &sqlx::PgPool,
     column: &'static str,
@@ -1726,7 +1763,11 @@ pub struct HistoryQuery {
     pub from: Option<DateTime<Utc>>,
     /// Inclusive upper bound on `ts`. Defaults to now.
     pub to: Option<DateTime<Utc>>,
-    /// Page size, clamped to `[1, 5000]`. Default `500`.
+    /// Page size, clamped to `[1, 5000]`. Default `500`. A window holding
+    /// more rows than this comes back newest-first with `truncated: true` and
+    /// `next_from` / `next_to` cursors for the next, older page (raw samples arrive every
+    /// few seconds, so the default 24h window usually needs several pages, or
+    /// `bucket=1m` with `limit=1440`).
     #[serde(default = "default_limit")]
     pub limit: i64,
 }
@@ -1734,7 +1775,7 @@ fn default_bucket() -> String {
     "raw".into()
 }
 /// The only `?bucket=` values the history query understands. Anything else
-/// used to fall through to the `raw` branch (silent fallback — QA B-020);
+/// used to fall through to the `raw` branch (silent fallback; QA B-020);
 /// now it yields a 400 listing these.
 const VALID_BUCKETS: [&str; 2] = ["raw", "1m"];
 fn default_limit() -> i64 {
@@ -1757,11 +1798,11 @@ pub struct HistoryPoint {
         serialize_with = "crate::serde_fmt::opt_dec_norm"
     )]
     pub discount_raw: Option<Decimal>,
-    /// Intrinsic (NAV) leg in USD — the fair-value denominator of the
+    /// Intrinsic (NAV) leg in USD; the fair-value denominator of the
     /// discount. `None` for `bucket=1m` (the `discount_1m` aggregate stores no
     /// legs); for `bucket=raw`, the `discount_snapshots.intrinsic_usd` column
     /// (`NOT NULL`). Lets the asset-detail "Legs" view distinguish a market
-    /// crash from a NAV re-rating — the two legs the single zeroed spread line
+    /// crash from a NAV re-rating; the two legs the single zeroed spread line
     /// structurally cannot separate. USD-denominated, so only meaningful for
     /// USD-peg assets (the client gates the view on `peg_target = USD`).
     #[serde(
@@ -1769,7 +1810,7 @@ pub struct HistoryPoint {
         serialize_with = "crate::serde_fmt::opt_dec_norm"
     )]
     pub intrinsic_usd: Option<Decimal>,
-    /// Market leg in USD — the traded price numerator of the discount. Same
+    /// Market leg in USD; the traded price numerator of the discount. Same
     /// `None`-for-1m / present-for-raw semantics as `intrinsic_usd`, from
     /// `discount_snapshots.market_usd` (`NOT NULL`).
     #[serde(
@@ -1777,19 +1818,19 @@ pub struct HistoryPoint {
         serialize_with = "crate::serde_fmt::opt_dec_norm"
     )]
     pub market_usd: Option<Decimal>,
-    /// Pyth ORACLE leg in USD — a THIRD, structurally independent price source
+    /// Pyth ORACLE leg in USD; a THIRD, structurally independent price source
     /// (vs the DEX `market_usd` and the NAV `intrinsic_usd`), for the 3-leg
     /// "sources disagree" view. asof-joined from `oracle_snapshots` on the
     /// asset's `pyth_feed_id` (0x-normalized to the indexer's stored form).
     /// `None` for `bucket=1m`. For `bucket=raw`, `None` unless ALL hold: the
     /// market is a DEX source (`market_kind` jupiter_usd/dex_screener_usd, so
     /// the oracle is independent, not a duplicate of a `pyth_*` market), the
-    /// asset's `peg_target` is USD (the oracle leg is a USD price — excludes
+    /// asset's `peg_target` is USD (the oracle leg is a USD price; excludes
     /// SOL/BRL/EUR-peg assets like the LSTs, BRZ, EURC whose `<asset>/USD`
     /// feed isn't their peg), the asset carries a `pyth_feed_id`, AND that
     /// feed actually streams into
     /// `oracle_snapshots`. The `market_kind`+`pyth_feed_id` CASE is only a
-    /// cheap pre-filter, NOT a subscription proof — `pyth_feed_id` is display
+    /// cheap pre-filter, NOT a subscription proof; `pyth_feed_id` is display
     /// metadata that can name a feed the indexer's `[pyth_feeds]` set never
     /// subscribes; such feeds yield no `oracle_snapshots` rows, so the asof
     /// subquery returns NULL and the leg quietly stays hidden. So the leg
@@ -1809,7 +1850,7 @@ pub struct HistoryPoint {
     tag = "Assets",
     summary = "Get an asset's discount history",
     params(
-        ("symbol" = String, Path, description = "Asset symbol — case-insensitive"),
+        ("symbol" = String, Path, description = "Asset symbol; case-insensitive"),
         HistoryQuery,
     ),
     responses(
@@ -1903,14 +1944,17 @@ pub async fn history(
         "#
     };
 
-    let rows = sqlx::query(sql)
+    // One extra row tells a full window from a truncated one.
+    let mut rows = sqlx::query(sql)
         .bind(&symbol)
         .bind(from)
         .bind(to)
-        .bind(limit)
+        .bind(limit + 1)
         .fetch_all(&state.pg)
         .await
         .map_err(ApiError::db)?;
+    let truncated = rows.len() as i64 > limit;
+    rows.truncate(limit as usize);
 
     let points: Vec<HistoryPoint> = rows
         .into_iter()
@@ -1945,13 +1989,34 @@ pub async fn history(
             state: r.get("state"),
         })
         .collect();
+    let next_to = history_next_to(truncated, points.last().map(|p| p.ts));
     let start = history_start(&state.pg, &symbol)
         .await
         .map_err(ApiError::db)?;
     Ok(Json(
         crate::response::ApiList::new(points)
-            .with_history_start(start.map(|t| crate::serde_fmt::rfc3339_millis_z(&t))),
+            .with_history_start(start.map(|t| crate::serde_fmt::rfc3339_millis_z(&t)))
+            .with_truncation(
+                truncated,
+                next_to,
+                Some(from.to_rfc3339_opts(chrono::SecondsFormat::Micros, true)),
+            ),
     ))
+}
+
+/// The `to` that resumes a truncated history page: one microsecond before
+/// the oldest row returned. `to` is inclusive and rows are unique per
+/// `(asset, ts)` at microsecond precision, so the next page starts exactly at
+/// the first row not yet served. Microsecond precision on purpose: the rows'
+/// own `ts` is rendered at milliseconds, and echoing that back would skip the
+/// rest of its millisecond.
+fn history_next_to(truncated: bool, oldest: Option<DateTime<Utc>>) -> Option<String> {
+    if !truncated {
+        return None;
+    }
+    oldest.map(|t| {
+        (t - chrono::Duration::microseconds(1)).to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
+    })
 }
 
 /// How long a per-asset history floor is reused before re-reading it. The
@@ -2037,12 +2102,12 @@ pub struct StateResp {
     /// Timestamp the current snapshot was computed (the latest
     /// `discount_snapshots.ts`). Distinct from `since` (state-transition time):
     /// this is the FRESHNESS signal. The engine stops writing snapshots when a
-    /// feed goes stale ("missing data is not confirming data" — H8), so a frozen
+    /// feed goes stale ("missing data is not confirming data"; H8), so a frozen
     /// `updated_at` is exactly how a stale/frozen feed surfaces on this endpoint.
     #[serde(serialize_with = "crate::serde_fmt::ts_millis_z")]
     pub updated_at: DateTime<Utc>,
     /// `true` when `updated_at` is older than the 15-minute freshness bound the
-    /// list/detail endpoints enforce — i.e. the feed has likely frozen. Unlike
+    /// list/detail endpoints enforce; i.e. the feed has likely frozen. Unlike
     /// list/detail, `/state` still returns the last value rather than 404-hiding
     /// it; read this flag to fail safe. Consumers needing a tighter bound can
     /// derive their own from `updated_at`.
@@ -2051,18 +2116,18 @@ pub struct StateResp {
     /// `discount_snapshots.state_reason` and `Receipt.state_reason`).
     ///
     /// **Emitted today:**
-    /// - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
+    /// - `premium_sanity`: engine NAV-sanity override: smoothed discount exceeded
     ///   the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
     ///   suspect).
-    /// - `stale_source` — API layer: no discount snapshot in the last 15 min
+    /// - `stale_source`: API layer: no discount snapshot in the last 15 min
     ///   (sources or engine dark), state collapsed to UNKNOWN.
-    /// - `market_unavailable` — API layer: no discount snapshot in the last 15
+    /// - `market_unavailable`: API layer: no discount snapshot in the last 15
     ///   min, but the intrinsic leg IS fresh and no market tick exists in that
     ///   window (thin market, no reliable quote). State UNKNOWN; the other
     ///   fields are from the last discount snapshot (`updated_at` = when it
     ///   stopped), like `stale_source`.
     ///
-    /// **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
+    /// **Reserved; not yet emitted (planned for depth-gate / oracle-crosscheck
     /// work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
     /// nominal`.
     ///
@@ -2070,7 +2135,7 @@ pub struct StateResp {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_reason: Option<String>,
     /// Pyth oracle confidence bucket: `high` | `medium` | `low` | `unknown`.
-    /// The PRICE-ORACLE confidence-interval signal (conf/price ratio) — the field
+    /// The PRICE-ORACLE confidence-interval signal (conf/price ratio); the field
     /// integrators should gate automation on alongside `state`. Mirrors the list
     /// endpoint's `confidence`. Collapses to `unknown` when the feed is stale (same
     /// as `state`), so a frozen feed cannot read as confidently pegged. Omitted only
@@ -2085,7 +2150,7 @@ pub struct StateResp {
     tag = "Assets",
     summary = "Get an asset's current peg state",
     params(
-        ("symbol" = String, Path, description = "Asset symbol — case-insensitive; resolved to canonical casing")
+        ("symbol" = String, Path, description = "Asset symbol; case-insensitive; resolved to canonical casing")
     ),
     responses(
         (status = 200, description = "Current state + transition timestamp", body = StateResp),
@@ -2412,7 +2477,7 @@ mod tests {
     }
 
     /// Sub-C systemic summary (feed): omitted when there's no real leverage,
-    /// present with a full cascade when there is. Pure — no DB.
+    /// present with a full cascade when there is. Pure; no DB.
     #[test]
     fn build_systemic_omits_no_leverage_and_carries_cascade() {
         let ts = "2026-07-24T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
@@ -2538,6 +2603,57 @@ mod tests {
         }
     }
 
+    /// Round-3 F1: with no fresh bands, simulate-depeg must not answer
+    /// `liquidatable_usd: "0"` / `positions: "<5"` under `coverage: unknown`.
+    /// The totals are `null` and the breakdown empty; with bands they are real.
+    #[test]
+    fn simulate_depeg_unknown_coverage_is_null_not_zero() {
+        let ts = "2026-10-21T12:45:00Z".parse::<DateTime<Utc>>().unwrap();
+        for shock in SHOCK_BPS_GRID {
+            let e = shock_estimate(&[], shock);
+            assert_eq!(e.coverage, "unknown");
+            assert!(e.liquidatable_usd.is_none(), "{shock}");
+            assert!(e.positions.is_none(), "{shock}");
+            assert!(e.by_protocol.is_empty(), "{shock}");
+        }
+        let body = |e: ShockEstimate| SimulateDepegResponse {
+            asset: "syrupUSDC".into(),
+            shock_bps: 2000,
+            loop_exposure_usd: Decimal::from(1_000),
+            liquidatable_usd: e.liquidatable_usd,
+            positions: e.positions,
+            coverage: e.coverage.to_string(),
+            by_protocol: e.by_protocol,
+            advisory_note: "advisory".into(),
+            updated_at: None,
+        };
+        let v = serde_json::to_value(body(shock_estimate(&[], 2000))).unwrap();
+        assert!(v["liquidatable_usd"].is_null(), "present and null: {v}");
+        assert!(v["positions"].is_null(), "present and null: {v}");
+        assert!(v.as_object().unwrap().contains_key("liquidatable_usd"));
+        assert!(v.as_object().unwrap().contains_key("positions"));
+        assert_eq!(v["by_protocol"], serde_json::json!([]));
+        assert_eq!(v["coverage"], "unknown");
+
+        // Fresh bands: real numbers, `partial`, a zero is a real zero.
+        let bands = vec![HfBandRow {
+            protocol: "kamino".to_string(),
+            hf_band: "1.0-1.05".to_string(),
+            collateral_usd: Decimal::from(500_000),
+            position_bucket: ">50".to_string(),
+            ts,
+        }];
+        let v = serde_json::to_value(body(shock_estimate(&bands, 2000))).unwrap();
+        assert_eq!(v["coverage"], "partial");
+        assert_eq!(v["liquidatable_usd"], "500000");
+        assert_eq!(v["positions"], ">50");
+        assert_eq!(v["by_protocol"][0]["protocol"], "kamino");
+        let v = serde_json::to_value(body(shock_estimate(&bands, 100))).unwrap();
+        assert_eq!(v["coverage"], "partial");
+        assert_eq!(v["liquidatable_usd"], "0");
+        assert_eq!(v["positions"], "<5");
+    }
+
     /// The list, detail and /state SQL all split a market-only outage from a
     /// dead feed, using the methodology constants' exact literals.
     #[test]
@@ -2562,6 +2678,58 @@ mod tests {
                 .count()
                 >= 3
         );
+    }
+
+    /// Round-3 F6: the default history window (24h of raw samples) does not
+    /// fit the 500-row default, so the envelope says so instead of silently
+    /// stopping hours short of `from`.
+    #[test]
+    fn history_truncation_is_signalled_with_a_resume_cursor() {
+        let oldest = "2026-10-21T06:40:12.345678Z"
+            .parse::<DateTime<Utc>>()
+            .unwrap();
+        assert_eq!(history_next_to(false, Some(oldest)), None);
+        assert_eq!(history_next_to(true, None), None);
+        let next = history_next_to(true, Some(oldest)).unwrap();
+        assert_eq!(next, "2026-10-21T06:40:12.345677Z");
+        // The cursor parses back as a `to` the query extractor accepts.
+        assert!(next.parse::<DateTime<Utc>>().unwrap() < oldest);
+        // A row at an exact millisecond resumes inside the previous one.
+        let ms = "2026-10-21T06:40:12.000Z".parse::<DateTime<Utc>>().unwrap();
+        assert_eq!(
+            history_next_to(true, Some(ms)).unwrap(),
+            "2026-10-21T06:40:11.999999Z"
+        );
+
+        // The effective lower bound is echoed so a client that relied on the
+        // default `from` can page without the window sliding.
+        let from = "2026-10-20T06:40:12.345678Z".to_string();
+        let v = serde_json::to_value(crate::response::ApiList::new(vec![1, 2]).with_truncation(
+            true,
+            Some(next.clone()),
+            Some(from.clone()),
+        ))
+        .unwrap();
+        assert_eq!(v["truncated"], true);
+        assert_eq!(v["next_to"], next.as_str());
+        assert_eq!(v["next_from"], from.as_str());
+        let v = serde_json::to_value(crate::response::ApiList::new(vec![1]).with_truncation(
+            false,
+            Some(next),
+            Some(from),
+        ))
+        .unwrap();
+        assert_eq!(v["truncated"], false, "always present on history");
+        assert!(v.get("next_to").is_none(), "no cursor when the window fit");
+        assert!(
+            v.get("next_from").is_none(),
+            "no cursor when the window fit"
+        );
+        // Other lists are unchanged: none of the keys appear.
+        let v = serde_json::to_value(crate::response::ApiList::new(vec![1])).unwrap();
+        assert!(v.get("truncated").is_none());
+        assert!(v.get("next_to").is_none());
+        assert!(v.get("next_from").is_none());
     }
 
     #[test]
@@ -2619,7 +2787,7 @@ mod tests {
 
     /// BSRV-01/02/03: when all three new fields are `None`, the serialized JSON
     /// OMITS the keys entirely (skip_serializing_if = Option::is_none) so
-    /// existing clients see a byte-identical shape — `null` would be a contract
+    /// existing clients see a byte-identical shape; `null` would be a contract
     /// change. Also re-asserts the pre-existing optional fields stay omitted.
     #[test]
     fn new_fields_omitted_when_none() {
@@ -2690,7 +2858,7 @@ mod tests {
     }
 
     /// BSRV-01/02/03: when present, the three new fields serialize under their
-    /// documented keys — `thresholds` as the verbatim JSONB object,
+    /// documented keys; `thresholds` as the verbatim JSONB object,
     /// `worst_abs_24h` / `jitter_bps_24h` as rust_decimal string-decimals.
     #[test]
     fn new_fields_present_when_set() {
@@ -2757,7 +2925,7 @@ mod tests {
     /// Migration 0065 size/context signal: `circulating_supply` and
     /// `market_cap` serialize as rust_decimal string-decimals when present
     /// (same shape as `discount`/`worst_abs_24h`/etc.), and `market_cap` is
-    /// the exact `circulating_supply × market_usd` product — mirroring the
+    /// the exact `circulating_supply × market_usd` product; mirroring the
     /// `a.circulating_supply * d.market_usd` computed column in
     /// `ASSETS_LIST_SQL` / `fetch_card`'s SQL.
     #[test]
@@ -2789,7 +2957,7 @@ mod tests {
     }
 
     /// `market_cap` must be `null` (present-but-null, like `discount`) whenever
-    /// either factor is missing — mirrors the SQL's NULL-propagation through the
+    /// either factor is missing; mirrors the SQL's NULL-propagation through the
     /// `a.circulating_supply * d.market_usd` multiplication (no market
     /// snapshot yet, or the mint hasn't been observed by `token_supply`).
     #[test]
@@ -2824,10 +2992,10 @@ mod tests {
         assert_eq!(v["sustained"], true);
     }
 
-    /// Wiring check (not the pure classifier — see `oracle_degraded.rs`'s own
+    /// Wiring check (not the pure classifier; see `oracle_degraded.rs`'s own
     /// `#[cfg(test)]` module for that): `AssetCard.oracle_degraded` nests the
     /// full `OracleDegraded` object under its key when `Some`, and is omitted
-    /// (not `null`) when `None` — the same additive contract as
+    /// (not `null`) when `None`; the same additive contract as
     /// `thresholds`/`worst_abs_24h`/etc., re-asserted here for the nested-
     /// struct case specifically.
     #[test]
@@ -2852,7 +3020,7 @@ mod tests {
         assert_eq!(og["age_secs"], 30);
     }
 
-    /// P3: `/state`'s `StateResp` gains `updated_at` + `stale` — the freshness
+    /// P3: `/state`'s `StateResp` gains `updated_at` + `stale`; the freshness
     /// signal the 2026-06-08 Jupiter staleness incident proved was missing. The
     /// change is ADDITIVE: the six legacy keys keep their names + presence, and
     /// the two new keys serialize as an RFC3339 string and a JSON bool. Locks
@@ -3077,7 +3245,7 @@ mod tests {
     /// P2: the new static `by-mint` segment must coexist with the `:symbol`
     /// wildcard at the same router depth. axum 0.7 (matchit 0.7) inserts routes
     /// eagerly and PANICS on a conflict, so simply BUILDING the Router is the
-    /// assertion — the tree had no prior static-vs-param sibling, so this guards
+    /// assertion; the tree had no prior static-vs-param sibling, so this guards
     /// against a regression that would only otherwise surface at server boot.
     #[test]
     fn by_mint_routes_do_not_conflict_with_symbol_wildcard() {
@@ -3108,7 +3276,7 @@ mod tests {
     /// Asset-detail "Legs" mode: the raw USD price legs `intrinsic_usd` /
     /// `market_usd` are ADDITIVE on `HistoryPoint`. For `bucket=1m` the
     /// continuous aggregate stores no legs, so both are `None` and MUST be
-    /// OMITTED (skip_serializing_if) — `null` would be a contract change.
+    /// OMITTED (skip_serializing_if); `null` would be a contract change.
     /// Mirrors the pre-existing `discount_raw` optional pattern so a 1m
     /// response stays byte-identical for existing clients.
     #[test]
@@ -3129,7 +3297,7 @@ mod tests {
 
     /// For `bucket=raw` the legs come straight from `discount_snapshots`
     /// (`intrinsic_usd` / `market_usd`, both `NOT NULL`) and serialize as
-    /// rust_decimal string-decimals — the same shape as `discount` so the web
+    /// rust_decimal string-decimals; the same shape as `discount` so the web
     /// client parses them identically.
     #[test]
     fn history_point_legs_present_when_set() {
@@ -3157,7 +3325,7 @@ mod tests {
 
     /// The 3-leg oracle leg serializes as a decimal string when present (the
     /// asof-joined Pyth price), and is OMITTED (covered above) when the SQL
-    /// CASE returns NULL — i.e. the market is itself a Pyth feed or no oracle
+    /// CASE returns NULL; i.e. the market is itself a Pyth feed or no oracle
     /// is subscribed, so the leg only ever appears where it's honest.
     #[test]
     fn history_point_oracle_leg_present_when_set() {

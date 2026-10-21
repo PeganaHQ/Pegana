@@ -16,6 +16,65 @@ Two related surfaces, for different questions:
 
 ---
 
+## 2026-10-22: nullable cascade totals, history paging cursors, audit index scope, MCP limits
+
+- **BREAKING for strict typed clients: `simulate-depeg` totals can be `null`.**
+  `GET /v1/assets/{symbol}/simulate-depeg` now returns `liquidatable_usd: null` and
+  `positions: null` (with an empty `by_protocol`) when `coverage` is `unknown`, that is when
+  there are no fresh health-factor bands. It used to answer `"0"` and `"<5"`, which read as
+  "nothing liquidates". `null` means the amount is not known, not zero. Both keys stay required;
+  the OpenAPI schema marks them nullable. A client generated from the old spec, or one that
+  parses these fields as non-null strings, must accept `null`.
+- **`/history` signals truncation.** `GET /v1/assets/{symbol}/history` always carries
+  `truncated` (`true` when the window holds more rows than `limit`). When it is `true` the
+  envelope also carries `next_to` (just before the oldest row returned) and `next_from` (the
+  effective lower bound of the window); repeat the request with
+  `from=<next_from>&to=<next_to>` for the next, older page. Additive: rows and defaults are
+  unchanged. See [Pagination](/guides/pagination#windowed-endpoints).
+- **Audit index scope.** On `/v1/audit` and `/v1/audit.csv`, `?asset=` naming an asset that is
+  not public (leveraged synthetics, class `synth_lev`, e.g. xSOL) now returns `404`
+  `unknown_asset`, like the `/v1/assets` routes. xSOL receipts no longer appear in the index or
+  the CSV export, and `/v1/stats` `alerts_24h` follows. Every receipt stays resolvable by id:
+  `/v1/audit/{id}`, its replay bundle and its on-chain route are unchanged.
+- **Receipt caching.** `GET /v1/audit/{id}` is cached `immutable` (one year) only once the
+  receipt is final: `commit_status` `not_applicable`, `retry_exhausted`, `wallet_drained`, or
+  `committed` with its signature. A receipt whose anchor may still change gets
+  `public, max-age=60`, so clients pick up the on-chain signature when it lands. The replay
+  bundle keeps the immutable header.
+- **MCP (`mcp.pegana.xyz`).**
+  - A per-IP limit of **300 JSON-RPC messages a minute**, counting every message (each batch
+    entry, `initialize`, `tools/list`, calls that fail validation). Over it the reply is HTTP
+    `429` with `Retry-After: 60` and a JSON-RPC `-32000` error carrying the request `id`. The
+    100 tool calls a minute limit is unchanged.
+  - A JSON-RPC batch holds at most **10 entries**; a larger one is refused whole with one
+    `-32600` "batch too large" error.
+  - `get_assets` lists the same assets and `count` as `GET /v1/assets`: an asset with no live
+    snapshot appears as `UNKNOWN` with `null` `discount`, `intrinsic_usd`, `market_usd`, `ts` and
+    `updated_at`, and `stale: true`.
+  - `subscribe_peg_events` rejects an unknown or mistyped symbol with an error naming it
+    (`asset 'X' not tracked`) instead of an empty batch.
+  - `simulate_depeg_impact` accepts `null` `liquidatable_usd` and `positions`, matching the API
+    change above.
+  - `verify_alert` is described honestly: it fetches the receipt as the API serves it and
+    recomputes no hash. For independent verification use the
+    [`pegana-replay`](https://crates.io/crates/pegana-replay) CLI.
+
+## 2026-10-21: per-IP limit raised to 240/min; hot-read cache; quieter rate-limit handling
+
+- **Per-IP limit.** The public REST limit is now **240 requests a minute per IP** (see the
+  `RateLimit-Limit` header). The code default stays 60; production sets 240. `/v1/audit.csv`
+  stays at 10/min and WebSocket at 20 connections per IP. Keep reading the header and honouring
+  `Retry-After` on a `429` rather than hard-coding a number.
+- **Hot-read cache.** The hot anonymous read routes (`/v1/assets*`, `/v1/peg/feed*`,
+  `/v1/stats` and others) are served from a short-TTL (3-5s), single-flight in-process cache,
+  so many clients asking for the same thing cost one database query per TTL. Bodies are replayed
+  exactly, `generated_at` / `updated_at` still say when the data was computed, and a cache hit
+  adds an `Age` header. Rate-limit headers are still stamped per request.
+- **Quieter rate-limit handling on pegana.xyz.** The dashboard polls less while its WebSocket is
+  connected, pauses polling in hidden tabs, and on a `429` waits out `Retry-After` for the whole
+  tab instead of retrying every request. It keeps showing the last data received and only shows
+  a small "live updates paused" note if nothing has refreshed for over a minute.
+
 ## 2026-10-21: Documentation corrections and behavior changes
 
 - **`discount` sign documented correctly.** The API has always returned
@@ -443,12 +502,12 @@ All additive — HTTP status codes are unchanged, so status-based clients are un
 - Per-asset, per-class drift / depeg / critical thresholds shipped. Calibrated
   against 24h p99 noise. `assets.toml` documents every threshold.
 
-## 2026-05-20 — API rate limit raised
+## 2026-05-20 — API rate limit (corrected)
 
-- REST per-IP rate limit raised from 60 → 300 req/min after observing legitimate
-  dashboard burst patterns (MockDataBanner re-fetch on reload). Note: 300/min is a
-  **production host override** — the repo default remains 60/min, so handle 429 and
-  back off rather than relying on the higher limit.
+- **Correction (2026-10-21):** this entry used to say the REST per-IP limit was raised from
+  60 to 300 req/min. That never reached production, which kept serving the code default of
+  60 req/min until 2026-10-21, when it was raised to 240 (see that entry). Handle `429` and
+  back off rather than relying on any particular number.
 
 ## 2026-05-19 — Hysteresis FSM v2
 

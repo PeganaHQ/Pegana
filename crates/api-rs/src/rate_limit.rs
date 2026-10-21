@@ -29,7 +29,7 @@ use serde_json::json;
 
 /// Header set by Caddy (and most reverse proxies) carrying the original
 /// client IP. We trust it unconditionally because, in production, this
-/// service only listens on the docker-internal network — the sole peer
+/// service only listens on the docker-internal network; the sole peer
 /// that can reach `api:8080` is the Caddy container.
 const FORWARDED_FOR: &str = "x-forwarded-for";
 
@@ -50,7 +50,7 @@ struct Bucket {
     window_start: Instant,
 }
 
-/// Snapshot of a rate-limit decision — carries the counters needed to emit the
+/// Snapshot of a rate-limit decision; carries the counters needed to emit the
 /// `RateLimit-*` response headers so a client sees its remaining budget BEFORE
 /// it hits a 429 (a DX gap vs. the partner API).
 struct RateOutcome {
@@ -147,7 +147,7 @@ fn apply_rate_headers(resp: &mut Response, o: &RateOutcome) {
 
 /// Extract the originating client IP. Prefers the first entry of
 /// `X-Forwarded-For` (set by Caddy) and falls back to the TCP source when
-/// the header is absent — useful during local cargo-run dev where there
+/// the header is absent; useful during local cargo-run dev where there
 /// is no proxy in front.
 ///
 /// Without this, every public request looked like it came from Caddy's
@@ -176,7 +176,7 @@ pub struct RateLimits {
     /// Global limit applied to every non-exempt request.
     pub main: RateLimiter,
     /// Stricter cap exclusive to `/v1/audit.csv` per ADR-0014. Independent
-    /// per-IP bucket — does not consume the main budget when it rejects.
+    /// per-IP bucket; does not consume the main budget when it rejects.
     pub csv: RateLimiter,
     /// Authenticated budget for the web app's server-side fetches. `None`
     /// (no `PEGANA_WEB_SSR_TOKEN`) disables it.
@@ -251,7 +251,7 @@ fn too_many_requests() -> Response {
         [(header::RETRY_AFTER, "60")],
         Json(json!({
             "error": "rate_limited",
-            "message": "rate limit exceeded — retry after the window resets (see Retry-After)",
+            "message": "rate limit exceeded; retry after the window resets (see Retry-After)",
         })),
     )
         .into_response()

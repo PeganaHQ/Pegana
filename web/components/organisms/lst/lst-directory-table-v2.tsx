@@ -124,7 +124,7 @@ function LstSortTh({
         onClick={() => onSort(colKey)}
         aria-label={`Sort by ${label}${active ? `, currently ${sort.dir === "desc" ? "descending" : "ascending"}` : ""}`}
         className={cn(
-          "inline-flex w-full items-center gap-1 font-mono text-[10px] uppercase tracking-[0.08em] transition-colors hover:text-[var(--v2-text)]",
+          "inline-flex w-full items-center gap-1 font-mono text-[12px] uppercase tracking-[0.08em] transition-colors hover:text-[var(--v2-text)]",
           align === "right" ? "justify-end" : "justify-start",
           active && "text-[var(--v2-text)]",
         )}
@@ -136,7 +136,7 @@ function LstSortTh({
   );
 }
 
-function PlainTh({
+export function PlainTh({
   children,
   align = "left",
 }: {
@@ -147,7 +147,7 @@ function PlainTh({
     <th
       scope="col"
       className={cn(
-        "bg-[rgba(255,255,255,0.03)] px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--v2-muted)] sm:px-5",
+        "bg-[rgba(255,255,255,0.03)] px-4 py-2.5 font-mono text-[12px] uppercase tracking-[0.08em] text-[var(--v2-muted)] sm:px-5",
         align === "right" ? "text-right" : "text-left",
       )}
     >
@@ -261,7 +261,7 @@ function DirectoryTokenIcon({
 
 function LifecycleTag({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-[var(--v2-line2)] px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--v2-muted)]">
+    <span className="inline-flex items-center rounded-full border border-[var(--v2-line2)] px-1.5 py-px font-mono text-[12px] uppercase tracking-[0.06em] text-[var(--v2-muted)]">
       {label}
     </span>
   );
@@ -280,7 +280,7 @@ function NotCoveredPill({ unavailable = false }: { unavailable?: boolean }) {
       <span
         role="status"
         aria-label="Peg verdict temporarily unavailable"
-        className="inline-flex w-fit items-center gap-1.5 rounded-full border border-solid border-[var(--v2-line2)] bg-white/[0.02] px-3.5 py-1.5 font-mono text-[11.5px] text-[var(--v2-muted)]"
+        className="inline-flex w-fit items-center gap-1.5 rounded-full border border-solid border-[var(--v2-line2)] bg-white/[0.02] px-3.5 py-1.5 font-mono text-[12px] text-[var(--v2-muted)]"
       >
         <span className="h-1.5 w-1.5 rounded-full bg-st-unknown" />
         verdict unavailable
@@ -291,7 +291,7 @@ function NotCoveredPill({ unavailable = false }: { unavailable?: boolean }) {
     <span
       role="status"
       aria-label="Not yet covered by Pegana"
-      className="inline-flex w-fit items-center gap-1.5 rounded-full border border-solid border-[var(--v2-line2)] bg-white/[0.02] px-3.5 py-1.5 font-mono text-[11.5px] text-[var(--v2-muted)]"
+      className="inline-flex w-fit items-center gap-1.5 rounded-full border border-solid border-[var(--v2-line2)] bg-white/[0.02] px-3.5 py-1.5 font-mono text-[12px] text-[var(--v2-muted)]"
     >
       <span className="h-1.5 w-1.5 rounded-full bg-[var(--v2-muted)]" />
       not yet covered
@@ -487,7 +487,7 @@ export function LstDirectoryTableV2({
                                 <LifecycleTag label="deprecated" />
                               ) : null}
                             </span>
-                            <span className="truncate font-mono text-[11.5px] text-[var(--v2-muted)]">
+                            <span className="truncate font-mono text-[12px] text-[var(--v2-muted)]">
                               {row.name}
                             </span>
                           </span>
@@ -504,7 +504,7 @@ export function LstDirectoryTableV2({
                             {formatApyPct(row.apy)}
                           </span>
                           {rateLabel && (
-                            <span className="font-mono text-[10.5px] tabular-nums text-[var(--v2-muted)]">
+                            <span className="font-mono text-[12px] tabular-nums text-[var(--v2-muted)]">
                               {rateLabel}
                             </span>
                           )}
@@ -550,7 +550,7 @@ export function LstDirectoryTableV2({
       )}
 
       {source === "fallback" && (
-        <p className="mt-3 font-mono text-[11px] text-[var(--v2-muted)]">
+        <p className="mt-3 font-mono text-[12px] text-[var(--v2-muted)]">
           lst-directory.com is unreachable right now; showing Pegana&rsquo;s
           own tracked LSTs instead of the full market.
         </p>

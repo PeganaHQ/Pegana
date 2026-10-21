@@ -14,7 +14,7 @@ T = TypeVar("T", bound="AuditEvidence")
 
 @_attrs_define
 class AuditEvidence:
-    """The `evidence` object inside a 200 receipt body — the frozen inputs and
+    """The `evidence` object inside a 200 receipt body; the frozen inputs and
     methodology pin that make the alert independently verifiable.
 
         Attributes:

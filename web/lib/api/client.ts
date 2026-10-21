@@ -12,6 +12,12 @@ import type {
 } from "./types";
 import { apiBase, serverApiHeaders } from "./base";
 import {
+  noteRateLimited,
+  rateLimitWaitMs,
+  recordApiFailure,
+  recordApiSuccess,
+} from "./freshness";
+import {
   AUDIT_MAX_LIMIT,
   auditRowsToAlerts,
   coverageFloorDay,
@@ -54,7 +60,8 @@ export function parseRetryAfter(
 
 /**
  * True when the API refused the request because this client IP used up its
- * public budget (60/min). That is NOT an outage and must never be worded as
+ * public budget (240 requests a minute per IP in production, see the
+ * RateLimit-Limit header). That is NOT an outage and must never be worded as
  * one: the API is healthy, this browser just has to wait.
  */
 export function isRateLimited(err: unknown): boolean {
@@ -69,6 +76,21 @@ export function isRateLimited(err: unknown): boolean {
 const REQUEST_TIMEOUT_MS = 15_000;
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  // Browser only (see lib/api/freshness.ts): while a 429 wait is open, fail
+  // locally with the same 429 shape instead of spending more of the shared
+  // per-IP window. SWR keeps the last good data on screen.
+  const inBrowser = typeof window !== "undefined";
+  if (inBrowser) {
+    const wait = rateLimitWaitMs();
+    if (wait > 0) {
+      throw new ApiError(
+        `API 429 on ${path} (waiting)`,
+        path,
+        429,
+        Math.ceil(wait / 1000),
+      );
+    }
+  }
   let res: Response;
   try {
     res = await fetch(`${apiBase()}${path}`, {
@@ -88,17 +110,27 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     // TimeoutError/AbortError DOMException when the deadline above fires. Both
     // collapse to the same ApiError (no status) so consumers don't need a
     // second branch — the asset page renders its "feed unreachable" state.
+    if (inBrowser) recordApiFailure("network");
     throw new ApiError(`API unreachable on ${path}`, path);
   }
-  if (!res.ok)
+  if (!res.ok) {
+    const retryAfterSec =
+      res.status === 429
+        ? parseRetryAfter(res.headers?.get?.("retry-after"))
+        : undefined;
+    if (inBrowser) {
+      if (res.status === 429) noteRateLimited(retryAfterSec);
+      // A 404 is a definitive answer from a healthy API, not a failure.
+      else if (res.status >= 500) recordApiFailure("server");
+    }
     throw new ApiError(
       `API ${res.status} on ${path}`,
       path,
       res.status,
-      res.status === 429
-        ? parseRetryAfter(res.headers?.get?.("retry-after"))
-        : undefined,
+      retryAfterSec,
     );
+  }
+  if (inBrowser) recordApiSuccess();
   return res.json() as Promise<T>;
 }
 
@@ -245,7 +277,8 @@ function fetchAuditPage(opts?: AlertsQuery): Promise<AuditIndexRow[]> {
 // the full list itself on every call, next to the useAssets() poll that was
 // already fetching the same list: on /dashboard that was 2 x /v1/assets at load
 // and again on every 30s alerts refresh (measured 2026-10-21, about 2 extra
-// requests a minute per tab against a 60/min per-IP budget).
+// requests a minute per tab against what was then a 60/min per-IP budget;
+// production is now 240/min).
 //
 // Now one in-flight request is shared, and the class map reuses the most
 // recent list for CLASS_MAP_TTL_MS. A class changes only when an asset is

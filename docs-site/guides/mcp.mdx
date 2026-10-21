@@ -54,15 +54,15 @@ inspect the result, and refuse a swap if state is `DRIFT` or worse.
 | Tool | Description |
 | --- | --- |
 | `ping` | Server liveness check |
-| `get_assets` | List all active assets with latest snapshot |
+| `get_assets` | List every active asset with its latest snapshot, the same set as `GET /v1/assets` (`UNKNOWN` with null values when there is no live snapshot) |
 | `get_asset_state` | Current state, discount, intrinsic and market price for one asset |
 | `get_methodology` | This asset's intrinsic and market sources plus the state machine, for the model to reason from |
 | `get_loop_exposure` | Anonymous aggregate leverage/health-factor exposure for Kamino & Jupiter Lend (k-anonymity k≥5) |
 | `simulate_depeg_impact` | Estimated liquidatable collateral (`liquidatable_usd`, `positions`) across Kamino and Jupiter Lend for a preset depeg shock |
-| `verify_alert` | Verify an alert receipt (hash + optional on-chain anchor) — proxies `GET /v1/audit/:alert_id`, data already public |
+| `verify_alert` | Fetch an alert's audit receipt as the API serves it (proxies `GET /v1/audit/:alert_id`). It recomputes no hash and checks no anchor; verify independently with [`pegana-replay`](/guides/mcp-free-tools) |
 | `ping_paid` | Legacy alias of `ping` (free; returns `paid pong`) |
 | `get_asset_history` | Bucketed discount history (1m/5m/15m/1h), up to 30 days |
-| `subscribe_peg_events` | Pull state transitions since a cursor timestamp |
+| `subscribe_peg_events` | Pull state transitions since a cursor timestamp (an unknown symbol is an error, not an empty batch) |
 
 ## Hosted — no clone needed
 

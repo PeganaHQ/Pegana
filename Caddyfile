@@ -161,8 +161,11 @@ mcp.pegana.xyz {
 
 	# NOTE: there is NO per-IP rate limit at this proxy. The stock `caddy:2`
 	# image ships without the `rate_limit` plugin, so any limiting must be
-	# done in-app. The v2 quota model (soft 60 req/min/IP per
-	# mcp-ts/README.md) is enforced inside the mcp-ts Bun process, not here.
+	# done in-app. mcp-ts enforces, per client IP (keyed on the
+	# X-Forwarded-For this proxy sets): 300 JSON-RPC messages/min (every
+	# message and batch entry counts), 100 tool calls/min, and a batch cap of
+	# 10 entries. Over a limit it answers HTTP 429 with Retry-After: 60 (see
+	# mcp-ts/README.md, "Limits").
 	# TODO: if proxy-level limiting is ever required, rebuild Caddy with the
 	# caddy-ratelimit plugin (xcaddy) and add a `rate_limit` directive here.
 

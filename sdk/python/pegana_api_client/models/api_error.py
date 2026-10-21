@@ -16,7 +16,7 @@ class ApiError:
     """
     Attributes:
         error (str): Stable, machine-readable code. Branch on this, never on `message`.
-        message (str): Human-readable explanation. NOT stable — for humans/logs; do not parse.
+        message (str): Human-readable explanation. NOT stable; for humans/logs; do not parse.
         asset (None | str | Unset): The offending asset symbol, present only for asset-scoped errors.
     """
 

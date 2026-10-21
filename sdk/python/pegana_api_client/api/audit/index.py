@@ -7,6 +7,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.api_error import ApiError
 from ...models.audit_index_row import AuditIndexRow
 from ...types import UNSET, Response, Unset
 
@@ -66,7 +67,7 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Any | list[AuditIndexRow] | None:
+) -> Any | ApiError | list[AuditIndexRow] | None:
     if response.status_code == 200:
         response_200 = []
         _response_200 = response.json()
@@ -81,6 +82,11 @@ def _parse_response(
         response_400 = cast(Any, None)
         return response_400
 
+    if response.status_code == 404:
+        response_404 = ApiError.from_dict(response.json())
+
+        return response_404
+
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -89,7 +95,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[Any | list[AuditIndexRow]]:
+) -> Response[Any | ApiError | list[AuditIndexRow]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -109,7 +115,7 @@ def sync_detailed(
     until: datetime.datetime | Unset = UNSET,
     before: datetime.datetime | Unset = UNSET,
     before_id: UUID | Unset = UNSET,
-) -> Response[Any | list[AuditIndexRow]]:
+) -> Response[Any | ApiError | list[AuditIndexRow]]:
     """List recent audit receipts
 
     Args:
@@ -127,7 +133,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | list[AuditIndexRow]]
+        Response[Any | ApiError | list[AuditIndexRow]]
     """
 
     kwargs = _get_kwargs(
@@ -159,7 +165,7 @@ def sync(
     until: datetime.datetime | Unset = UNSET,
     before: datetime.datetime | Unset = UNSET,
     before_id: UUID | Unset = UNSET,
-) -> Any | list[AuditIndexRow] | None:
+) -> Any | ApiError | list[AuditIndexRow] | None:
     """List recent audit receipts
 
     Args:
@@ -177,7 +183,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | list[AuditIndexRow]
+        Any | ApiError | list[AuditIndexRow]
     """
 
     return sync_detailed(
@@ -204,7 +210,7 @@ async def asyncio_detailed(
     until: datetime.datetime | Unset = UNSET,
     before: datetime.datetime | Unset = UNSET,
     before_id: UUID | Unset = UNSET,
-) -> Response[Any | list[AuditIndexRow]]:
+) -> Response[Any | ApiError | list[AuditIndexRow]]:
     """List recent audit receipts
 
     Args:
@@ -222,7 +228,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | list[AuditIndexRow]]
+        Response[Any | ApiError | list[AuditIndexRow]]
     """
 
     kwargs = _get_kwargs(
@@ -252,7 +258,7 @@ async def asyncio(
     until: datetime.datetime | Unset = UNSET,
     before: datetime.datetime | Unset = UNSET,
     before_id: UUID | Unset = UNSET,
-) -> Any | list[AuditIndexRow] | None:
+) -> Any | ApiError | list[AuditIndexRow] | None:
     """List recent audit receipts
 
     Args:
@@ -270,7 +276,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | list[AuditIndexRow]
+        Any | ApiError | list[AuditIndexRow]
     """
 
     return (

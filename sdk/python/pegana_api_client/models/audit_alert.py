@@ -22,7 +22,7 @@ class AuditAlert:
             asset (str):
             class_ (str):
             confidence (Confidence): Pyth oracle confidence bucket. Mirrors `pyth_confidence_label`. Scopes the
-                PRICE-ORACLE confidence interval only (conf/price ratio) — NOT market-quote
+                PRICE-ORACLE confidence interval only (conf/price ratio); NOT market-quote
                 or route-depth reliability.
             detected_at (datetime.datetime):
             discount (str): Signed discount fraction at detection, as a decimal string.

@@ -8,15 +8,52 @@ const url = `https://www.pegana.xyz/api/jupiter-quote?inputMint=${JITOSOL}&outpu
 afterEach(() => vi.unstubAllGlobals());
 
 describe("jupiter-quote failure responses", () => {
-  it("passes an upstream 429 on as an uncached 503 with Retry-After", async () => {
+  it("passes an upstream 429 on as an uncached 503 with Jupiter's Retry-After", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("rate limited", {
+            status: 429,
+            headers: { "retry-after": "7", "x-ratelimit-remaining": "0" },
+          }),
+      ),
+    );
+    const res = await GET(new Request(url));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("retry-after")).toBe("7");
+    expect(res.headers.get("x-ratelimit-remaining")).toBe("0");
+    expect(await res.json()).toMatchObject({ upstreamStatus: 429 });
+  });
+
+  it("derives Retry-After from x-ratelimit-reset when Jupiter sends no Retry-After", async () => {
+    const reset = Math.floor(Date.now() / 1000) + 9;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("rate limited", {
+            status: 429,
+            headers: { "x-ratelimit-reset": String(reset) },
+          }),
+      ),
+    );
+    const res = await GET(new Request(url));
+    const ra = Number(res.headers.get("retry-after"));
+    expect(ra).toBeGreaterThanOrEqual(8);
+    expect(ra).toBeLessThanOrEqual(10);
+    expect(res.headers.get("x-ratelimit-reset")).toBe(String(reset));
+  });
+
+  it("invents no Retry-After when Jupiter gives no rate-limit hint", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("rate limited", { status: 429 })),
     );
     const res = await GET(new Request(url));
     expect(res.status).toBe(503);
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(res.headers.get("retry-after")).toBeTruthy();
+    expect(res.headers.get("retry-after")).toBeNull();
     expect(await res.json()).toMatchObject({ upstreamStatus: 429 });
   });
 
@@ -32,6 +69,23 @@ describe("jupiter-quote failure responses", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
+  it("does not pass rate-limit headers through on a cached 200", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ outAmount: "1" }), {
+            status: 200,
+            headers: { "x-ratelimit-remaining": "3", "x-ratelimit-reset": "1792619558" },
+          }),
+      ),
+    );
+    const res = await GET(new Request(url));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-ratelimit-remaining")).toBeNull();
+    expect(res.headers.get("x-ratelimit-reset")).toBeNull();
+  });
+
   it("keeps caching a good quote at the edge", async () => {
     vi.stubGlobal(
       "fetch",
@@ -45,9 +99,9 @@ describe("jupiter-quote failure responses", () => {
     );
     const res = await GET(new Request(url));
     expect(res.status).toBe(200);
-    // 30s at the CDN, plus at most 30s stale while one request refreshes it.
+    // 60s at the CDN, plus at most 120s stale while one request refreshes it.
     expect(res.headers.get("cache-control")).toBe(
-      "s-maxage=30, stale-while-revalidate=30",
+      "s-maxage=60, stale-while-revalidate=120",
     );
   });
 

@@ -12,7 +12,7 @@ T = TypeVar("T", bound="AuditPendingResponse")
 
 @_attrs_define
 class AuditPendingResponse:
-    """202 body for `GET /v1/audit/{alert_id}` — receipt persistence is still
+    """202 body for `GET /v1/audit/{alert_id}`; receipt persistence is still
     retrying (ADR-0006). Poll again after `retry_after_seconds`.
 
         Attributes:

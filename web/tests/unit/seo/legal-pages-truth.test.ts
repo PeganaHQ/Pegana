@@ -18,7 +18,8 @@ describe("terms", () => {
     expect(src).toContain("MIT license");
   });
   it("states the real public limits", () => {
-    expect(src).toContain("60 REST requests a minute");
+    expect(src).toContain("240 REST requests a minute per IP");
+    expect(src).toContain("RateLimit-Limit");
     expect(src).toMatch(/20\s+open WebSocket connections per IP/);
   });
 });

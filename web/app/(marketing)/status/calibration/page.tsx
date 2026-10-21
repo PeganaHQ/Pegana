@@ -62,7 +62,7 @@ function HealthPill({ health }: { health: CalibrationHealthStatus }) {
   const color = TONE_COLOR[meta.tone];
   return (
     <span
-      className="inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10.5px] font-medium"
+      className="inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[12px] font-medium"
       style={{ background: TONE_BG[meta.tone], color }}
     >
       <span
@@ -235,7 +235,7 @@ function CalibrationBody() {
                   <b className="text-[13.5px] font-medium">
                     {displaySymbol(c.symbol)}
                   </b>
-                  <span className="inline-flex w-fit items-center rounded-full border border-[var(--v2-line2)] px-2 py-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-[var(--v2-muted)]">
+                  <span className="inline-flex w-fit items-center rounded-full border border-[var(--v2-line2)] px-2 py-1 font-mono text-[12px] uppercase tracking-[0.06em] text-[var(--v2-muted)]">
                     {calibrationStatusLabel(c)}
                   </span>
                   <HealthPill health={c.health} />

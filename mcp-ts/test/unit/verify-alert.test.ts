@@ -138,8 +138,8 @@ describe("subscribe_peg_events evidence_url", () => {
       eventsPool,
     );
 
-    expect(res.structuredContent.count).toBe(1);
-    const evt = res.structuredContent.events[0]!;
+    expect(res.structuredContent!.count).toBe(1);
+    const evt = res.structuredContent!.events[0]!;
     expect(evt.evidence_url).toBe(
       "https://staging.pegana.xyz/audit/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     );

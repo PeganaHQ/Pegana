@@ -1,9 +1,10 @@
 import React from "react";
 import { renderToString } from "react-dom/server";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HeroV2, boardStatus } from "@/components/organisms/v2/hero-v2";
 import type { AssetCardData } from "@/lib/api/types";
+import { noteRateLimited, recordApiSuccess } from "@/lib/api/freshness";
 
 vi.mock("next/link", () => ({
   default: React.forwardRef<HTMLAnchorElement, { children?: React.ReactNode }>(
@@ -83,9 +84,53 @@ describe("boardStatus", () => {
     expect(
       boardStatus({ hasData: false, hasError: true, rateLimited: true }),
     ).toBe("rate_limited");
+    // Last good rows stay on screen through a 429.
     expect(
       boardStatus({ hasData: true, hasError: true, rateLimited: true }),
-    ).toBe("rate_limited");
+    ).toBe("live");
+    // ...until nothing has refreshed for over 60s: then the pill says so.
+    expect(
+      boardStatus({
+        hasData: true,
+        hasError: true,
+        rateLimited: true,
+        paused: true,
+      }),
+    ).toBe("paused");
+  });
+});
+
+describe("HeroV2 under a sustained 429", () => {
+  it("keeps the rows, turns the pill to a muted 'paused' and lets the stamps age", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-21T12:00:00Z"));
+      swr = {
+        data: [asset({ symbol: "JitoSOL", updated_at: new Date().toISOString() })],
+        error: Object.assign(new Error("API 429"), { status: 429 }),
+        mutate: vi.fn(),
+      };
+      recordApiSuccess();
+      noteRateLimited(60);
+      render(<HeroV2 />);
+      // A fresh 429: rows stay and the pill still reads live.
+      expect(screen.getByTestId("board-status")).toHaveTextContent("live");
+      const before = boardText();
+
+      act(() => {
+        vi.advanceTimersByTime(130_000);
+      });
+      expect(screen.getByTestId("board-status")).toHaveTextContent("paused");
+      expect(screen.getByTestId("board-status")).not.toHaveTextContent("live");
+      expect(boardText()).toContain("JitoSOL");
+      // The "updated" stamp moved on instead of freezing.
+      expect(boardText()).not.toBe(before);
+      expect(document.body.textContent ?? "").not.toMatch(
+        /rate limit|requests a minute|429|per IP/i,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -107,13 +152,16 @@ describe("HeroV2 live board: never invented rows", () => {
     expect(sub).not.toMatch(/opacity:\s*0/);
   });
 
-  it("a 429 reads as a rate limit with the app-wide wording, never 'offline'", () => {
+  it("a 429 reads as a calm pause, never 'offline' and never the limit", () => {
     swr = { error: Object.assign(new Error("API 429"), { status: 429 }), mutate: vi.fn() };
     render(<HeroV2 />);
-    expect(screen.getByTestId("board-status")).toHaveTextContent("rate limited");
+    expect(screen.getByTestId("board-status")).toHaveTextContent("paused");
     expect(screen.getByTestId("board-status")).not.toHaveTextContent("offline");
     expect(screen.getByTestId("board-rate-limited")).toHaveTextContent(
-      /allows 60 requests a minute per IP/,
+      /resume on their own/,
+    );
+    expect(document.body.textContent ?? "").not.toMatch(
+      /rate limit|requests a minute|429|per IP/i,
     );
     expect(screen.queryByTestId("board-unavailable")).toBeNull();
   });
@@ -142,6 +190,22 @@ describe("HeroV2 live board: never invented rows", () => {
     // 2 bps is 1%: a real per-asset reading, not a constant 8% per state.
     expect(within(table).getByText("35%")).toBeInTheDocument();
     expect(within(table).getByText("1%")).toBeInTheDocument();
+  });
+
+  it("marks a monitoring-only asset BETA, and only that one", () => {
+    swr = {
+      data: [
+        asset({ symbol: "sHYUSD", class: "stable_yield", monitoring_only: true }),
+        asset({ symbol: "BNSOL" }),
+      ],
+      mutate: vi.fn(),
+    };
+    render(<HeroV2 />);
+    const badges = screen.getAllByTestId("board-beta");
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent(/^beta/);
+    expect(badges[0]!.closest("tr")).toHaveTextContent("eHYUSD");
+    expect(badges[0]!.getAttribute("title")).toMatch(/Provisional calibration/);
   });
 });
 

@@ -37,8 +37,12 @@ import { cn } from "@/lib/utils/cn";
 export interface PillTabItem<T extends string = string> {
   key: T;
   label: string;
-  /** Optional trailing count badge, e.g. "All 42". */
-  count?: number;
+  /** Optional trailing count badge, e.g. "All 42". `null` means "not known
+   *  yet" (loading, or the source failed) and renders an en dash, never a fake 0.
+   *  Numbers render with `toLocaleString` (1,000+) in tabular figures. */
+  count?: number | null;
+  /** Optional leading colour dot (a CSS colour or `var(...)`), data only. */
+  swatch?: string;
   disabled?: boolean;
 }
 
@@ -82,7 +86,7 @@ export function PillTabs<T extends string>({
             disabled={item.disabled}
             onClick={() => !item.disabled && onChange(item.key)}
             className={cn(
-              "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] transition-colors duration-150",
+              "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.06em] transition-colors duration-150",
               active ? "text-canvas" : "text-text-muted hover:text-text",
               item.disabled &&
                 "cursor-not-allowed opacity-40 hover:text-text-muted",
@@ -101,15 +105,24 @@ export function PillTabs<T extends string>({
                 transition={reduced ? { duration: 0 } : PILL_SPRING}
               />
             )}
+            {item.swatch && (
+              <span
+                aria-hidden
+                className="relative z-10 block h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ background: item.swatch }}
+              />
+            )}
             <span className="relative z-10">{item.label}</span>
             {item.count !== undefined && (
               <span
                 className={cn(
-                  "relative z-10 font-mono text-[10px]",
+                  "relative z-10 font-mono text-[12px] tabular-nums",
                   active ? "text-canvas/70" : "text-text-caption",
                 )}
               >
-                {item.count}
+                {item.count === null
+                  ? "\u2013"
+                  : item.count.toLocaleString("en-US")}
               </span>
             )}
           </button>

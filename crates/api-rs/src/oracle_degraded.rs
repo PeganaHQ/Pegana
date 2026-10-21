@@ -38,13 +38,13 @@ pub struct OracleDegraded {
     pub conf_bps: Option<i32>,
     /// Seconds elapsed since the asof-joined oracle snapshot was published.
     /// `None` only when no oracle snapshot was found at all (in which case
-    /// the whole annotation is `None` too — this field is always populated
+    /// the whole annotation is `None` too; this field is always populated
     /// whenever `OracleDegraded` is `Some`).
     pub age_secs: Option<i64>,
 }
 
-/// Amber floor for the independent oracle leg's confidence/price ratio (bps)
-/// — a CONSERVATIVE starting point the founder calibrates. Any reading AT or
+/// Amber floor for the independent oracle leg's confidence/price ratio (bps);
+/// a CONSERVATIVE starting point the founder calibrates. Any reading AT or
 /// ABOVE this bound flags the asset's OWN <TICKER>/USD Pyth oracle as wide
 /// (uncertain). There is deliberately NO upper bound: the engine's hard
 /// confidence gate inspects the asset's NUMERAIRE feed, not this one, so a wide
@@ -52,13 +52,13 @@ pub struct OracleDegraded {
 /// `conf_wide` comment in `classify_oracle_degraded`).
 pub const ORACLE_DEGRADED_CONF_WARN_BPS: i32 = 100;
 
-/// Amber floor for the `|market_usd - oracle_usd|` spread (bps) — a
+/// Amber floor for the `|market_usd - oracle_usd|` spread (bps); a
 /// CONSERVATIVE starting point the founder calibrates. A market/oracle
 /// disagreement wider than this is worth flagging even though neither hard
 /// gate (Pyth confidence, NAV-sanity) has tripped.
 pub const ORACLE_DEGRADED_DIVERGENCE_BPS: i32 = 75;
 
-/// Amber floor for oracle-snapshot staleness, in seconds — a CONSERVATIVE
+/// Amber floor for oracle-snapshot staleness, in seconds; a CONSERVATIVE
 /// starting point the founder calibrates. Independent of the 15-minute
 /// discount-snapshot freshness bound `fetch_card` already enforces on the
 /// asset as a whole; this governs the ORACLE leg specifically, which can go
@@ -67,7 +67,7 @@ pub const ORACLE_DEGRADED_STALENESS_SECS: i64 = 90;
 
 /// `discount_snapshots.state_reason` value the engine/API already emit when
 /// the hard Pyth confidence gate collapses a verdict to UNKNOWN. Mirrors
-/// methodology's `STATE_REASON_PYTH_CONFIDENCE_GATE` (literal-duplicated —
+/// methodology's `STATE_REASON_PYTH_CONFIDENCE_GATE` (literal-duplicated;
 /// see `PYTH_HARD_GATE_BPS`'s comment for why).
 const STATE_REASON_PYTH_CONFIDENCE_GATE: &str = "pyth_confidence_gate";
 
@@ -81,7 +81,7 @@ const REASON_STALE: &str = "oracle_stale";
 /// `None` ("no signal"), never a panic. Mirrors the checked-arithmetic
 /// discipline of `methodology::pyth_confidence_gate_violated` /
 /// `premium_sanity_violated`, except overflow here means "can't annotate"
-/// rather than "violated" — this is an advisory amber layer, not a hard gate,
+/// rather than "violated"; this is an advisory amber layer, not a hard gate,
 /// so an implausible/overflowing read is simply withheld, not escalated.
 fn checked_bps(numerator: Decimal, denominator: Decimal) -> Option<i32> {
     let ratio = numerator.checked_div(denominator)?.abs();
@@ -90,24 +90,24 @@ fn checked_bps(numerator: Decimal, denominator: Decimal) -> Option<i32> {
 }
 
 /// Synthesize the advisory `oracle_degraded` annotation for a single-asset
-/// detail row from the independent Pyth oracle leg. Pure + unit-testable —
+/// detail row from the independent Pyth oracle leg. Pure + unit-testable;
 /// every input is a value already read off the row in `fetch_card`; this
 /// function performs no I/O and its output is NEVER a receipt input.
 ///
-/// All guards below are REQUIRED (any one returning early means `None` — the
+/// All guards below are REQUIRED (any one returning early means `None`; the
 /// field is omitted):
 /// - no independent oracle leg at all: `oracle_usd` is absent or `<= 0`. The
 ///   `> 0` guard mirrors the frontend's zeroed-print guard (JupUSD
-///   false-CRITICAL EWMA fix, 2026-06-12) — a zeroed print must not
+///   false-CRITICAL EWMA fix, 2026-06-12); a zeroed print must not
 ///   fabricate a false signal;
 /// - the snapshot is already hard-gated to UNKNOWN by the 500bps Pyth
-///   confidence gate (`state_reason == "pyth_confidence_gate"`) — amber only
+///   confidence gate (`state_reason == "pyth_confidence_gate"`); amber only
 ///   annotates a tick that SURVIVED that gate, never doubles up on one
 ///   already collapsed;
 /// - none of the three amber conditions actually fire.
 ///
-/// When at least one condition fires, `reason` picks the worst first —
-/// `oracle_divergence` > `oracle_confidence_wide` > `oracle_stale` — and
+/// When at least one condition fires, `reason` picks the worst first;
+/// `oracle_divergence` > `oracle_confidence_wide` > `oracle_stale`; and
 /// every value that was actually COMPUTED (regardless of whether it
 /// individually fired) is populated, so a client badge can show full context
 /// rather than only the trigger.
@@ -245,10 +245,10 @@ mod tests {
     }
 
     /// The asset's OWN oracle leg is NOT bounded by the engine's hard Pyth gate
-    /// (that gate inspects the NUMERAIRE feed — see `conf_wide`'s comment), so
+    /// (that gate inspects the NUMERAIRE feed; see `conf_wide`'s comment), so
     /// there is deliberately no upper bound: a reading at OR ABOVE 500bps on
     /// this feed is un-gated and MUST still surface as amber. Regression guard
-    /// for the `[100, 500)` bug the review caught — the worst case (a very wide
+    /// for the `[100, 500)` bug the review caught; the worst case (a very wide
     /// independent oracle) was being silently dropped.
     #[test]
     fn conf_at_or_above_500_still_fires_amber() {
@@ -324,7 +324,7 @@ mod tests {
 
     /// The hard-gate skip: when `state_reason` already reads
     /// `"pyth_confidence_gate"`, the amber layer must stay silent even in the
-    /// presence of an extreme divergence — the verdict is already UNKNOWN,
+    /// presence of an extreme divergence; the verdict is already UNKNOWN,
     /// re-flagging it would be noise, not new information.
     #[test]
     fn pyth_confidence_gate_state_reason_is_skipped() {
@@ -364,7 +364,7 @@ mod tests {
     /// Overflow in the checked arithmetic must collapse to "no signal"
     /// (`None`), never panic. `market_usd` here is chosen so
     /// `(market_usd - oracle_usd) * 10_000` overflows `Decimal`'s range,
-    /// which must fail the `spread_bps` computation cleanly — and with no
+    /// which must fail the `spread_bps` computation cleanly; and with no
     /// other input present, the whole result is `None`.
     #[test]
     fn overflow_collapses_to_none_without_panic() {

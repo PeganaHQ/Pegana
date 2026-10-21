@@ -19,7 +19,7 @@ class WebhookKeysResponse:
             signed with this); index 1 (when present) is the **secondary**,
             active only during a rotation window. Receivers should trust
             ANY of the listed keys when verifying `x-pegana-signature`.
-        recheck_after (datetime.datetime): Hint to refresh weekly — during a rotation this list flips
+        recheck_after (datetime.datetime): Hint to refresh weekly; during a rotation this list flips
             from `[A]` → `[A, B]` → `[B]` over the rotation window. Polling
             at least once between deploys is enough to follow it.
     """

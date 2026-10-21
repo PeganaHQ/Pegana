@@ -15,7 +15,7 @@ T = TypeVar("T", bound="MethodologyCurrentResponse")
 class MethodologyCurrentResponse:
     """Public methodology lifecycle pointer.
 
-    `version`, `status`, and `fix_url` are the original (v1) shape — every
+    `version`, `status`, and `fix_url` are the original (v1) shape; every
     current consumer (web/app/api/methodology/route.ts type-checks only
     `version`+`status`) is forward-compatible with the additive fields below.
 
@@ -28,7 +28,7 @@ class MethodologyCurrentResponse:
             git_tag (None | str | Unset): Immutable git release tag, e.g. `methodology-v0.1.0`. Always present
                 when the version table is populated; omitted only on an un-migrated DB.
             released_at (None | str | Unset): RFC3339 timestamp this version was released. The honest analogue of the
-                often-requested "adopted_at" — there is no separate adoption column;
+                often-requested "adopted_at"; there is no separate adoption column;
                 release == adoption in this lifecycle (ADR-0003).
             status_reason (None | str | Unset): Operator note attached to a `deprecated`/`broken` transition, if any.
             superseded_by (None | str | Unset): Set when this version has been superseded by a newer one.

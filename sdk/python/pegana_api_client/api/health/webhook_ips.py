@@ -54,7 +54,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[ApiError | WebhookIpsResponse]:
-    """GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+    """GET /v1/meta/webhook-ips; IP allowlist hint for webhook subscribers.
 
      Pattern lifted from Linear (`6 static IPs` page) and GitHub
     (`GET /meta` with `hooks` field). Subscribers behind enterprise
@@ -86,7 +86,7 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
 ) -> ApiError | WebhookIpsResponse | None:
-    """GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+    """GET /v1/meta/webhook-ips; IP allowlist hint for webhook subscribers.
 
      Pattern lifted from Linear (`6 static IPs` page) and GitHub
     (`GET /meta` with `hooks` field). Subscribers behind enterprise
@@ -114,7 +114,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[ApiError | WebhookIpsResponse]:
-    """GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+    """GET /v1/meta/webhook-ips; IP allowlist hint for webhook subscribers.
 
      Pattern lifted from Linear (`6 static IPs` page) and GitHub
     (`GET /meta` with `hooks` field). Subscribers behind enterprise
@@ -144,7 +144,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
 ) -> ApiError | WebhookIpsResponse | None:
-    """GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+    """GET /v1/meta/webhook-ips; IP allowlist hint for webhook subscribers.
 
      Pattern lifted from Linear (`6 static IPs` page) and GitHub
     (`GET /meta` with `hooks` field). Subscribers behind enterprise

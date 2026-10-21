@@ -4,7 +4,7 @@ description: "JSON over HTTPS. No API key. Soft rate limit. The canonical read p
 ---
 
 The REST API is the default integration path. Public, no auth, per-IP rate limit
-(currently 60 req/min). The dashboard and embed widget read through it.
+(currently 240 requests a minute per IP, see the `RateLimit-Limit` header). The dashboard and embed widget read through it.
 
 **Base URL:** `https://api.pegana.xyz`
 
@@ -55,7 +55,7 @@ endpoint or field changed.
 </Note>
 
 Poll `/v1/assets/{symbol}/state` as often as your logic needs (limit:
-60 req/min per IP); it is the **same object** the dashboard and embed widget read,
+240 requests a minute per IP, see the `RateLimit-Limit` header); it is the **same object** the dashboard and embed widget read,
 so it never disagrees with what a human sees on the site.
 
 <Note>
@@ -180,7 +180,10 @@ curl 'https://api.pegana.xyz/v1/assets/USDC/history?bucket=1m&limit=120'
 - `bucket=raw` — discount snapshots as recorded by the engine
 - `bucket=1m` — 1-minute aggregate (use for charts; smaller payload)
 - `from`, `to` — ISO 8601 timestamps; default last 24h
-- `limit` — clamped 1–5000, default 500
+- `limit` — clamped 1–5000, default 500. When the window holds more rows, the response
+  carries `truncated: true`, `next_from` and `next_to`; pass `from=<next_from>&to=<next_to>`
+  for the next, older page
+  (see [Pagination & limits](/guides/pagination#windowed-endpoints))
 
 ## Systemic impact (Loop Intelligence)
 
@@ -190,7 +193,7 @@ Solana lending, and how much of it would be liquidated if the asset depegs?"* �
 cross-protocol view no single lending dashboard shows.
 
 <Note>
-Everything here is an **advisory model estimate — not a verifiable receipt.** It is
+Everything here is an **advisory model estimate: not a verifiable receipt.** It is
 namespaced away from the peg fields and carries its own `advisory_note`. It is **anonymous by
 construction**: only k-anonymised distributions are computed (a band with fewer than 5
 positions, or one dominated by a single position, is suppressed), and **no wallet, owner
@@ -228,7 +231,7 @@ them as illustrative):
     { "shock_bps": 2000, "liquidatable_usd": "61398320.67", "positions": ">50" }
   ],
   "updated_at": "2026-10-20T11:18:00.213Z",
-  "advisory_note": "advisory model estimate — not a verifiable receipt"
+  "advisory_note": "advisory model estimate: not a verifiable receipt"
 }
 ```
 
@@ -255,6 +258,11 @@ curl 'https://api.pegana.xyz/v1/assets/JupSOL/simulate-depeg?shock_bps=1000'
 sweeps are refused so the anonymised distribution can't be differenced). Returns the
 same estimate as one `cascade` rung, plus a `by_protocol` breakdown. `coverage` is
 `partial` whenever risky bands were privacy-suppressed (the honest default).
+
+When no health-factor band is fresh, `coverage` is `unknown`, `liquidatable_usd` and
+`positions` are `null`, and `by_protocol` is empty. `null` means the cascade is not known; it
+does **not** mean nothing would be liquidated. A real zero is the string `"0"` under
+`coverage: "partial"`.
 
 ### Partner feed
 
@@ -285,7 +293,7 @@ once on the envelope, not on every signal:
         "cascade": [ { "shock_bps": 2000, "liquidatable_usd": "...", "positions": ">50" } ],
         "coverage": "partial",
         "updated_at": "2026-07-24T11:30:27Z",
-        "advisory_note": "advisory model estimate — not a verifiable receipt"
+        "advisory_note": "advisory model estimate: not a verifiable receipt"
       }
     }
   ]
@@ -339,7 +347,7 @@ We return standard HTTP status codes:
 | `200` | Success |
 | `400` | Bad request (invalid query param) |
 | `404` | Asset not found, or no snapshots yet |
-| `429` | Rate-limited (per-IP; currently 60 req/min) |
+| `429` | Rate-limited (per-IP; currently 240 requests a minute, see the `RateLimit-Limit` header) |
 | `500` | Server error. Retry with backoff; if it persists, open a [GitHub issue](https://github.com/PeganaHQ/Pegana/issues) quoting the `x-request-id` |
 | `503` | Not ready (readiness probe only) |
 
@@ -353,8 +361,8 @@ self-hosted instances.
 
 ## Rate limit
 
-Per-IP sliding-window: currently **60 req/min** (the live `RateLimit-Limit`
-header; check it rather than hard-coding). The window is 60 seconds.
+Per-IP sliding-window: currently **240 requests a minute per IP** (see the live
+`RateLimit-Limit` header; check it rather than hard-coding). The window is 60 seconds.
 `/v1/audit.csv` is stricter at **10 req/min**. `/healthz` and `/readyz` are exempt.
 
 Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`

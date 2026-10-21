@@ -23,7 +23,7 @@ class PegFeedResponse:
         Attributes:
             count (int):
             data (list[PegSignal]):
-            generated_at (str): RFC3339 build time — an explicit staleness read independent of HTTP headers.
+            generated_at (str): RFC3339 build time; an explicit staleness read independent of HTTP headers.
             methodology (str):
             ok (bool):
     """

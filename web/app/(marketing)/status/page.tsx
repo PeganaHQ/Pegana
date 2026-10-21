@@ -182,12 +182,12 @@ function SourceRowV2({
       <span>
         <b className="text-[14.5px] font-medium">{name}</b>
         <br />
-        <span className="font-mono text-[11px] text-[var(--v2-muted)]">
+        <span className="font-mono text-[12px] text-[var(--v2-muted)]">
           {sourceRole}
         </span>
       </span>
       <UptimeBars samples={samples} />
-      <span className="text-right font-mono text-[11.5px] text-[var(--v2-muted)]">
+      <span className="text-right font-mono text-[12px] text-[var(--v2-muted)]">
         {detail} <span style={{ color }}>&middot; {label}</span>
       </span>
     </ListRow>

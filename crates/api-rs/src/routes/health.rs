@@ -16,7 +16,7 @@ use utoipa::ToSchema;
     summary = "API index + version",
     responses(
         (status = 200, description = "Endpoint index + version", body = serde_json::Value),
-        (status = 429, description = "Rate limit exceeded — see Retry-After header", body = ApiError)
+        (status = 429, description = "Rate limit exceeded; see Retry-After header", body = ApiError)
     )
 )]
 pub async fn root() -> Json<Value> {
@@ -46,14 +46,14 @@ pub struct WebhookKeysResponse {
     /// active only during a rotation window. Receivers should trust
     /// ANY of the listed keys when verifying `x-pegana-signature`.
     pub pubkeys_b64: Vec<String>,
-    /// Hint to refresh weekly — during a rotation this list flips
+    /// Hint to refresh weekly; during a rotation this list flips
     /// from `[A]` → `[A, B]` → `[B]` over the rotation window. Polling
     /// at least once between deploys is enough to follow it.
     #[serde(serialize_with = "crate::serde_fmt::ts_millis_z")]
     pub recheck_after: chrono::DateTime<chrono::Utc>,
 }
 
-/// GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+/// GET /v1/meta/webhook-keys; active Ed25519 public keys for verifying
 /// inbound webhook signatures.
 ///
 /// Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
@@ -67,7 +67,7 @@ pub struct WebhookKeysResponse {
     tag = "Health",
     responses(
         (status = 200, description = "Active webhook-signer public keys", body = WebhookKeysResponse),
-        (status = 429, description = "Rate limit exceeded — see Retry-After header", body = ApiError)
+        (status = 429, description = "Rate limit exceeded; see Retry-After header", body = ApiError)
     )
 )]
 pub async fn webhook_keys() -> Json<WebhookKeysResponse> {
@@ -85,13 +85,13 @@ pub struct WebhookIpsResponse {
     /// IPv4 / IPv6 addresses Pegana POSTs from when delivering webhooks.
     /// Subscribers running zero-trust ingress can allowlist these.
     pub ips: Vec<String>,
-    /// Hint to refresh this list weekly — IPs can change without notice
+    /// Hint to refresh this list weekly; IPs can change without notice
     /// during infrastructure migrations.
     #[serde(serialize_with = "crate::serde_fmt::ts_millis_z")]
     pub recheck_after: chrono::DateTime<chrono::Utc>,
 }
 
-/// GET /v1/meta/webhook-ips — IP allowlist hint for webhook subscribers.
+/// GET /v1/meta/webhook-ips; IP allowlist hint for webhook subscribers.
 ///
 /// Pattern lifted from Linear (`6 static IPs` page) and GitHub
 /// (`GET /meta` with `hooks` field). Subscribers behind enterprise
@@ -107,7 +107,7 @@ pub struct WebhookIpsResponse {
     tag = "Health",
     responses(
         (status = 200, description = "Webhook egress IP allowlist", body = WebhookIpsResponse),
-        (status = 429, description = "Rate limit exceeded — see Retry-After header", body = ApiError)
+        (status = 429, description = "Rate limit exceeded; see Retry-After header", body = ApiError)
     )
 )]
 pub async fn webhook_ips() -> Json<WebhookIpsResponse> {
@@ -137,7 +137,7 @@ pub struct LiveResponse {
     tag = "Health",
     summary = "Liveness probe",
     responses(
-        (status = 200, description = "Liveness probe — process is up", body = LiveResponse),
+        (status = 200, description = "Liveness probe; process is up", body = LiveResponse),
         (status = 500, description = "Unexpected server error", body = ApiError)
     )
 )]
@@ -152,7 +152,7 @@ pub async fn live(State(state): State<Arc<AppState>>) -> Json<LiveResponse> {
 pub struct SourceFreshness {
     /// Seconds since the most recent `intrinsic_snapshots` row written by
     /// the Sanctum LST adapter (`source LIKE 'sanctum%'`). `None` means no
-    /// row yet — cold start, or the source has never come up.
+    /// row yet; cold start, or the source has never come up.
     pub sanctum_secs: Option<i64>,
     /// Seconds since the most recent `market_snapshots` row. Jupiter is the
     /// primary writer; dexscreener fallback also lands here.

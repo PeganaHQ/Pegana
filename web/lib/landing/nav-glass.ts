@@ -30,3 +30,16 @@ export function glassProgress(
 export function quantizeProgress(p: number): 0 | 1 {
   return p >= 0.5 ? 1 : 0;
 }
+
+/** Non-landing routes have no hero to track: the glass ramps from its light
+ *  start state at the top of the page to frosted over the first
+ *  SITE_GLASS_RANGE_PX of scroll, the same 0..1 curve the landing uses. */
+export const SITE_GLASS_RANGE_PX = 120;
+
+export function scrollGlassProgress(
+  scrollY: number,
+  range: number = SITE_GLASS_RANGE_PX,
+): number {
+  if (!Number.isFinite(scrollY) || range <= 0) return 1;
+  return Math.min(1, Math.max(0, scrollY / range));
+}

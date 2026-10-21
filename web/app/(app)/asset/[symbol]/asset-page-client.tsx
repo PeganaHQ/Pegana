@@ -39,7 +39,6 @@ import {
   ShareIconButton,
 } from "@/components/molecules/share-button";
 import { AssetNotFound } from "@/components/molecules/asset-not-found";
-import { LiveRefreshPaused } from "@/components/molecules/live-refresh-paused";
 import { isRateLimited, type ApiError } from "@/lib/api/client";
 import { StaleBanner } from "@/components/molecules/stale-banner";
 
@@ -405,7 +404,10 @@ function AssetPageInner({ fallbackAsset }: { fallbackAsset?: AssetCardData }) {
 
   return (
     <>
-      {error ? <LiveRefreshPaused rateLimited={isRateLimited(error)} /> : null}
+      {/* A failed refresh keeps this page on its last good data. The quiet
+          "live updates paused" line, when one is due (no refresh for over
+          60s), comes from the app shell's HealthBanner, so it is not
+          repeated here. */}
       <StaleBanner
         symbol={asset.symbol}
         updatedAt={asset.updated_at}

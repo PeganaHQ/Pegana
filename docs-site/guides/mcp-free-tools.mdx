@@ -5,7 +5,11 @@ description: "All 10 MCP tools are free, with no payment and no API key: ping, p
 
 All ten tools are free and need no API key. Call them from any MCP host configured
 against `https://mcp.pegana.xyz` (see [setup](/guides/mcp-setup-claude)). Calls are
-rate-limited to 100 calls per minute per client IP. Example values below were captured
+rate-limited to 100 tool calls per minute per client IP, and to 300 JSON-RPC messages
+per minute per client IP counting every message (each batch entry, `initialize`,
+`tools/list`, calls that fail validation); over the limit the reply is HTTP 429 with
+`Retry-After: 60`. A JSON-RPC batch holds at most 10 entries: a larger batch is refused
+whole with one `-32600` "batch too large" error. Example values below were captured
 from the live service on 2026-10-20 and are shown in the server's current output format;
 values change continuously.
 
@@ -34,12 +38,12 @@ use `ping` for plain liveness.
 
 ## `get_assets`
 
-Lists every asset that currently has a live snapshot in the MCP server's cache. This can differ slightly from `GET /v1/assets`: assets still UNKNOWN (no snapshot yet) are omitted. The leveraged synth xSOL is left out, as in REST (every `/v1/assets` route answers 404 for it), and the per-symbol tools report it as not tracked. Use `GET /v1/assets` as the canonical list.
+Lists every active tracked asset, the same set and `count` as `GET /v1/assets`. Live values come from the MCP server's snapshot cache; an asset with no live snapshot (for example a source is down) is still listed, with `state: "UNKNOWN"`, null `discount`, `intrinsic_usd`, `market_usd`, `ts` and `updated_at`, and `stale: true`, as REST lists it. The leveraged synth xSOL is left out, as in REST (every `/v1/assets` route answers 404 for it), and the per-symbol tools report it as not tracked.
 
 ```json
 // → get_assets()
 {
-  "count": 58,
+  "count": 67,
   "assets": [
     {
       "asset": "USDC",
@@ -50,6 +54,16 @@ Lists every asset that currently has a live snapshot in the MCP server's cache. 
       "ts": 1792495242,
       "updated_at": "2026-10-20T11:20:42.909Z",
       "stale": false
+    },
+    {
+      "asset": "USDY",
+      "state": "UNKNOWN",
+      "discount": null,
+      "intrinsic_usd": null,
+      "market_usd": null,
+      "ts": null,
+      "updated_at": null,
+      "stale": true
     }
   ]
 }
@@ -145,9 +159,14 @@ shock. `shock_bps` must be one of `100`, `250`, `500`, `1000`, or `2000`.
   "by_protocol": [
     { "protocol": "jupiter_lend", "liquidatable_usd": "39885555", "positions": ">50" }
   ],
-  "advisory_note": "advisory model estimate — not a verifiable receipt; risky bands may be suppressed for privacy, and bad-debt/slippage is not yet modelled"
+  "advisory_note": "advisory model estimate: not a verifiable receipt; risky bands may be suppressed for privacy, and bad-debt/slippage is not yet modelled"
 }
 ```
+
+When `coverage` is `unknown` there are no fresh health-factor bands and the
+liquidatable amount is not known: the output schema accepts `null` for
+`liquidatable_usd` and `positions` (top level and per protocol) so the API can say
+"not known" rather than `"0"` (nothing liquidates).
 
 The MCP result also carries `stale` and `data_age_sec`, computed from `updated_at`.
 The liquidation bands refresh hourly, so `stale: true` (older than 2 hours) means the
@@ -158,8 +177,10 @@ under a specific depeg shock.
 
 ## `verify_alert`
 
-Verify an on-chain alert receipt. Proxies `GET /v1/audit/:alert_id`; the underlying
-data is already public. When `has_replay_artifact` is `true`, the MCP result adds
+Fetch the audit receipt for an alert, exactly as Pegana's API serves it. This is a
+proxy of `GET /v1/audit/:alert_id` (the underlying data is already public), not a
+verification: the tool recomputes no hash and does not check the on-chain anchor, so
+its answer is only as trustworthy as the server that served it. When `has_replay_artifact` is `true`, the MCP result adds
 `evidence.replay_bundle_url`, the public download link
 (`https://api.pegana.xyz/v1/audit/{id}/replay-bundle`).
 
@@ -201,8 +222,19 @@ The response is wrapped in a `result` envelope. `evidence_status` discriminates
 `pending` / `failed_permanent` shapes mirror the `/v1/audit/:id` four-state
 contract and omit the `evidence` object.
 
-Use this when a user pastes an alert ID and the model needs to confirm it corresponds
-to a real, on-chain-anchored transition before acting on it.
+Use this when a user pastes an alert ID and the model needs the receipt's contents
+(inputs, verdict, `receipt_sha256`, `commit_status`). To verify the receipt
+independently, run the open-source `pegana-replay` CLI on your own machine:
+
+```bash
+cargo install pegana-replay --locked
+pegana-replay --alert-id <alert_id>
+```
+
+It re-hashes the frozen inputs and verdict, compares the result to `receipt_sha256`,
+and checks that the on-chain memo anchor carries that hash and was signed by Pegana's
+pinned ops wallet (`--offline` skips the on-chain check; `--bundle <file>` verifies a
+downloaded replay bundle).
 
 ## `get_asset_history`
 
@@ -229,7 +261,8 @@ places. An unknown symbol returns an `isError` result instead of an empty series
 
 Pull-based batch of peg state-transition events. Inputs: `symbols` (1 to 20),
 `since_ts` (cursor, unix seconds, pass `0` on the first call) and optional
-`threshold_bps`. Returns up to 1000 events ascending by time, plus a `next_cursor` to
+`threshold_bps`. Symbols are case-sensitive; an unknown or mistyped symbol returns an
+`isError` result naming it (`asset 'X' not tracked`), not an empty batch. Returns up to 1000 events ascending by time, plus a `next_cursor` to
 pass back as `since_ts` on the next call so you walk the stream without gaps.
 
 The result is `{ count, next_cursor, events }`. Each event carries `id`, `asset`,

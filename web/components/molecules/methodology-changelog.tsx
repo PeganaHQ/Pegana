@@ -70,7 +70,11 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
       );
     } else {
       out.push(
-        <code key={`${keyBase}-c${i++}`}>{stripDashes(tok.slice(1, -1))}</code>,
+        // overflow-wrap:anywhere lets long identifiers such as
+        // discount_sanity_violated break instead of running off a 390 screen.
+        <code key={`${keyBase}-c${i++}`} className="[overflow-wrap:anywhere]">
+          {stripDashes(tok.slice(1, -1))}
+        </code>,
       );
     }
     last = m.index + tok.length;

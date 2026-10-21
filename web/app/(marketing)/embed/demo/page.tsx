@@ -65,7 +65,7 @@ export default function EmbedDemoPage() {
                 </h2>
                 <Link
                   href={`/asset/${asset}`}
-                  className="font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--v2-dim)] underline-offset-2 hover:text-[var(--v2-text)] hover:underline"
+                  className="font-mono text-[12px] uppercase tracking-[0.08em] text-[var(--v2-dim)] underline-offset-2 hover:text-[var(--v2-text)] hover:underline"
                 >
                   full page ↗
                 </Link>
@@ -149,7 +149,7 @@ function PanelV2({
 }) {
   return (
     <div className="space-y-3">
-      <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--v2-dim)]">
+      <div className="font-mono text-[12px] uppercase tracking-[0.1em] text-[var(--v2-dim)]">
         {label}
       </div>
       <div className="flex min-h-[60px] items-center rounded-[14px] border border-[var(--v2-line)] bg-[var(--v2-panel)] px-4 py-3">

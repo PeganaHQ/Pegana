@@ -29,14 +29,14 @@ class AssetCard:
         anchor (Anchor): Peg anchor tells a consumer how to interpret the asset's fair value WITHOUT
             knowing Pegana's internal taxonomy:
 
-            - `"USD"` — the asset targets exactly $1 (fiat-backed, RWA, delta-neutral,
+            - `"USD"`: the asset targets exactly $1 (fiat-backed, RWA, delta-neutral,
               and CDP stablecoins). A discount from $1 IS the risk signal.
 
-            - `"FX"` — the asset targets a fixed non-USD fiat exchange rate (e.g.
+            - `"FX"`: the asset targets a fixed non-USD fiat exchange rate (e.g.
               EURC→EUR, BRZ→BRL). Read `peg_target` for the specific currency. A
               discount from the FX rate IS the risk signal.
 
-            - `"NAV"` — the asset's fair value is its intrinsic redemption/net-asset
+            - `"NAV"`: the asset's fair value is its intrinsic redemption/net-asset
               value, which is NOT a fixed fiat rate (LSTs, yield-bearing stables,
               synthetic leverage). The discount is relative to NAV, and NAV itself
               moves.
@@ -46,11 +46,11 @@ class AssetCard:
             price legitimately accrues above $1 over time.
         calibration (Calibration): Calibration status of an asset (and of an alert that asset emitted).
 
-            - `provisional` — a "beta" asset: released and alerting publicly, but its
+            - `provisional`: a "beta" asset: released and alerting publicly, but its
               thresholds are not yet validated over a full post-launch calibration
               window. Equivalent to `monitoring_only=true`. Read its alerts as
               experimental.
-            - `calibrated` — a fully calibrated asset that counts in the launch
+            - `calibrated`: a fully calibrated asset that counts in the launch
               denominator.
 
             This is the SAME vocabulary the dispatcher emits on the webhook canonical
@@ -68,7 +68,7 @@ class AssetCard:
         risk_side (RiskSide): Which direction of the signed `discount` can move this asset's published
             `state`.
 
-            - `"below"` — only a discount (market BELOW the peg/anchor) is a risk
+            - `"below"`: only a discount (market BELOW the peg/anchor) is a risk
               signal. A premium never escalates the state. This covers USD and FX
               anchors, and also every NAV class today (LSTs, yield-bearing stables,
               synthetic leverage): for those the engine treats a premium as
@@ -76,18 +76,18 @@ class AssetCard:
               `discount` on them is NOT a missed alert. An implausibly large premium on
               an LST or yield stable is reported as `UNKNOWN` (`state_reason:
               premium_sanity`), not as a depeg.
-            - `"either"` — both a discount and a premium can escalate the state.
+            - `"either"`: both a discount and a premium can escalate the state.
               Reserved for a NAV-anchored class without the premium carve-out; no
               tracked class uses it today.
         symbol (str):
         circulating_supply (None | str | Unset): Circulating supply of the mint (`rust_decimal`, serialized as a JSON
-            string), scaled by `decimals`. This is a SIZE/CONTEXT signal — NOT a
-            peg-safety signal — and is NEVER an input to `discount`/`state`/
+            string), scaled by `decimals`. This is a SIZE/CONTEXT signal; NOT a
+            peg-safety signal; and is NEVER an input to `discount`/`state`/
             thresholds. Sourced from the on-chain SPL Mint account's `supply`
             field by the isolated `token_supply` indexer task on a slow (~10 min)
             cadence (migration 0065). No freshness bound is enforced on this
-            field the way `updated_at` is for `discount` — supply changes slowly
-            by nature. `null` until the mint has been observed at least once —
+            field the way `updated_at` is for `discount`; supply changes slowly
+            by nature. `null` until the mint has been observed at least once;
             serialized as `null` (like `discount`), not omitted.
         confidence (Confidence | None | Unset):
         current_state_duration_secs (int | None | Unset): Seconds the asset has resided in its CURRENT committed FSM
@@ -136,9 +136,9 @@ class AssetCard:
             much size an exit can absorb, NOT a peg-safety signal and NEVER an input
             to `discount`/`state`/thresholds. `null` when tokens.xyz has no market
             for the mint (7 of 69 active assets as of 2026-08-10) or it has not been
-            observed yet — `null` NEVER means zero (ADR-0019). Read together with
+            observed yet; `null` NEVER means zero (ADR-0019). Read together with
             `market_context_at` for freshness.
-        market_cap (None | str | Unset): Market capitalization in USD = `circulating_supply × market_usd` — a
+        market_cap (None | str | Unset): Market capitalization in USD = `circulating_supply × market_usd`; a
             SIZE/CONTEXT signal for gauging relative scale across assets, NOT a
             peg-safety signal and NEVER an input to `discount`/`state`/thresholds.
             `None` whenever either factor is missing (no `circulating_supply`
@@ -156,37 +156,37 @@ class AssetCard:
         monitoring_since (None | str | Unset): YYYY-MM-DD date when the asset entered monitoring-only status. Omitted
             for fully calibrated assets.
         oracle_degraded (None | OracleDegraded | Unset):
-        risk_score (int | None | Unset): Derived 0-100 peg-risk score — a single sortable/thresholdable number for
+        risk_score (int | None | Unset): Derived 0-100 peg-risk score; a single sortable/thresholdable number for
             integrators, ALONGSIDE (never replacing) `state`. Anchored to the committed
             `state` so it never disagrees with the classification (PEGGED ≤ 24, DRIFT
             25-49, DEPEG 50-74, CRITICAL 75-94, BLACK_SWAN 95-100), interpolated within
             the band by the effective discount magnitude. `null` when `state` is
-            UNKNOWN/absent, no discount exists, or thresholds are the CDP CR-form —
+            UNKNOWN/absent, no discount exists, or thresholds are the CDP CR-form;
             we never fabricate a score (ADR-0019). Deterministic + reproducible from
             the other published fields; NOT part of any receipt hash. See
             `crates/api-rs/src/risk_score.rs`.
         series_24h (list[float] | None | Unset):
         sol_per_lst (None | str | Unset): Stake-pool SOL per share for LSTs (decimal string, at most 18 decimal
             places like the USD legs, trailing zeros trimmed). Omitted for non-LST
-            assets. Reflects the LATEST intrinsic snapshot — read together with
+            assets. Reflects the LATEST intrinsic snapshot; read together with
             `updated_at` for freshness. NAV decomposition is
             `intrinsic_usd = sol_per_lst × SOL/USD`.
         state (None | PegState | Unset):
         state_reason (None | str | Unset): Advisory machine-readable reason for the snapshot's state. Explanatory
-            only — never a verdict input and not part of any receipt hash.
+            only; never a verdict input and not part of any receipt hash.
 
             **Emitted today:**
-            - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
+            - `premium_sanity`: engine NAV-sanity override: smoothed discount exceeded
               the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
               suspect).
-            - `stale_source` — API layer: no discount snapshot in the last 15 min
+            - `stale_source`: API layer: no discount snapshot in the last 15 min
               (sources or engine dark), state collapsed to UNKNOWN.
-            - `market_unavailable` — API layer: no discount snapshot in the last 15
+            - `market_unavailable`: API layer: no discount snapshot in the last 15
               min, but the intrinsic leg IS fresh and no market tick exists in that
               window (thin market, no reliable quote). State UNKNOWN; `intrinsic_usd`
               and `updated_at` are the fresh intrinsic reading, `market_usd` is null.
 
-            **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
+            **Reserved; not yet emitted (planned for depth-gate / oracle-crosscheck
             work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
             nominal`.
 
@@ -200,7 +200,7 @@ class AssetCard:
             CDP collateral-ratio form `{"cr_drift","cr_depeg","cr_critical",
             "cr_black_swan"}` for hyUSD. This is the AUTHORITATIVE source the
             client should key band-gauge / chart threshold lines / "closest to
-            breaking" sort off — replacing any hand-maintained client table. The
+            breaking" sort off; replacing any hand-maintained client table. The
             column is re-synced to the engine's calibrated `assets.toml` values by
             migration `0042_resync_asset_thresholds`. Omitted only if the column
             is NULL (never, given the `NOT NULL` constraint) or fails to decode.
@@ -211,7 +211,7 @@ class AssetCard:
             24h (BSRV-02), in the same signed-fraction units as `discount`
             (e.g. `0.0123` = 123 bps). Computed as
             `max(greatest(abs(min_discount), abs(max_discount)))` over the
-            `discount_1m` aggregate — discount is signed, so the abs is required to
+            `discount_1m` aggregate; discount is signed, so the abs is required to
             catch the worst tick in EITHER direction. Trailing 24h, INDEPENDENT of
             the current-snapshot 15-min freshness bound on `discount`. Omitted when
             no `discount_1m` rows exist in the window.

@@ -61,7 +61,7 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 </Accordion>
 
 <Accordion title="What's the rate limit?">
-  Per-IP sliding window on the REST API, currently **60 req/min** (the live
+  Per-IP sliding window on the REST API, currently **240 requests a minute per IP** (see the
   `RateLimit-Limit` header); `/v1/audit.csv` is stricter at **10/min**. WebSocket allows
   **20 concurrent connections per IP**. MCP calls are rate-limited per agent.
   Handle `429` and back off on `Retry-After`.

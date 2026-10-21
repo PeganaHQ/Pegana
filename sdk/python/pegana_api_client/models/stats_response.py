@@ -27,7 +27,7 @@ class StatsResponse:
             (`PEGGED` / `DRIFT` / `DEPEG` / `CRITICAL` / `BLACK_SWAN` / `UNKNOWN`).
             Empty buckets are omitted, not zero-filled.
         delivery_health (DeliveryHealth): Delivery-pipeline health rollup. Surfaced so the dashboard can show a
-            degraded badge when notifications are silently failing — historically
+            degraded badge when notifications are silently failing; historically
             MarkdownV2 escape bugs caused alert_deliveries.status='failed' rows to
             pile up without any user-visible signal, breaking trust.
     """

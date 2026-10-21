@@ -4,7 +4,6 @@ import { pageMetadata } from "@/lib/seo/page-metadata";
 import { cn } from "@/lib/utils/cn";
 import { switzerV2, geistMonoV2 } from "@/app/fonts/v2-fonts";
 import { inCalibrationWindow } from "@/lib/calibration";
-import { TokenIcon } from "@/components/atoms/token-icon";
 import { assetClassForIcon, findCanonAsset } from "@/lib/asset/canon";
 import { loadAssetsCanonFromRepo } from "@/lib/asset/canon-server";
 import {
@@ -20,14 +19,11 @@ import {
   type StatItem,
 } from "@/components/organisms/v2/inner/stat-strip-v2";
 import {
-  ListRowsV2,
-  ListRowHead,
-  ListRow,
-} from "@/components/organisms/v2/inner/list-rows-v2";
-import { HashChip } from "@/components/molecules/hash-chip";
-import { PillGhost, StatePillV2 } from "@/components/organisms/v2/shared";
-import { displaySymbol } from "@/lib/asset/display-symbol";
-import type { PegState } from "@/lib/api/types";
+  AuditLedgerTable,
+  type AuditLedgerRow,
+} from "@/components/organisms/audit/audit-ledger-table";
+import { PillGhost } from "@/components/organisms/v2/shared";
+import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
 import { serverApiHeaders } from "@/lib/api/base";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "https://api.pegana.xyz";
@@ -119,8 +115,6 @@ const ALLOWED_STATE_FILTERS = new Set([
   "BLACK_SWAN",
 ]);
 
-const LEDGER_COLUMNS = "150px 110px 1fr 90px 150px";
-
 // Headline emphasis color per filter state — plain colored text (no
 // iridescent gradient here; the artifact reserves that single per-page
 // moment for the fraction bar on /methodology and "read." on /about).
@@ -144,10 +138,14 @@ export default async function AuditIndexPage({
   // USD*). Anything else is dropped before forwarding; URLSearchParams encodes
   // the value on the way out.
   const rawAsset = params.asset ?? "";
+  // A display alias (eHYUSD) resolves to the canonical API symbol (sHYUSD)
+  // for the fetch and the CSV link; the header prints `assetShown`, the same
+  // display label the rows use.
   const assetFilter =
     rawAsset.length > 0 && /^[A-Za-z0-9._+*-]{1,32}$/.test(rawAsset)
-      ? rawAsset
+      ? resolveAliasSymbol(rawAsset)
       : null;
+  const assetShown = assetFilter ? displaySymbol(assetFilter) : null;
   const [fetched, canon] = await Promise.all([
     fetchIndex(stateFilter, assetFilter),
     loadAssetsCanonFromRepo("audit page"),
@@ -155,6 +153,26 @@ export default async function AuditIndexPage({
   const rows = fetched.status === "ok" ? fetched.rows : [];
   const inWindow = inCalibrationWindow();
   const emptyKind = pickEmptyKind(fetched.status);
+
+  // Resolved server-side so the client table only receives plain data. An
+  // asset missing from the canon (retired xSOL / pbUSDC receipts) keeps its
+  // row and renders the monogram fallback.
+  const ledgerRows: AuditLedgerRow[] = rows.map((r) => {
+    const meta = findCanonAsset(canon, r.asset);
+    return {
+      id: r.id,
+      asset: r.asset,
+      symbol: displaySymbol(r.asset),
+      mint: meta?.mint ?? null,
+      klass: assetClassForIcon(meta?.className) ?? null,
+      fromState: r.from_state,
+      toState: r.to_state,
+      detectedAt: formatTs(r.detected_at),
+      methodologyVersion: r.methodology_version,
+      receiptSha256: r.receipt_sha256,
+      anchored: r.onchain_tx_sig != null,
+    };
+  });
 
   // CSV export requires from+to (CsvParams, non-Option) — a bare ?limit=50 link
   // 400s. Wire a valid default 90-day window ending now, carrying the active
@@ -196,7 +214,7 @@ export default async function AuditIndexPage({
             </>
           ) : assetFilter ? (
             <>
-              Verifiable alerts for <b className="font-medium">{assetFilter}</b>
+              Verifiable alerts for <b className="font-medium">{assetShown}</b>
               .
             </>
           ) : (
@@ -225,7 +243,7 @@ export default async function AuditIndexPage({
             {assetFilter && (
               <>
                 {" "}
-                Showing only rows for {assetFilter}.{" "}
+                Showing only rows for {assetShown}.{" "}
                 <Link href="/audit" className="underline">
                   Clear filter
                 </Link>
@@ -245,7 +263,7 @@ export default async function AuditIndexPage({
           rows.length > 0
             ? "showing recent rows below · full history at /v1/audit"
             : assetFilter
-              ? `no non-pegged transitions recorded for ${assetFilter}`
+              ? `no non-pegged transitions recorded for ${assetShown}`
               : stateFilter
                 ? `no ${stateFilter.toLowerCase()} transitions in view`
                 : "no non-pegged transitions recorded yet",
@@ -255,111 +273,54 @@ export default async function AuditIndexPage({
       <div className="mx-auto max-w-[880px] px-5 pb-32 sm:px-8">
         <StatStripV2 items={statItems} />
 
-        <div className="v2-in-ptabs" role="group" aria-label="Filter by state">
-          {STATE_FILTERS.map((f) => {
-            const isActive = f.value === stateFilter;
-            const href = f.value ? `/audit?state=${f.value}` : "/audit";
-            return (
-              <Link
-                key={f.label}
-                href={href}
-                className={cn("v2-in-ptab", isActive && "v2-in-on")}
-                aria-current={isActive ? "true" : undefined}
-              >
-                {f.label}
-              </Link>
-            );
-          })}
-        </div>
-
-        {rows.length > 0 ? (
-          <>
-            <ListRowsV2 label="Recent audit receipts" wide minWidth={720}>
-              <ListRowHead columns={LEDGER_COLUMNS}>
-                <span>When · UTC</span>
-                <span>Asset</span>
-                <span>Transition</span>
-                <span>Method</span>
-                <span>Receipt</span>
-              </ListRowHead>
-              {rows.map((r) => {
-                const meta = findCanonAsset(canon, r.asset);
+        {/* One row at every width. Below sm the row scrolls sideways under a
+            40px right-edge fade (the PillTabs toolbar idiom); the trailing
+            pr-10 lets the last pill scroll clear of the fade. v2.css makes
+            .v2-in-ptabs wrap and squares its radius on phones, so both are
+            overridden here rather than in the shared stylesheet. */}
+        <div className="overflow-x-auto [scrollbar-width:none] max-sm:[-webkit-mask-image:linear-gradient(to_right,#000_calc(100%_-_40px),transparent)] max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%_-_40px),transparent)] [&::-webkit-scrollbar]:hidden">
+          <div className="flex w-max pb-1 pr-10 sm:pr-0">
+            <div
+              className="v2-in-ptabs flex-nowrap! rounded-full!"
+              role="group"
+              aria-label="Filter by state"
+            >
+              {STATE_FILTERS.map((f) => {
+                const isActive = f.value === stateFilter;
+                const href = f.value ? `/audit?state=${f.value}` : "/audit";
                 return (
-                  <ListRow
-                    key={r.id}
-                    columns={LEDGER_COLUMNS}
-                    href={`/audit/${r.id}`}
-                    // Asset cell (index 1) hosts the visible, real <a> — a
-                    // better link label than the raw timestamp in cell 0 —
-                    // with an explicit aria-label so the accessible name
-                    // still names the transition, not just the symbol.
-                    linkCellIndex={1}
-                    linkLabel={`View receipt: ${r.asset} ${r.from_state} to ${r.to_state}, ${formatTs(r.detected_at)}`}
-                    // Receipt cell (index 4) holds its own interactive
-                    // HashChip copy button — it used to be nested INSIDE the
-                    // row's single <a> (invalid HTML, interactive-in-
-                    // interactive). It's now a sibling <td>, stacked above
-                    // the row's stretched-link overlay so its clicks land on
-                    // the button, not the row link.
-                    interactiveCells={[4]}
+                  <Link
+                    key={f.label}
+                    href={href}
+                    className={cn("v2-in-ptab", isActive && "v2-in-on")}
+                    aria-current={isActive ? "page" : undefined}
                   >
-                    <span className="v2-in-num text-[12px] text-[var(--v2-muted)]">
-                      {formatTs(r.detected_at)}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      {meta?.mint ? (
-                        <TokenIcon
-                          mint={meta.mint}
-                          symbol={displaySymbol(r.asset)}
-                          klass={assetClassForIcon(meta.className)}
-                          size={22}
-                          className="v2-in-tokenicon"
-                        />
-                      ) : (
-                        <span className="v2-in-tokico">
-                          {displaySymbol(r.asset).slice(0, 2)}
-                        </span>
-                      )}
-                      <b className="text-[13.5px] font-medium">
-                        {displaySymbol(r.asset)}
-                      </b>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <StatePillV2 state={r.from_state as PegState} />
-                      <span className="text-[var(--v2-dim)]">&#8594;</span>
-                      <StatePillV2 state={r.to_state as PegState} />
-                    </span>
-                    <span className="v2-in-num text-[11.5px] text-[var(--v2-muted)]">
-                      v{r.methodology_version}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <HashChip
-                        full={r.receipt_sha256}
-                        display={`${r.receipt_sha256.slice(0, 8)}…`}
-                      />
-                      {r.onchain_tx_sig && (
-                        <span className="font-mono text-[10.5px] text-[var(--v2-peg)]">
-                          anchored
-                        </span>
-                      )}
-                    </span>
-                  </ListRow>
+                    {f.label}
+                  </Link>
                 );
               })}
-            </ListRowsV2>
-            <p className="mt-2 font-mono text-[12px] text-[var(--v2-dim)]">
-              click a row for the receipt
-            </p>
-          </>
-        ) : (
-          <div className="mt-6">
-            <AuditEmptyState
-              kind={emptyKind}
-              inCalibrationWindow={inWindow}
-              apiBase={API_BASE}
-              stateFilter={stateFilter}
-            />
+            </div>
           </div>
+        </div>
+
+        <AuditLedgerTable
+          rows={ledgerRows}
+          resetKey={`${stateFilter ?? ""}|${assetFilter ?? ""}`}
+          empty={
+            <div className="mt-6">
+              <AuditEmptyState
+                kind={emptyKind}
+                inCalibrationWindow={inWindow}
+                apiBase={API_BASE}
+                stateFilter={stateFilter}
+              />
+            </div>
+          }
+        />
+        {ledgerRows.length > 0 && (
+          <p className="mt-3 font-mono text-[12px] text-[var(--v2-dim)]">
+            click a row for the receipt
+          </p>
         )}
 
         <hr className="v2-in-hr" />

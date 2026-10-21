@@ -64,11 +64,28 @@ export function parseImpactPct(raw: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** `signal` plus a timeout. AbortSignal.any is missing before Safari 17.4, so
+ *  fall back to one controller fed by both. */
+function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([signal, timeout]);
+  }
+  const both = new AbortController();
+  const abort = () => both.abort();
+  if (signal.aborted) abort();
+  signal.addEventListener("abort", abort, { once: true });
+  timeout.addEventListener("abort", abort, { once: true });
+  return both.signal;
+}
+
 async function jupiterQuote(
   inputMint: string,
   decimals: number,
   marketUsd: number,
   sizeUsd: number,
+  signal?: AbortSignal,
 ): Promise<{ usdcOut: number; impactPct: number | null; routeLabel: string | null }> {
   const inputAmount = quoteAmountBaseUnits(sizeUsd, marketUsd, decimals);
   const url =
@@ -77,10 +94,10 @@ async function jupiterQuote(
     `&outputMint=${USDC_MINT}` +
     `&amount=${inputAmount}` +
     `&slippageBps=50`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-  if (!res.ok) throw new Error(`Jupiter ${res.status}`);
+  const res = await fetch(url, { signal: withTimeout(signal, 10_000) });
+  if (!res.ok) throw await quoteErrorFrom(res);
   const d = await res.json();
-  if (d.error) throw new Error(d.error);
+  if (d.error) throw new QuoteError(String(d.error), true, null);
   const labels = [
     ...new Set<string>(
       (d.routePlan ?? [])
@@ -108,33 +125,134 @@ async function jupiterQuote(
   };
 }
 
-// Jupiter rate-limits bursts: firing all five sizes at once failed 27 of 40
-// quotes in a live probe (every failure an upstream 429), while one-at-a-time
-// requests succeed. So the ladder is fetched sequentially, and a failed size is
-// retried with backoff before it is shown as "Quote failed".
-const QUOTE_RETRY_DELAYS_MS = [1_500, 4_000] as const;
+/**
+ * A failed quote. `retryable` is false for a 4xx from the proxy (a request it
+ * will never accept, so asking again only burns budget). `retryAfterMs` is the
+ * upstream Retry-After the proxy passed through, when it sent one.
+ */
+export class QuoteError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    readonly retryAfterMs: number | null,
+  ) {
+    super(message);
+    this.name = "QuoteError";
+  }
+}
+
+/** Retry-After as milliseconds: delta-seconds or an HTTP date; null if absent. */
+export function parseRetryAfterMs(
+  raw: string | null,
+  now: number = Date.now(),
+): number | null {
+  if (raw == null || raw.trim() === "") return null;
+  const secs = Number(raw);
+  if (Number.isFinite(secs)) return secs >= 0 ? secs * 1000 : null;
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - now) : null;
+}
+
+/** A failed proxy response as a QuoteError. Exported for tests. */
+export async function quoteErrorFrom(res: Response): Promise<QuoteError> {
+  let upstreamStatus: unknown = null;
+  try {
+    upstreamStatus = ((await res.json()) as { upstreamStatus?: unknown })
+      ?.upstreamStatus;
+  } catch {
+    // Not JSON: keep the HTTP status only.
+  }
+  const rateLimited = res.status === 429 || upstreamStatus === 429;
+  // The proxy maps EVERY upstream failure to 503, so the HTTP status alone
+  // cannot tell a transient error from a permanent one. An upstream 4xx other
+  // than 429 (Jupiter's 400 "no route" on a thin asset's $1M rung) will fail
+  // the same way on every retry: asking again only burns the shared budget.
+  const upstream4xx =
+    typeof upstreamStatus === "number" &&
+    upstreamStatus >= 400 &&
+    upstreamStatus < 500 &&
+    upstreamStatus !== 429;
+  const retryable = !upstream4xx && (res.status >= 500 || res.status === 429);
+  return new QuoteError(
+    rateLimited ? "Jupiter rate limit" : `Jupiter ${res.status}`,
+    retryable,
+    rateLimited ? parseRetryAfterMs(res.headers.get("retry-after")) : null,
+  );
+}
+
+// Rate budget. The Jupiter key is the free org tier, about 1 request per
+// second, and the same org serves the box indexer (4 quotes every 10s) and
+// every web visitor. A ladder fired as one burst trips it: firing all five
+// sizes at once failed 27 of 40 quotes in a live probe, every failure an
+// upstream 429. So the rungs go one at a time with RUNG_SPACING_MS between
+// request starts, each row filled as its quote lands, and a rate-limited rung
+// backs off on a schedule longer than Jupiter's window (the old 1.5s / 4s
+// retries landed inside it and failed again). A Retry-After passed through by
+// the proxy raises the wait, never lowers it, capped at RETRY_AFTER_CAP_MS so
+// one bad header cannot stall the ladder.
+export const RUNG_SPACING_MS = 1_100;
+export const QUOTE_RETRY_DELAYS_MS = [2_000, 5_000, 12_000] as const;
+const RETRY_JITTER_MS = 750;
+const RETRY_AFTER_CAP_MS = 15_000;
+
+export interface QuotePacing {
+  /** Minimum gap between the starts of two quote requests. */
+  spacingMs: number;
+  /** Backoff before each retry; its length is the retry cap per rung. */
+  retryDelaysMs: readonly number[];
+  /** Upper bound of the random jitter added to each backoff. */
+  jitterMs: number;
+}
+
+const DEFAULT_PACING: QuotePacing = {
+  spacingMs: RUNG_SPACING_MS,
+  retryDelaysMs: QUOTE_RETRY_DELAYS_MS,
+  jitterMs: RETRY_JITTER_MS,
+};
 
 function sleep(ms: number, isCancelled: () => boolean): Promise<void> {
   return new Promise((resolve) => {
-    if (isCancelled()) return resolve();
+    if (isCancelled() || ms <= 0) return resolve();
     setTimeout(resolve, ms);
   });
 }
 
-/** One quote with bounded retries. Exported for tests. */
+/** Backoff before retry `attempt` (1-based), honouring a Retry-After floor. */
+export function retryDelayMs(
+  attempt: number,
+  err: unknown,
+  pacing: Pick<QuotePacing, "retryDelaysMs" | "jitterMs">,
+  random: () => number = Math.random,
+): number {
+  const base = pacing.retryDelaysMs[attempt - 1] ?? 0;
+  const floor =
+    err instanceof QuoteError && err.retryAfterMs != null
+      ? Math.min(err.retryAfterMs, RETRY_AFTER_CAP_MS)
+      : 0;
+  return Math.max(base, floor) + Math.round(random() * pacing.jitterMs);
+}
+
+/** One quote with bounded, backed-off retries. Exported for tests. */
 export async function quoteWithRetry<T>(
   fetchOnce: () => Promise<T>,
   isCancelled: () => boolean,
   delays: readonly number[] = QUOTE_RETRY_DELAYS_MS,
+  jitterMs: number = RETRY_JITTER_MS,
 ): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= delays.length; attempt++) {
-    if (attempt > 0) await sleep(delays[attempt - 1], isCancelled);
+    if (attempt > 0) {
+      await sleep(
+        retryDelayMs(attempt, lastErr, { retryDelaysMs: delays, jitterMs }),
+        isCancelled,
+      );
+    }
     if (isCancelled()) break;
     try {
       return await fetchOnce();
     } catch (e) {
       lastErr = e;
+      if (e instanceof QuoteError && !e.retryable) break;
     }
   }
   throw lastErr ?? new Error("cancelled");
@@ -154,9 +272,12 @@ function makeLoadingRows(sizes: readonly number[]): QuoteRow[] {
 export function ExitLiquidity({
   asset,
   state,
+  pacing = DEFAULT_PACING,
 }: {
   asset: AssetCardData;
   state?: PegState;
+  /** Request pacing; tests pass a zero-delay one. */
+  pacing?: QuotePacing;
 }) {
   // Engine has no trustworthy signal — telling the user "safe to exit up to $X"
   // on an UNKNOWN asset is actively misleading. Suppress the whole widget.
@@ -181,10 +302,16 @@ export function ExitLiquidity({
   // it cleanly — early-returning above the useState/useEffect/useMemo below is
   // a Rules-of-Hooks crash (and would also fire Jupiter quotes for an asset we
   // can't classify).
-  return <ExitLiquidityInner asset={asset} />;
+  return <ExitLiquidityInner asset={asset} pacing={pacing} />;
 }
 
-function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
+function ExitLiquidityInner({
+  asset,
+  pacing,
+}: {
+  asset: AssetCardData;
+  pacing: QuotePacing;
+}) {
   const marketUsd = asset.market_usd ? parseFloat(asset.market_usd) : null;
   const isUsdc = asset.mint === USDC_MINT;
 
@@ -219,18 +346,34 @@ function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
     const marketUsd = quotePrice;
 
     let cancelled = false;
+    // Aborts the in-flight quote on unmount or re-quote, not just the rows
+    // that would have used it.
+    const aborter = new AbortController();
     const isCancelled = () => cancelled;
     setRows(makeLoadingRows(sizes));
 
-    // Sequential, not Promise.all: see QUOTE_RETRY_DELAYS_MS.
+    // Sequential and spaced, never Promise.all: see RUNG_SPACING_MS.
     void (async () => {
+      let lastStart = -Infinity;
+      const pacedQuote = async (sizeUsd: number) => {
+        await sleep(lastStart + pacing.spacingMs - Date.now(), isCancelled);
+        lastStart = Date.now();
+        return jupiterQuote(
+          asset.mint,
+          asset.decimals,
+          marketUsd,
+          sizeUsd,
+          aborter.signal,
+        );
+      };
       for (const [i, sizeUsd] of sizes.entries()) {
         if (cancelled) return;
         try {
           const result = await quoteWithRetry(
-            () =>
-              jupiterQuote(asset.mint, asset.decimals, marketUsd, sizeUsd),
+            () => pacedQuote(sizeUsd),
             isCancelled,
+            pacing.retryDelaysMs,
+            pacing.jitterMs,
           );
           if (!cancelled) {
             setRows((prev) => {
@@ -254,8 +397,9 @@ function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
 
     return () => {
       cancelled = true;
+      aborter.abort();
     };
-  }, [asset.mint, asset.decimals, quotePrice, isUsdc, sizes]);
+  }, [asset.mint, asset.decimals, quotePrice, isUsdc, sizes, pacing]);
 
   // Depth-curve summary (desktop, once the whole ladder is sampled): the largest
   // exit size still under the 0.3% depeg-tier slippage line.

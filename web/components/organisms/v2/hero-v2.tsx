@@ -1,15 +1,20 @@
 "use client";
 
 import Link from "@/components/atoms/intent-link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { isRateLimited } from "@/lib/api/client";
 import { RATE_LIMITED_BODY } from "@/lib/api/rate-limit-copy";
+import { useLiveUpdatesPaused } from "@/lib/hooks/use-live-updates-paused";
 import { useAppReducedMotion } from "@/lib/motion/use-reduced-motion";
 import { useRevealV2 } from "@/lib/motion/use-reveal-v2";
 import { displaySymbol } from "@/lib/asset/display-symbol";
 import { TokenIcon } from "@/components/atoms/token-icon";
+import {
+  BETA_BADGE_BODY,
+  BETA_BADGE_LABEL,
+} from "@/lib/asset/beta-badge-copy";
 import { HeroRevealCanvas } from "@/components/organisms/v2/hero-reveal-canvas";
 import { DistanceFieldCanvas } from "@/components/organisms/v2/distance-field-canvas";
 import { SpreadSparkCanvas } from "@/components/organisms/v2/spread-spark-canvas";
@@ -45,43 +50,63 @@ const BOARD_ROW_COUNT = 8;
  *  neutral skeleton, never numbers. */
 export type BoardStatus =
   | "live"
+  | "paused"
   | "reconnecting"
   | "loading"
   | "unavailable"
   | "rate_limited";
 
-/** A 429 is this network's per-IP budget, not an outage: it gets its own
- *  status and the app-wide rate-limit wording (lib/api/rate-limit-copy.ts),
- *  never "offline". */
+/** A 429 is the API asking this browser to slow down, not an outage. With
+ *  rows already on screen the last good data stays; a short 429 changes
+ *  nothing, and once nothing has refreshed for over 60s (`paused`, from
+ *  useLiveUpdatesPaused) the pill turns a muted "paused" so frozen rows are
+ *  never labelled live. This page has no app shell, so the pill is the only
+ *  notice here. With nothing loaded yet a 429 gets the calm "paused" empty
+ *  state (lib/api/rate-limit-copy.ts), never "offline". */
 export function boardStatus(opts: {
   hasData: boolean;
   hasError: boolean;
   rateLimited?: boolean;
+  paused?: boolean;
 }): BoardStatus {
+  if (opts.hasData) {
+    if (opts.paused) return "paused";
+    if (opts.hasError && opts.rateLimited) return "live";
+    return opts.hasError ? "reconnecting" : "live";
+  }
   if (opts.hasError && opts.rateLimited) return "rate_limited";
-  if (opts.hasData) return opts.hasError ? "reconnecting" : "live";
   return opts.hasError ? "unavailable" : "loading";
 }
 
 const STATUS_PILL: Record<BoardStatus, { label: string; dot: string }> = {
   live: { label: "live · 60s", dot: "bg-[var(--v2-peg)]" },
+  paused: { label: "paused", dot: "bg-[var(--v2-unk)]" },
   reconnecting: { label: "reconnecting", dot: "bg-[var(--v2-unk)]" },
   loading: { label: "loading", dot: "bg-[var(--v2-unk)]" },
   unavailable: { label: "offline", dot: "bg-[var(--v2-unk)]" },
-  rate_limited: { label: "rate limited", dot: "bg-[var(--v2-drift)]" },
+  rate_limited: { label: "paused", dot: "bg-[var(--v2-unk)]" },
 };
 
 export function HeroV2() {
   const reduced = useAppReducedMotion();
   const { data: assets, error, mutate } = useAssets();
   const [filter, setFilter] = useState<BoardFilter>("all");
+  const { paused } = useLiveUpdatesPaused();
 
-  // Date.now() is intentionally read inside the memo (not a dep): rows only
-  // need recomputing when the asset payload or the filter changes, and the
-  // "updated" stamps refresh naturally with each SWR revalidation render.
+  // The "updated Xs ago" stamps tick on their own clock, so when refreshes
+  // stop (a sustained 429 or an outage) the rows visibly age instead of
+  // freezing at their last label. Rows only exist client-side, so the SSR
+  // value of this clock never reaches the HTML.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const hasRows = !!assets && assets.length > 0;
+  useEffect(() => {
+    if (!hasRows) return;
+    const id = setInterval(() => setNowMs(Date.now()), 10_000);
+    return () => clearInterval(id);
+  }, [hasRows]);
   const rows = useMemo(
-    () => selectBoardRows(assets, Date.now(), BOARD_ROW_COUNT, filter),
-    [assets, filter],
+    () => selectBoardRows(assets, nowMs, BOARD_ROW_COUNT, filter),
+    [assets, filter, nowMs],
   );
   // Never a sample board: no real rows means a skeleton (loading, and the SSR
   // HTML) or an explicit unavailable state, and the "live" pill only shows
@@ -90,6 +115,7 @@ export function HeroV2() {
     hasData: !!assets && assets.length > 0,
     hasError: error != null || (!!assets && assets.length === 0),
     rateLimited: isRateLimited(error),
+    paused,
   });
   const pill = STATUS_PILL[status];
   // null until the live list actually loads — never paint a hardcoded count on
@@ -135,7 +161,7 @@ export function HeroV2() {
           style={{ animationDelay: "210ms" }}
           className="v2-hero-rise mx-auto mt-[26px] max-w-[60ch] text-[clamp(16px,1.9vw,18px)] leading-[1.62] text-[var(--v2-muted)]"
         >
-          Solana stablecoins, LSTs and synthetics,{" "}
+          Solana stablecoins, LSTs and yield-bearing stables,{" "}
           <b className="font-medium text-[var(--v2-text)]">watched live</b>.
           Every state change ships a{" "}
           <b className="font-medium text-[var(--v2-text)]">
@@ -472,8 +498,24 @@ function BoardRowView({
             loading="eager"
           />
           <span className="flex min-w-0 flex-col">
-            <span className="font-semibold text-[var(--v2-text)] transition-colors duration-200 group-hover:text-white">
-              {displaySymbol(row.symbol)}
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="font-semibold text-[var(--v2-text)] transition-colors duration-200 group-hover:text-white">
+                {displaySymbol(row.symbol)}
+              </span>
+              {row.monitoringOnly && (
+                // Same BETA label and caveat as MonitoringBadge (dashboard,
+                // screener, asset page). A plain span, not that badge's
+                // <button>: this cell is inside the row's stretched link, and
+                // a button nested in a link is invalid and unreachable.
+                <span
+                  data-testid="board-beta"
+                  title={BETA_BADGE_BODY}
+                  className="inline-flex h-5 shrink-0 items-center rounded-full border border-[var(--v2-line)] px-2 font-mono text-[12px] uppercase leading-none text-[var(--v2-muted)]"
+                >
+                  {BETA_BADGE_LABEL}
+                  <span className="sr-only">: {BETA_BADGE_BODY}</span>
+                </span>
+              )}
             </span>
             <span className="truncate font-mono text-[12px] text-[var(--v2-muted)]">
               {row.classLabel}

@@ -21,7 +21,7 @@ class SystemicSignal:
     carries no tracked leverage.
 
         Attributes:
-            advisory_note (str): ADR-0036 inv.9 — advisory, not a verifiable receipt.
+            advisory_note (str): ADR-0036 inv.9; advisory, not a verifiable receipt.
             cascade (list[CascadeRung]): Depeg-cascade across the preset shock grid. Empty (`[]`) when no fresh
                 health-factor bands exist; `cascade_coverage` is then `unknown`. Same
                 basis as `/loop-exposure`: total collateral of positions whose health

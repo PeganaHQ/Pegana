@@ -257,7 +257,7 @@ export default async function AuditPage({
   return (
     <main className={cn("pegana-v2", switzerV2.variable, geistMonoV2.variable)}>
       <div className="mx-auto max-w-[880px] px-5 pb-4 pt-16 sm:px-8 sm:pt-24">
-        <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-[var(--v2-muted)]">
+        <p className="font-mono text-[12px] uppercase tracking-[0.18em] text-[var(--v2-muted)]">
           <Link
             href="/audit"
             className="transition-colors hover:text-[var(--v2-text)]"
@@ -481,7 +481,7 @@ export default async function AuditPage({
           <PillGhost href="/audit">Back to the ledger</PillGhost>
         </div>
 
-        <p className="mt-12 border-t border-[var(--v2-line)] pt-6 font-mono text-[11px] leading-[1.6] text-[var(--v2-muted)]">
+        <p className="mt-12 border-t border-[var(--v2-line)] pt-6 font-mono text-[12px] leading-[1.6] text-[var(--v2-muted)]">
           Pegana is a verifiable computation log. Not SOC 2, not a regulatory
           audit, not financial advice.
         </p>

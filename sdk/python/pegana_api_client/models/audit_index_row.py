@@ -22,11 +22,11 @@ class AuditIndexRow:
         asset (str):
         calibration (Calibration): Calibration status of an asset (and of an alert that asset emitted).
 
-            - `provisional` — a "beta" asset: released and alerting publicly, but its
+            - `provisional`: a "beta" asset: released and alerting publicly, but its
               thresholds are not yet validated over a full post-launch calibration
               window. Equivalent to `monitoring_only=true`. Read its alerts as
               experimental.
-            - `calibrated` — a fully calibrated asset that counts in the launch
+            - `calibrated`: a fully calibrated asset that counts in the launch
               denominator.
 
             This is the SAME vocabulary the dispatcher emits on the webhook canonical
@@ -43,7 +43,7 @@ class AuditIndexRow:
             this value directly rather than imposing a naive discount cut.
         id (str):
         methodology_version (str):
-        monitoring_only (bool): True for a released `monitoring_only` (beta) asset — provisional
+        monitoring_only (bool): True for a released `monitoring_only` (beta) asset; provisional
             calibration. Present at runtime since the beta release; this field
             re-aligns the documented schema with the wire (it was emitted but not
             declared). Always present.

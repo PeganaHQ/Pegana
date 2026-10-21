@@ -14,7 +14,7 @@ T = TypeVar("T", bound="AuditGoneResponse")
 
 @_attrs_define
 class AuditGoneResponse:
-    """410 body for `GET /v1/audit/{alert_id}` — receipt persistence failed
+    """410 body for `GET /v1/audit/{alert_id}`; receipt persistence failed
     permanently (ADR-0006 dead-letter terminal); the receipt will never land.
 
         Attributes:

@@ -57,7 +57,12 @@ describe("MobileMenu", () => {
     expect(appContent).toHaveAttribute("aria-hidden", "true");
     expect(appContent.inert).toBe(true);
 
-    await user.click(screen.getByRole("button", { name: /close menu/i }));
+    // Escape is a keyboard dismissal, so focus deterministically stays on the
+    // trigger. (This test used to click the X instead, which is a POINTER
+    // dismissal: the menu then blurs the trigger one frame later on purpose,
+    // so the focus assertion raced that requestAnimationFrame and failed about
+    // one run in eight.)
+    await user.keyboard("{Escape}");
 
     await waitFor(() =>
       expect(trigger).toHaveAttribute("aria-expanded", "false"),
@@ -65,7 +70,34 @@ describe("MobileMenu", () => {
     expect(appContent).not.toHaveAttribute("aria-hidden");
     expect(appContent.inert).toBe(false);
     // Native close() restores focus to whatever was focused before
-    // showModal() — the trigger, since that's what the user clicked.
+    // showModal(): the trigger, since that's what the user clicked.
     expect(trigger).toHaveFocus();
+    // And nothing scheduled after the close takes it away again.
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(trigger).toHaveFocus();
+  });
+
+  it("a pointer dismissal hands focus back to the trigger, then drops the ring a frame later", async () => {
+    const user = userEvent.setup();
+    window.scrollTo = vi.fn();
+    renderWithProviders(
+      <MobileMenu
+        links={[{ href: "/dashboard", label: "Dashboard" }]}
+        searchAction={() => {}}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: /open menu/i });
+    await user.click(trigger);
+    await screen.findByRole("dialog", { name: /menu/i });
+
+    await user.click(screen.getByRole("button", { name: /close menu/i }));
+
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute("aria-expanded", "false"),
+    );
+    // Deterministic end state: the post-close rAF blurs a pointer-restored
+    // trigger so WebKit does not paint a stuck focus ring.
+    await waitFor(() => expect(trigger).not.toHaveFocus());
   });
 });

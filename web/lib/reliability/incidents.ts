@@ -110,7 +110,7 @@ export const RELIABILITY_LOG: ReliabilityEntry[] = [
     title: "A new freeze detector briefly mislabelled JupSOL as Unknown",
     userImpact: "degraded",
     impactNote:
-      "~9 minutes. JupSOL (a public asset) emitted a false Pegged→Unknown→Pegged alert; the signal then self-corrected. Five other affected assets were monitoring-only, so the egress gate kept them off the public feed. No asset was actually off its peg.",
+      "~9 minutes. JupSOL (a public asset) emitted a false Pegged→Unknown→Pegged alert; the signal then self-corrected. Five other affected assets were monitoring-only, and the egress gate in place at the time kept them off the public feed (that gate was removed on 2026-06-16, see the uncalibrated-assets entry). No asset was actually off its peg.",
     durationLabel: "~9 min · 1 public asset",
     summary:
       "We shipped an engine 'freeze detector' meant to publish UNKNOWN when a price basis stops moving (a real failure mode we'd just found on another asset). Its threshold, 20 consecutive identical samples, about 3 minutes, was too low for thinly-traded liquid-staking tokens, whose price ratio is naturally constant for minutes between trades. Six such assets, including the public JupSOL, were briefly and wrongly marked Unknown.",
@@ -128,7 +128,7 @@ export const RELIABILITY_LOG: ReliabilityEntry[] = [
     title: "JupUSD briefly read CRITICAL on a single bad market quote",
     userImpact: "none",
     impactNote:
-      "0 users affected. JupUSD was a brand-new monitoring-only asset with no subscribers, and this was not a real depeg. (We have since added an egress gate so a monitoring-only asset can never reach the public feed at all. See the next entry.)",
+      "0 users affected. JupUSD was a brand-new monitoring-only asset with no subscribers, and this was not a real depeg. (An egress gate for monitoring-only assets followed the same day and was removed on 2026-06-16, when those assets were released as beta. See the next entry.)",
     durationLabel: "~7.5 min · internal only",
     summary:
       "A single Jupiter market quote returned a zero output amount, so the market price computed as $0 and the discount pinned to exactly 1.0 (−100%). That one bad sample poisoned the smoothing filter (EWMA, α=0.3) and JupUSD briefly classified CRITICAL even though the market had not moved.",
@@ -155,8 +155,8 @@ export const RELIABILITY_LOG: ReliabilityEntry[] = [
     rootCause:
       "The monitoring-only status was stored as metadata with no corresponding enforcement at the public egress surfaces. A status flag without a gate.",
     resolution:
-      "An egress gate now filters monitoring-only assets at every public surface: the alerts list, the audit ledger (index and CSV), the stats counters, the dispatcher fan-out, and the engine's on-chain commit. Internal rows are still recorded for the calibration retro.",
-    commits: ["7e4bf8f"],
+      "An egress gate then filtered monitoring-only assets at every public surface: the alerts list, the audit ledger (index and CSV), the stats counters, the dispatcher fan-out, and the engine's on-chain commit. That gate was removed on 2026-06-16: every monitoring-only asset was released as beta, so its alerts are public instead of being withheld, and carry a provisional-calibration (BETA) marker on the web surfaces, Telegram alerts and signed webhooks. The bulk audit CSV is deliberately left unflagged (consumers join on asset).",
+    commits: ["7e4bf8f", "d7915556"],
   },
 ];
 

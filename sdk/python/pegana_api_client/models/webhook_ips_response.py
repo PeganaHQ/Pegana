@@ -16,7 +16,7 @@ class WebhookIpsResponse:
     Attributes:
         ips (list[str]): IPv4 / IPv6 addresses Pegana POSTs from when delivering webhooks.
             Subscribers running zero-trust ingress can allowlist these.
-        recheck_after (datetime.datetime): Hint to refresh this list weekly — IPs can change without notice
+        recheck_after (datetime.datetime): Hint to refresh this list weekly; IPs can change without notice
             during infrastructure migrations.
     """
 

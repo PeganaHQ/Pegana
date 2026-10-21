@@ -33,7 +33,7 @@ class StateResp:
             window and may have entered it earlier, so `since` is a lower bound,
             not a transition time.
         stale (bool): `true` when `updated_at` is older than the 15-minute freshness bound the
-            list/detail endpoints enforce — i.e. the feed has likely frozen. Unlike
+            list/detail endpoints enforce; i.e. the feed has likely frozen. Unlike
             list/detail, `/state` still returns the last value rather than 404-hiding
             it; read this flag to fail safe. Consumers needing a tighter bound can
             derive their own from `updated_at`.
@@ -47,10 +47,10 @@ class StateResp:
         updated_at (datetime.datetime): Timestamp the current snapshot was computed (the latest
             `discount_snapshots.ts`). Distinct from `since` (state-transition time):
             this is the FRESHNESS signal. The engine stops writing snapshots when a
-            feed goes stale ("missing data is not confirming data" — H8), so a frozen
+            feed goes stale ("missing data is not confirming data"; H8), so a frozen
             `updated_at` is exactly how a stale/frozen feed surfaces on this endpoint.
         confidence (None | str | Unset): Pyth oracle confidence bucket: `high` | `medium` | `low` | `unknown`.
-            The PRICE-ORACLE confidence-interval signal (conf/price ratio) — the field
+            The PRICE-ORACLE confidence-interval signal (conf/price ratio); the field
             integrators should gate automation on alongside `state`. Mirrors the list
             endpoint's `confidence`. Collapses to `unknown` when the feed is stale (same
             as `state`), so a frozen feed cannot read as confidently pegged. Omitted only
@@ -64,18 +64,18 @@ class StateResp:
             `discount_snapshots.state_reason` and `Receipt.state_reason`).
 
             **Emitted today:**
-            - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
+            - `premium_sanity`: engine NAV-sanity override: smoothed discount exceeded
               the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
               suspect).
-            - `stale_source` — API layer: no discount snapshot in the last 15 min
+            - `stale_source`: API layer: no discount snapshot in the last 15 min
               (sources or engine dark), state collapsed to UNKNOWN.
-            - `market_unavailable` — API layer: no discount snapshot in the last 15
+            - `market_unavailable`: API layer: no discount snapshot in the last 15
               min, but the intrinsic leg IS fresh and no market tick exists in that
               window (thin market, no reliable quote). State UNKNOWN; the other
               fields are from the last discount snapshot (`updated_at` = when it
               stopped), like `stale_source`.
 
-            **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
+            **Reserved; not yet emitted (planned for depth-gate / oracle-crosscheck
             work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
             nominal`.
 

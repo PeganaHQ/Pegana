@@ -21,6 +21,7 @@ import { lookupAsset } from "@/lib/asset/fetch-asset";
 import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
 import { publicSurfaceOf } from "@/lib/asset/public-surface";
 import { notTrackedResponse } from "@/lib/embed/not-tracked";
+import { embedCacheControl } from "@/lib/embed/cache";
 
 const API_BASE = apiBase();
 const SITE_URL = siteOrigin();
@@ -69,6 +70,83 @@ function xmlEscape(s: string): string {
   );
 }
 
+interface Verdict {
+  state: string;
+  bps: number | null;
+  updatedAt: string | null;
+}
+
+/** A /state or asset-detail payload as a verdict, through the app freshness
+ *  gate (STALE_AFTER_MS): a frozen snapshot reads UNKNOWN with no spread. */
+function verdictFrom(data: AssetState, now: number): Verdict {
+  const updatedAt = data.updated_at ?? null;
+  if (isStale(updatedAt, now)) return { state: "UNKNOWN", bps: null, updatedAt };
+  return {
+    state: data.state ?? data.peg_state ?? "UNKNOWN",
+    // Shared reconcileBps (same 200 bps suspect-drift + impossible clamp as
+    // the badge route + dashboard) so every embed surface agrees byte-for-
+    // byte.
+    bps: reconcileBps({
+      discount: data.discount ?? null,
+      intrinsic_usd: data.intrinsic_usd ?? null,
+      market_usd: data.market_usd ?? null,
+    }).bps,
+    updatedAt,
+  };
+}
+
+// Last good verdict per asset, held by this server instance. When the live
+// /state read fails (a 429 or 5xx, a timeout) the embed shows this, marked
+// stale, instead of "Unknown": a partner page flipping to Unknown while the
+// API has a verdict was a real incident (sHYUSD, then jitoSOL, both Drift).
+// Best effort: a cold instance has none and falls back to the asset-detail
+// read. Bounded so a symbol scan cannot grow it without limit.
+const LAST_GOOD = new Map<string, Verdict>();
+const LAST_GOOD_MAX = 256;
+
+function rememberGood(asset: string, v: Verdict) {
+  // No timestamp, no memory: the freshness gate treats a null updated_at as
+  // not stale, so a remembered verdict without one could be served as
+  // "stale" forever.
+  if (v.state === "UNKNOWN" || v.updatedAt == null) return;
+  LAST_GOOD.delete(asset);
+  LAST_GOOD.set(asset, v);
+  if (LAST_GOOD.size > LAST_GOOD_MAX) {
+    const oldest = LAST_GOOD.keys().next().value;
+    if (oldest !== undefined) LAST_GOOD.delete(oldest);
+  }
+}
+
+/** Test hook: forget every remembered verdict. */
+export function __resetLastGoodForTests() {
+  LAST_GOOD.clear();
+}
+
+/** Newest non-UNKNOWN verdict among the fallbacks that still pass the
+ *  freshness gate; null when there is none. */
+function bestFallback(
+  candidates: Array<Verdict | null | undefined>,
+  now: number,
+): Verdict | null {
+  let best: Verdict | null = null;
+  for (const c of candidates) {
+    // A fallback must carry its own timestamp (see rememberGood): isStale
+    // reads a null updated_at as fresh, which would never expire.
+    if (
+      !c ||
+      c.state === "UNKNOWN" ||
+      c.updatedAt == null ||
+      isStale(c.updatedAt, now)
+    ) {
+      continue;
+    }
+    const t = c.updatedAt ? Date.parse(c.updatedAt) : 0;
+    const bt = best?.updatedAt ? Date.parse(best.updatedAt) : 0;
+    if (!best || t > bt) best = c;
+  }
+  return best;
+}
+
 function formatBps(bps: number | null): string {
   if (bps == null || bps === 0) return "";
   // Holder convention: raw `bps` (reconcileBps) is premium-negative; flip so
@@ -92,41 +170,56 @@ export async function GET(
   // a peg verdict.
   const lookupPromise = lookupAsset(asset);
 
-  let state = "UNKNOWN";
-  let bps: number | null = null;
+  const now = Date.now();
+  // live: the /state read answered. Anything else (429, 5xx, timeout,
+  // network) is a soft-fail, served from the last good verdict when there is
+  // one and never cached at the edge for more than a few seconds.
+  let live: Verdict | null = null;
   try {
     const r = await fetch(
       `${API_BASE}/v1/assets/${encodeURIComponent(asset)}/state`,
       {
+        // serverApiHeaders: the SSR token puts this read on the API's server
+        // budget instead of the shared per-IP one every Vercel function
+        // leaves from. no-store: the edge header below is the only cache. A
+        // Data Cache entry is served past its expiry while it refreshes, so
+        // after an idle spell it handed back a snapshot old enough to trip
+        // the freshness gate, and the edge then held that Unknown for minutes.
         headers: { Accept: "application/json", ...serverApiHeaders() },
-        next: { revalidate: 60 },
+        cache: "no-store",
+        signal: AbortSignal.timeout(5_000),
       },
     );
     if (r.ok) {
-      const data = (await r.json()) as AssetState;
-      // App-level freshness gate (STALE_AFTER_MS, 15 minutes). /state returns
-      // the last value even when its own bound trips, so gate here to match
-      // the app dashboard and never show a frozen state as live.
-      const stale = isStale(data.updated_at, Date.now());
-      state = stale ? "UNKNOWN" : (data.state ?? data.peg_state ?? "UNKNOWN");
-      // Shared reconcileBps (same 200 bps suspect-drift + impossible clamp as
-      // the badge route + dashboard) so every embed surface agrees byte-for-
-      // byte, instead of a private bpsFromDiscount that skipped reconciliation.
-      bps = stale
-        ? null
-        : reconcileBps({
-            discount: data.discount ?? null,
-            intrinsic_usd: data.intrinsic_usd ?? null,
-            market_usd: data.market_usd ?? null,
-          }).bps;
+      live = verdictFrom((await r.json()) as AssetState, now);
+      rememberGood(asset, live);
     }
   } catch {
-    // Render UNKNOWN — never break the host page's layout.
+    // Soft-fail below. Never break the host page's layout.
   }
 
-  if (publicSurfaceOf(await lookupPromise) === "not_tracked") {
+  const lookup = await lookupPromise;
+  if (publicSurfaceOf(lookup) === "not_tracked") {
     return notTrackedResponse(shown, false);
   }
+
+  const fallback = live
+    ? null
+    : bestFallback(
+        [
+          LAST_GOOD.get(asset),
+          lookup.kind === "found"
+            ? verdictFrom(lookup.asset as AssetState, now)
+            : null,
+        ],
+        now,
+      );
+  const degraded = live == null;
+  const verdict: Verdict = live ??
+    fallback ?? { state: "UNKNOWN", bps: null, updatedAt: null };
+  const state = verdict.state;
+  const bps = verdict.bps;
+  const staleMark = fallback != null;
 
   const color = STATE_COLOR[state] ?? STATE_COLOR.UNKNOWN;
   const label = STATE_LABEL[state] ?? STATE_LABEL.UNKNOWN;
@@ -155,6 +248,7 @@ export async function GET(
   .sym{font-weight:600}
   .lbl{color:#8f8aa3;font:500 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .bps{color:${spreadColor};font:500 11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .stl{color:#8f8aa3;font:500 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em}
   .brand{color:#8f8aa3;margin-left:auto;padding-left:8px;border-left:1px solid #1f1f22}
 </style>
 </head>
@@ -162,7 +256,11 @@ export async function GET(
 <a class="b" href="${xmlEscape(href)}" target="_top">
   <span class="pip" aria-hidden="true"></span>
   <span class="sym">${xmlEscape(shown)}</span>
-  <span class="lbl">${xmlEscape(label)}</span><span class="bps">${xmlEscape(formatBps(bps))}</span>
+  <span class="lbl">${xmlEscape(label)}</span><span class="bps">${xmlEscape(formatBps(bps))}</span>${
+    staleMark
+      ? `<span class="stl" title="Live read unavailable; last good state">stale</span>`
+      : ""
+  }
   <span class="brand">Pegana ↗</span>
 </a>
 </body>
@@ -171,7 +269,15 @@ export async function GET(
   return new Response(body, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+      // A live verdict: 60s at the edge, 60s more stale while one request
+      // refreshes it (was 300s, long enough for a changed state to lag the
+      // API by six minutes). Unknown or degraded: see lib/embed/cache.ts.
+      "Cache-Control": embedCacheControl({
+        state,
+        degraded,
+        liveSeconds: 60,
+        swrSeconds: 60,
+      }),
       // Cross-origin embeddable: drop X-Frame-Options, set permissive CSP.
       "Content-Security-Policy": "frame-ancestors *;",
     },

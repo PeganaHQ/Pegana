@@ -1,13 +1,23 @@
 "use client";
 
 import { isRateLimited } from "@/lib/api/client";
-import { RATE_LIMITED_BODY, RATE_LIMITED_LABEL } from "@/lib/api/rate-limit-copy";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  RATE_LIMITED_BODY,
+  RATE_LIMITED_LABEL,
+} from "@/lib/api/rate-limit-copy";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "@/components/atoms/intent-link";
 import { Check, ListFilter } from "lucide-react";
+import { PillTabs, type PillTabItem } from "@/components/molecules/pill-tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { CLASS_TABS } from "@/lib/hooks/use-screener-state";
 import { useAlertsWindow } from "@/lib/hooks/use-alerts";
 import { useAssets } from "@/lib/hooks/use-assets";
-import { useLive } from "@/lib/store/live-context";
+import { useLive, useWsDrivenPage } from "@/lib/store/live-context";
 import { StatePip } from "@/components/atoms/state-pip";
 import { TokenIcon } from "@/components/atoms/token-icon";
 import { Sparkline } from "@/components/atoms/sparkline";
@@ -25,6 +35,7 @@ import {
   clusterAlerts,
   eventCounts,
   matchesEventFilters,
+  retiredSymbols,
   type ClassFilter,
   type EventCluster,
   type SeverityFilter,
@@ -34,19 +45,19 @@ import { displaySymbol } from "@/lib/asset/display-symbol";
 import type { AlertRow, PegState, AssetCardData } from "@/lib/api/types";
 import { spreadSignClass } from "@/lib/state-class";
 
-// /events — Linear-style transition log with a 240px filter rail on the
-// left to match the dashboard shell. Class + severity facets live in the
-// rail; main column is the chronological timeline (with the 52-week
-// heatmap as an opening summary).
+// /events: Linear-style transition log. One toolbar row above the timeline
+// (the /dashboard idiom: two canonical PillTabs groups split by a hairline)
+// carries the Class and Severity facets; the 52-week heatmap and the off-peg
+// scoreboard open the page as a summary.
+
+// 12px type floor for the canonical PillTabs on this page (the component's
+// own label is 11px and its count 10px). Scoped here, not in the component,
+// so the other call-sites are untouched.
+const PILL_TYPE_FLOOR =
+  "[&_button]:text-[12px] [&_button_span]:text-[12px] max-sm:[&_button]:gap-1 max-sm:[&_button]:px-2 max-sm:[&_button]:tracking-normal";
 
 function classLabel(c: string): string {
-  return c === "lst"
-    ? "LST"
-    : c.startsWith("stable_")
-      ? "Stable"
-      : c === "synth_lev"
-        ? "Synth"
-        : c;
+  return c === "lst" ? "LST" : c.startsWith("stable_") ? "Stable" : "Retired";
 }
 
 // Time-bucket headers (Today / Yesterday / This week / Earlier) — the Linear
@@ -92,7 +103,12 @@ export default function EventsPage() {
     () => new Date(Date.now() - 365 * MS_PER_DAY).toISOString(),
     [],
   );
-  const { data: windowData, isLoading, error, mutate } = useAlertsWindow({
+  const {
+    data: windowData,
+    isLoading,
+    error,
+    mutate,
+  } = useAlertsWindow({
     since,
     maxPages: 10,
   });
@@ -100,6 +116,7 @@ export default function EventsPage() {
   const coverageFloorDay = windowData?.coverageFloorDay ?? null;
   const { data: assets } = useAssets();
   const { byAsset } = useLive();
+  useWsDrivenPage();
   const previousLiveStates = useRef<Record<string, PegState>>({});
   const [liveRows, setLiveRows] = useState<AlertRow[]>([]);
 
@@ -153,19 +170,113 @@ export default function EventsPage() {
   // Every alert lands in exactly one class bucket and one severity bucket
   // (lib/alerts/events.ts), so each tab group sums to All. It used to drop
   // retired classes and recoveries into PEGGED, so 74+349+0 != 440.
+  //
+  // Class comes from the live asset universe, never from the row's own
+  // `class`: the audit mapper stamps every row "unknown" when its /v1/assets
+  // call fails (e.g. a 429), which used to file the whole year under "Other".
+  // While the universe is unavailable the class facets read an en dash and are
+  // disabled; an asset missing from a loaded universe is Retired.
+  const universe = useMemo<Record<string, string> | null>(() => {
+    if (!assets) return null;
+    const m: Record<string, string> = {};
+    for (const a of assets) m[a.symbol] = a.class;
+    return m;
+  }, [assets]);
+
   const { byClass: classCounts, bySeverity: severityCounts } = useMemo(
-    () => eventCounts(alerts),
-    [alerts],
+    () => eventCounts(alerts, universe),
+    [alerts, universe],
   );
+  const retired = useMemo(
+    () => retiredSymbols(alerts, universe),
+    [alerts, universe],
+  );
+
+  // Facet items. Empty buckets are hidden: Retired only when it holds
+  // alerts; Recovered and Unknown only when they are not a confirmed 0.
+  // Every alert still lands in exactly one bucket of each group, so the
+  // visible tabs sum to All whenever a hidden tab is 0.
+  const classItems: PillTabItem<ClassFilter>[] = [
+    ...CLASS_TABS.map((c) => ({
+      key: c.key,
+      label: c.label,
+      count: classCounts[c.key],
+      disabled: c.key !== "all" && universe === null,
+    })),
+    ...((classCounts.retired ?? 0) > 0
+      ? [
+          {
+            key: "retired" as const,
+            label: "Retired",
+            count: classCounts.retired,
+          },
+        ]
+      : []),
+  ];
+  const severityItems: PillTabItem<SeverityFilter>[] = [
+    { key: "all", label: "All", count: severityCounts.all },
+    {
+      key: "DRIFT",
+      label: "Drift",
+      count: severityCounts.DRIFT,
+      swatch: stateMeta("DRIFT").dotVar,
+    },
+    {
+      key: "DEPEG",
+      label: "Depeg",
+      count: severityCounts.DEPEG,
+      swatch: stateMeta("DEPEG").dotVar,
+    },
+    {
+      key: "CRITICAL",
+      label: "Critical",
+      count: severityCounts.CRITICAL,
+      swatch: stateMeta("CRITICAL").dotVar,
+    },
+    ...(severityCounts.RECOVERED !== 0
+      ? [
+          {
+            key: "RECOVERED" as const,
+            label: "Recovered",
+            count: severityCounts.RECOVERED,
+            swatch: stateMeta("PEGGED").dotVar,
+          },
+        ]
+      : []),
+    ...(severityCounts.UNKNOWN !== 0
+      ? [
+          {
+            key: "UNKNOWN" as const,
+            label: "Unknown",
+            count: severityCounts.UNKNOWN,
+            swatch: stateMeta("UNKNOWN").dotVar,
+          },
+        ]
+      : []),
+  ];
+
+  // The filter actually applied: a selection whose tab is hidden or disabled
+  // (empty bucket, universe unavailable) falls back to All instead of
+  // rendering a filtered view nobody can see the control for.
+  const activeClass: ClassFilter = classItems.some(
+    (i) => i.key === classFilter && !i.disabled,
+  )
+    ? classFilter
+    : "all";
+  const activeSeverity: SeverityFilter = severityItems.some(
+    (i) => i.key === severityFilter,
+  )
+    ? severityFilter
+    : "all";
 
   const clusters = useMemo(() => {
     const rows = [...liveRows, ...(alerts ?? [])];
     if (rows.length === 0) return [];
     const filtered = rows.filter((a) =>
-      matchesEventFilters(a, classFilter, severityFilter),
+      matchesEventFilters(a, activeClass, activeSeverity, universe),
     );
     return clusterAlerts(filtered, assetMap);
-  }, [alerts, assetMap, classFilter, liveRows, severityFilter]);
+  }, [alerts, assetMap, activeClass, liveRows, activeSeverity, universe]);
 
   // `null` while the stream is absent: an all-dark 52-week grid is a strong,
   // specific claim ("a quiet year"), and it was rendered from nothing.
@@ -186,7 +297,7 @@ export default function EventsPage() {
   const pagination = usePagination({
     items: clusters,
     pageSize: 25,
-    resetKey: `${classFilter}|${severityFilter}`,
+    resetKey: `${activeClass}|${activeSeverity}`,
     // The unit the page copy defines: one row per asset per day.
     itemNoun: "row",
   });
@@ -207,70 +318,7 @@ export default function EventsPage() {
     return out;
   }, [pagedClusters]);
 
-  const filtersActive = classFilter !== "all" || severityFilter !== "all";
-
-  // Tab definitions shared by the desktop rail and the mobile pills. The
-  // "Other" class and the Recovery/Unknown severities appear only when they
-  // hold alerts, but they exist so every tab group sums to All.
-  const classOptions: ReadonlyArray<{
-    value: ClassFilter;
-    label: string;
-    count: number | null;
-  }> = [
-    { value: "all", label: "All", count: classCounts.all },
-    { value: "lst", label: "LSTs", count: classCounts.lst },
-    { value: "stable", label: "Stables", count: classCounts.stable },
-    { value: "synth", label: "Synthetic", count: classCounts.synth },
-    ...(classCounts.other
-      ? [{ value: "other" as const, label: "Other", count: classCounts.other }]
-      : []),
-  ];
-  const severityOptions: ReadonlyArray<{
-    value: SeverityFilter;
-    label: string;
-    count: number | null;
-    swatch?: string;
-  }> = [
-    { value: "all", label: "All", count: severityCounts.all },
-    {
-      value: "DRIFT",
-      label: "Drift",
-      count: severityCounts.DRIFT,
-      swatch: stateMeta("DRIFT").dotVar,
-    },
-    {
-      value: "DEPEG",
-      label: "Depeg",
-      count: severityCounts.DEPEG,
-      swatch: stateMeta("DEPEG").dotVar,
-    },
-    {
-      value: "CRITICAL",
-      label: "Critical",
-      count: severityCounts.CRITICAL,
-      swatch: stateMeta("CRITICAL").dotVar,
-    },
-    ...(severityCounts.RECOVERY
-      ? [
-          {
-            value: "RECOVERY" as const,
-            label: "Recovery",
-            count: severityCounts.RECOVERY,
-            swatch: stateMeta("PEGGED").dotVar,
-          },
-        ]
-      : []),
-    ...(severityCounts.UNKNOWN
-      ? [
-          {
-            value: "UNKNOWN" as const,
-            label: "Unknown",
-            count: severityCounts.UNKNOWN,
-            swatch: stateMeta("UNKNOWN").dotVar,
-          },
-        ]
-      : []),
-  ];
+  const filtersActive = activeClass !== "all" || activeSeverity !== "all";
 
   // Timeline row — idiom ported from the V2 changelog spine (spine + dots +
   // type pills), adapted to app density — not the scoped `.pegana-v2`
@@ -279,6 +327,10 @@ export default function EventsPage() {
   function renderCluster(c: EventCluster) {
     const meta = assetMap[c.asset];
     const m = stateMeta(c.worst);
+    // The row's own `class` is "unknown" whenever the audit mapper could not
+    // reach /v1/assets, so resolve it from the universe; print nothing
+    // rather than a guess while the universe is unavailable.
+    const klass = meta ? classLabel(meta.class) : universe ? "Retired" : null;
     return (
       <li key={c.asset + c.day} className="relative grid gap-3">
         <span
@@ -291,7 +343,7 @@ export default function EventsPage() {
         <div className="flex flex-wrap items-center gap-2 font-mono text-[12px] text-text-body">
           <span>{formatDayUS(c.day)}</span>
           {c.live && (
-            <span className="rounded-full border border-st-pegged/30 px-2 py-0.5 text-[9px] uppercase tracking-[0.1em] text-st-pegged">
+            <span className="rounded-full border border-st-pegged/30 px-2 py-0.5 text-[12px] uppercase tracking-[0.08em] text-st-pegged">
               live
             </span>
           )}
@@ -310,20 +362,22 @@ export default function EventsPage() {
                 className="self-center"
               />
             )}
-            <h3 className="text-[22px] font-medium tracking-[-0.015em] text-text transition-colors duration-300 group-hover:text-coral">
+            <h3 className="text-[22px] font-medium tracking-[-0.015em] text-text decoration-hairline decoration-1 underline-offset-[6px] group-hover:underline">
               {displaySymbol(c.asset)}
             </h3>
             {meta?.name && (
               <span className="text-[13px] text-text-muted">{meta.name}</span>
             )}
-            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-text-caption">
-              · {classLabel(c.klass)}
-            </span>
+            {klass && (
+              <span className="font-mono text-[12px] uppercase tracking-[0.08em] text-text-caption">
+                · {klass}
+              </span>
+            )}
             {/* Type pill — bordered chip colored by state, the
                 worst transition of the day, Capitalized label. */}
             <span
               className={cn(
-                "ml-auto inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-medium",
+                "ml-auto inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[12px] font-medium",
                 m.badgeClass,
               )}
             >
@@ -381,384 +435,415 @@ export default function EventsPage() {
   }
 
   return (
-    // <main>, not <div>: /events had no main landmark at all, so the skip link
-    // and any "jump to content" affordance had nothing to target here. The
-    // <aside> filter rail is a sibling INSIDE it, which is correct — it is
-    // page-scoped filtering, not site navigation.
-    <main className="flex min-h-[calc(100dvh-60px)] flex-col lg:flex-row">
-      {/* Sidebar — filter facets, V5 pill-tab tracks (same idiom as the
-          /assets class-filter container). */}
-      <aside className="hidden shrink-0 border-r border-hairline py-6 lg:block lg:w-[248px]">
-        <div className="sticky top-0 flex flex-col gap-6 px-5">
-          <FilterPillGroup
-            label="Class"
-            active={classFilter}
-            onChange={setClassFilter}
-            options={classOptions}
-          />
-          <FilterPillGroup
-            label="Severity"
-            active={severityFilter}
-            onChange={setSeverityFilter}
-            options={severityOptions}
-          />
+    // <main>, not <div>: the skip link and any "jump to content" affordance
+    // target this landmark. Same shell geometry as /assets and /compare now
+    // that the 248px filter rail is gone (pb handled by the app layout on
+    // mobile; explicit on desktop).
+    <main className="mx-auto w-full max-w-[1280px] px-5 pt-10 sm:px-8 sm:pt-14 lg:px-12 lg:pb-24 xl:px-20">
+      {/* Compact app-density PageHero: eyebrow pill + h1 + one-line lede +
+          mono meta row, the /assets and /compare pattern (12px floor). */}
+      <section className="pb-7 sm:pb-9">
+        <span className="mb-3 inline-flex rounded-full border border-hairline px-3 py-1 font-mono text-[12px] font-medium uppercase tracking-[0.14em] text-text-caption">
+          Events
+        </span>
+        <h1 className="max-w-[46ch] text-balance text-[26px] font-medium leading-[1.1] tracking-[-0.02em] text-text sm:text-[34px]">
+          Every depeg, replayable.
+        </h1>
+        <p className="mt-3 max-w-[62ch] text-[14px] leading-[1.6] text-text-body sm:text-[15px]">
+          Each row is one asset on one day with at least one state transition,
+          recoveries to Pegged included. Click into the asset for the exact
+          spread chart.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[12px] text-text-caption">
+          <span className="tabular-nums">
+            {severityCounts.all == null
+              ? "\u2013"
+              : severityCounts.all.toLocaleString("en-US")}{" "}
+            {severityCounts.all === 1 ? "transition" : "transitions"}{" "}
+            {/* A capped paging run does not cover the full year; say where
+                coverage starts instead of claiming 52 weeks. */}
+            {coverageFloorDay
+              ? `since ${formatDayUS(coverageFloorDay)}`
+              : "in 52 weeks"}
+          </span>
+          <Link
+            href="/audit"
+            className="text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
+          >
+            Every event here has a verifiable receipt →
+          </Link>
         </div>
-      </aside>
+      </section>
 
-      {/* Main timeline pane */}
-      <section className="flex-1 px-5 py-10 sm:px-8 sm:py-12 lg:px-12 lg:py-14 xl:px-16">
-        <div className="mx-auto max-w-[960px]">
-          {/* Compact app-density PageHero — same V5 language as /assets and
-              /compare (eyebrow + title + one-line lede). */}
-          <header className="mb-10 sm:mb-12">
-            <span className="mb-3 inline-flex rounded-full border border-hairline px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-text-caption">
-              Events
-            </span>
-            <h1 className="max-w-[46ch] text-balance text-[26px] font-medium leading-[1.1] tracking-[-0.02em] text-text sm:text-[34px]">
-              Every depeg, replayable.
-            </h1>
-            <p className="mt-3 max-w-[62ch] text-[14px] leading-[1.6] text-text-body sm:text-[15px]">
-              Each row is one asset on one day with at least one state
-              transition, recoveries to Pegged included. Click into the asset
-              for the exact spread chart.
-            </p>
-            <Link
-              href="/audit"
-              className="mt-4 inline-flex items-center font-mono text-[11px] uppercase tracking-[0.08em] text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
-            >
-              Every event here has a verifiable receipt →
-            </Link>
-          </header>
-
-          {/* Mobile filter pills — same FilterPillGroup as the desktop rail,
-              horizontally scrollable rather than wrapped. */}
-          <div className="mb-8 flex flex-col gap-3 lg:hidden">
-            <FilterPillGroup
-              label="Class"
-              active={classFilter}
-              onChange={setClassFilter}
-              scroll
-              options={classOptions}
-            />
-            <FilterPillGroup
-              label="Severity"
-              active={severityFilter}
-              onChange={setSeverityFilter}
-              scroll
-              options={severityOptions}
-            />
-          </div>
-
-          {/* Off-peg scoreboard — a compact summary of assets currently off
+      <div>
+        {/* Off-peg scoreboard — a compact summary of assets currently off
               their peg, shown above the timeline. Reads from the live assets
               data (not the alerts feed) so it reflects the CURRENT state, not
               historical events. */}
-          {(() => {
-            const offPeg = (assets ?? [])
-              .filter((a) => !isDeprecated(a.symbol))
-              .filter(
-                (a) =>
-                  a.state === "DRIFT" ||
-                  a.state === "DEPEG" ||
-                  a.state === "CRITICAL" ||
-                  a.state === "BLACK_SWAN",
-              )
-              .sort((a, b) => {
-                const rank: Record<string, number> = {
-                  CRITICAL: 0,
-                  BLACK_SWAN: 0,
-                  DEPEG: 1,
-                  DRIFT: 2,
-                };
-                return (
-                  (rank[a.state ?? ""] ?? 9) -
-                  (rank[b.state ?? ""] ?? 9)
-                );
-              })
-              .slice(0, 4);
-            if (offPeg.length === 0) return null;
-            return (
-              <section className="mb-12">
-                <h2 className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-caption">
-                  Currently off-peg · {offPeg.length} {offPeg.length === 1 ? "asset" : "assets"}
-                </h2>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {offPeg.map((a) => {
-                    const m = stateMeta(a.state);
-                    const { bps } = reconcileBps(a);
-                    return (
-                      <Link
-                        key={a.symbol}
-                        href={`/asset/${encodeURIComponent(a.symbol)}`}
-                        className="group flex items-center gap-3 rounded-[14px] border border-hairline bg-surface-1 px-4 py-3 transition-colors duration-300 hover:border-outline"
-                      >
-                        <TokenIcon
-                          mint={a.mint}
-                          symbol={displaySymbol(a.symbol)}
-                          klass={a.class}
-                          size={28}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <span className="block font-mono text-[13px] font-medium text-text">
-                            {displaySymbol(a.symbol)}
+        {(() => {
+          const offPeg = (assets ?? [])
+            .filter((a) => !isDeprecated(a.symbol))
+            .filter(
+              (a) =>
+                a.state === "DRIFT" ||
+                a.state === "DEPEG" ||
+                a.state === "CRITICAL" ||
+                a.state === "BLACK_SWAN",
+            )
+            .sort((a, b) => {
+              const rank: Record<string, number> = {
+                CRITICAL: 0,
+                BLACK_SWAN: 0,
+                DEPEG: 1,
+                DRIFT: 2,
+              };
+              return (rank[a.state ?? ""] ?? 9) - (rank[b.state ?? ""] ?? 9);
+            })
+            .slice(0, 4);
+          if (offPeg.length === 0) return null;
+          return (
+            <section className="mb-12">
+              <h2 className="mb-3 font-mono text-[12px] uppercase tracking-[0.12em] text-text-caption">
+                Currently off-peg · {offPeg.length}{" "}
+                {offPeg.length === 1 ? "asset" : "assets"}
+              </h2>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {offPeg.map((a) => {
+                  const m = stateMeta(a.state);
+                  const { bps } = reconcileBps(a);
+                  return (
+                    <Link
+                      key={a.symbol}
+                      href={`/asset/${encodeURIComponent(a.symbol)}`}
+                      className="group flex items-center gap-3 rounded-[14px] border border-hairline bg-surface-1 px-4 py-3 transition-colors duration-300 hover:border-outline"
+                    >
+                      <TokenIcon
+                        mint={a.mint}
+                        symbol={displaySymbol(a.symbol)}
+                        klass={a.class}
+                        size={28}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <span className="block font-mono text-[13px] font-medium text-text">
+                          {displaySymbol(a.symbol)}
+                        </span>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[12px] font-medium",
+                              m.badgeClass,
+                            )}
+                          >
+                            {m.label}
                           </span>
-                          <div className="mt-0.5 flex items-center gap-2">
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-mono text-[9px] font-medium",
-                                m.badgeClass,
-                              )}
-                            >
-                              {m.label}
-                            </span>
-                            <span
-                              className={cn(
-                                "font-mono text-[10px] tabular-nums",
-                                spreadSignClass(bps),
-                              )}
-                            >
-                              {bps != null
-                                ? formatGap(-bps)
-                                : "-"}
-                            </span>
-                          </div>
+                          <span
+                            className={cn(
+                              "font-mono text-[12px] tabular-nums",
+                              spreadSignClass(bps),
+                            )}
+                          >
+                            {bps != null ? formatGap(-bps) : "-"}
+                          </span>
                         </div>
-                        <span aria-hidden className="text-text-caption transition-colors group-hover:text-text">→</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })()}
+                      </div>
+                      <span
+                        aria-hidden
+                        className="text-text-caption transition-colors group-hover:text-text"
+                      >
+                        →
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
 
-          {/* Heatmap — summary above the timeline */}
-          <section className="mb-12">
-            <h2 className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-text-caption">
-              52-week heatmap
-            </h2>
-            <p className="mb-3 text-[12px] text-text-caption/80">
-              Each cell is one day. Intensity reflects the number of state transitions.
-            </p>
-            <EventsHeatmap
-              buckets={heatmapBuckets}
-              unknownThroughDay={coverageFloorDay}
+        {/* Heatmap — summary above the timeline */}
+        <section className="mb-12">
+          <h2 className="mb-1 font-mono text-[12px] uppercase tracking-[0.12em] text-text-caption">
+            52-week heatmap
+          </h2>
+          <p className="mb-3 text-[12px] text-text-caption/80">
+            Each cell is one day. Intensity reflects the number of state
+            transitions.
+          </p>
+          <EventsHeatmap
+            buckets={heatmapBuckets}
+            unknownThroughDay={coverageFloorDay}
+          />
+        </section>
+
+        {/* Toolbar: the /dashboard idiom. Class and Severity as two
+              canonical PillTabs groups split by a hairline, one row on
+              desktop; on a phone each group gets its own row and the wider
+              Severity row scrolls under a right-edge fade. */}
+        <div className="mb-8 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-2">
+          <ScrollFadeRow>
+            <PillTabs
+              items={classItems}
+              value={activeClass}
+              onChange={setClassFilter}
+              ariaLabel="Event class filter"
+              className={PILL_TYPE_FLOOR}
             />
-          </section>
+            {retired.length > 0 && <RetiredHint symbols={retired} />}
+          </ScrollFadeRow>
+          <span
+            aria-hidden
+            className="hidden h-4 w-px shrink-0 bg-hairline sm:block"
+          />
+          <ScrollFadeRow>
+            <PillTabs
+              items={severityItems}
+              value={activeSeverity}
+              onChange={setSeverityFilter}
+              ariaLabel="Event severity filter"
+              className={PILL_TYPE_FLOOR}
+            />
+          </ScrollFadeRow>
+        </div>
 
-          {/* Timeline */}
-          {isLoading && !backendDown && (
-            <div className="grid gap-10">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="grid gap-2">
-                  <div className="h-3 w-24 animate-pulse bg-text-muted/15" />
-                  <div className="mt-3 h-5 w-40 animate-pulse bg-text-muted/15" />
-                  <div className="mt-1 h-3 w-64 animate-pulse bg-text-muted/10" />
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Timeline */}
+        {isLoading && !backendDown && (
+          <div className="grid gap-10">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="grid gap-2">
+                <div className="h-3 w-24 animate-pulse bg-text-muted/15" />
+                <div className="mt-3 h-5 w-40 animate-pulse bg-text-muted/15" />
+                <div className="mt-1 h-3 w-64 animate-pulse bg-text-muted/10" />
+              </div>
+            ))}
+          </div>
+        )}
 
-          {backendDown && (
-            <div role="status" aria-live="polite">
-              <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-st-drift">
-                ● {isRateLimited(error) ? RATE_LIMITED_LABEL : "Live feed unreachable"}
-              </p>
-              <p className="mt-3 max-w-[480px] text-[14px] leading-[1.6] text-text-muted">
-                {isRateLimited(error) ? (
-                  RATE_LIMITED_BODY
-                ) : (
-                  <>
-                    The Pegana API isn&apos;t responding right now, so the event
-                    timeline can&apos;t load. It will reappear automatically as
-                    soon as the feed is healthy.
-                  </>
-                )}
-              </p>
+        {backendDown && (
+          <div role="status" aria-live="polite">
+            <p
+              className={`font-mono text-[12px] uppercase tracking-[0.08em] ${isRateLimited(error) ? "text-text-muted" : "text-st-drift"}`}
+            >
+              ●{" "}
+              {isRateLimited(error)
+                ? RATE_LIMITED_LABEL
+                : "Live feed unreachable"}
+            </p>
+            <p className="mt-3 max-w-[480px] text-[14px] leading-[1.6] text-text-muted">
+              {isRateLimited(error) ? (
+                RATE_LIMITED_BODY
+              ) : (
+                <>
+                  The Pegana API isn&apos;t responding right now, so the event
+                  timeline can&apos;t load. It will reappear automatically as
+                  soon as the feed is healthy.
+                </>
+              )}
+            </p>
+            {/* A slow-down request resumes on its own: no Retry button. */}
+            {!isRateLimited(error) && (
               <div className="mt-5 flex flex-wrap gap-3">
                 <button
                   type="button"
                   onClick={() => mutate()}
-                  className="inline-flex items-center rounded-full border border-outline px-4 py-2 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted transition-colors duration-300 hover:border-text hover:text-text"
+                  className="inline-flex items-center rounded-full border border-outline px-4 py-2 font-mono text-[12px] uppercase tracking-[0.08em] text-text-muted transition-colors duration-300 hover:border-text hover:text-text"
                 >
                   Retry now
                 </button>
                 <Link
                   href="/status"
-                  className="inline-flex items-center rounded-full border border-hairline px-4 py-2 font-mono text-[10px] uppercase tracking-[0.08em] text-text-caption transition-colors duration-300 hover:border-outline hover:text-text"
+                  className="inline-flex items-center rounded-full border border-hairline px-4 py-2 font-mono text-[12px] uppercase tracking-[0.08em] text-text-caption transition-colors duration-300 hover:border-outline hover:text-text"
                 >
                   Check status
                 </Link>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {!isLoading && !backendDown && clusters.length === 0 && (
-            // A quiet feed is the healthy default (few peg events = markets
-            // calm), so the genuinely-empty case is framed as reassurance,
-            // not as a dead end — distinct from the filtered-empty case,
-            // which is just "loosen your filters" and stays neutral-toned.
-            <div
-              role="status"
-              aria-live="polite"
-              className="flex flex-col items-center gap-4 rounded-[16px] border border-hairline px-6 py-16 text-center"
-            >
-              {filtersActive ? (
-                <>
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-text-caption">
-                    <ListFilter className="h-4 w-4" aria-hidden />
-                  </span>
-                  <div>
-                    <p className="text-[15px] font-medium text-text">
-                      No events match these filters.
-                    </p>
-                    <p className="mt-1.5 max-w-[42ch] text-[13px] leading-[1.6] text-text-muted">
-                      Try a different class or severity, or clear the filters to
-                      see the full feed.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setClassFilter("all");
-                      setSeverityFilter("all");
-                    }}
-                    className="mt-1 inline-flex items-center rounded-full border border-outline px-4 py-2 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted transition-colors duration-300 hover:border-text hover:text-text"
-                  >
-                    Clear filters
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full border border-st-pegged/30 bg-st-pegged/10 text-st-pegged">
-                    <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
-                  </span>
-                  <div>
-                    <p className="text-[15px] font-medium text-text">
-                      No public receipts for this window yet.
-                    </p>
-                    <p className="mt-1.5 max-w-[46ch] text-[13px] leading-[1.6] text-text-muted">
-                      Live states are on the dashboard.
-                    </p>
-                  </div>
-                  <Link
-                    href="/audit"
-                    className="mt-1 inline-flex items-center font-mono text-[11px] uppercase tracking-[0.08em] text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
-                  >
-                    Every event here has a verifiable receipt →
-                  </Link>
-                </>
-              )}
-            </div>
-          )}
+        {!isLoading && !backendDown && clusters.length === 0 && (
+          // A quiet feed is the healthy default (few peg events = markets
+          // calm), so the genuinely-empty case is framed as reassurance,
+          // not as a dead end — distinct from the filtered-empty case,
+          // which is just "loosen your filters" and stays neutral-toned.
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex flex-col items-center gap-4 rounded-[16px] border border-hairline px-6 py-16 text-center"
+          >
+            {filtersActive ? (
+              <>
+                <span className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-text-caption">
+                  <ListFilter className="h-4 w-4" aria-hidden />
+                </span>
+                <div>
+                  <p className="text-[15px] font-medium text-text">
+                    No events match these filters.
+                  </p>
+                  <p className="mt-1.5 max-w-[42ch] text-[13px] leading-[1.6] text-text-muted">
+                    Try a different class or severity, or clear the filters to
+                    see the full feed.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClassFilter("all");
+                    setSeverityFilter("all");
+                  }}
+                  className="mt-1 inline-flex items-center rounded-full border border-outline px-4 py-2 font-mono text-[12px] uppercase tracking-[0.08em] text-text-muted transition-colors duration-300 hover:border-text hover:text-text"
+                >
+                  Clear filters
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="flex h-9 w-9 items-center justify-center rounded-full border border-st-pegged/30 bg-st-pegged/10 text-st-pegged">
+                  <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+                </span>
+                <div>
+                  <p className="text-[15px] font-medium text-text">
+                    No public receipts for this window yet.
+                  </p>
+                  <p className="mt-1.5 max-w-[46ch] text-[13px] leading-[1.6] text-text-muted">
+                    Live states are on the dashboard.
+                  </p>
+                </div>
+                <Link
+                  href="/audit"
+                  className="mt-1 inline-flex items-center font-mono text-[12px] uppercase tracking-[0.08em] text-text-muted underline-offset-4 transition-colors hover:text-text hover:underline"
+                >
+                  Every event here has a verifiable receipt →
+                </Link>
+              </>
+            )}
+          </div>
+        )}
 
-          {clusters.length > 0 && (
-            // Grouped under Today / Yesterday / This week / Earlier headers
-            // (Linear inbox / Vercel activity-log idiom) — each bucket keeps
-            // its own continuous spine (the `before:` line + `-left-[30px]`
-            // dots ported from the V2 changelog timeline), so a bucket still
-            // reads as one unbroken timeline rather than a disconnected box.
-            <div ref={pagination.anchorRef} className="grid gap-10">
-              {BUCKET_ORDER.map(({ key, label }) => {
-                const items = bucketedClusters[key];
-                if (items.length === 0) return null;
-                // Alerts, the same unit as the filter counts; the row count is
-                // visible directly beneath.
-                const alertCount = items.reduce((s, c) => s + c.alerts.length, 0);
-                return (
-                  <section key={key}>
-                    <h2 className="mb-4 flex items-baseline gap-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-caption">
-                      <span>{label}</span>
-                      <span className="text-text-caption/60">{alertCount} {alertCount === 1 ? "alert" : "alerts"}</span>
-                    </h2>
-                    <ol className="relative grid gap-10 pl-6 sm:pl-8 before:absolute before:left-[3px] before:top-[6px] before:bottom-0 before:w-px before:bg-hairline">
-                      {items.map(renderCluster)}
-                    </ol>
-                  </section>
-                );
-              })}
-            </div>
-          )}
+        {clusters.length > 0 && (
+          // Grouped under Today / Yesterday / This week / Earlier headers
+          // (Linear inbox / Vercel activity-log idiom) — each bucket keeps
+          // its own continuous spine (the `before:` line + `-left-[30px]`
+          // dots ported from the V2 changelog timeline), so a bucket still
+          // reads as one unbroken timeline rather than a disconnected box.
+          <div ref={pagination.anchorRef} className="grid gap-10">
+            {BUCKET_ORDER.map(({ key, label }) => {
+              const items = bucketedClusters[key];
+              if (items.length === 0) return null;
+              // Alerts, the same unit as the filter counts; the row count is
+              // visible directly beneath.
+              const alertCount = items.reduce((s, c) => s + c.alerts.length, 0);
+              return (
+                <section key={key}>
+                  <h2 className="mb-4 flex items-baseline gap-3 font-mono text-[12px] uppercase tracking-[0.12em] text-text-caption">
+                    <span>{label}</span>
+                    <span className="text-text-caption/60">
+                      {alertCount} {alertCount === 1 ? "alert" : "alerts"}
+                    </span>
+                  </h2>
+                  <ol className="relative grid gap-10 pl-6 sm:pl-8 before:absolute before:left-[3px] before:top-[6px] before:bottom-0 before:w-px before:bg-hairline">
+                    {items.map(renderCluster)}
+                  </ol>
+                </section>
+              );
+            })}
+          </div>
+        )}
 
-          <Pagination state={pagination} ariaLabel="Event pages" className="mt-10 pt-6" />
-        </div>
-      </section>
+        <Pagination
+          state={pagination}
+          ariaLabel="Event pages"
+          className="mt-10 pt-6"
+        />
+      </div>
     </main>
   );
 }
 
-/** V5 pill-tab filter track — one rounded-full border container with
- *  individual rounded-full option buttons (the /assets class-filter idiom),
- *  reused for both the desktop rail and the mobile row. `scroll` swaps the
- *  wrap behavior for a horizontally-scrolling strip on narrow viewports. */
-function FilterPillGroup<T extends string>({
-  label,
-  options,
-  active,
-  onChange,
-  scroll = false,
-}: {
-  label: string;
-  options: ReadonlyArray<{
-    value: T;
-    label: string;
-    count: number | null;
-    swatch?: string;
-  }>;
-  active: T;
-  onChange: (v: T) => void;
-  scroll?: boolean;
-}) {
+/** A horizontally scrollable row that fades its right edge only while more
+ *  content sits past it, so a row that fits shows no fade at all. */
+function ScrollFadeRow({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () =>
+      setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    if (el.firstElementChild) ro?.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro?.disconnect();
+    };
+  }, []);
   return (
-    <div>
-      <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-text-caption">
-        {label}
-      </div>
-      <div
-        className={cn(
-          "inline-flex items-center gap-1 rounded-full border border-hairline p-1",
-          scroll
-            ? "max-w-full overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            : "flex-wrap",
-        )}
-      >
-        {options.map((o) => {
-          const isActive = active === o.value;
-          return (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => onChange(o.value)}
-              aria-pressed={isActive}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] transition-colors duration-200",
-                isActive
-                  ? "bg-text text-canvas"
-                  : "text-text-muted hover:text-text",
-              )}
-            >
-              {o.swatch && (
-                <span
-                  aria-hidden
-                  className="block h-1.5 w-1.5 rounded-full"
-                  style={{ background: o.swatch }}
-                />
-              )}
-              {o.label}
-              <span
-                className={cn(
-                  "tabular-nums",
-                  isActive ? "text-canvas/70" : "text-text-caption",
-                )}
-              >
-                {/* `-` is this repo's data-null convention (see dashSafe).
-                    Printing 0 here asserted a count we did not have. */}
-                {o.count ?? "-"}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+    <div
+      ref={ref}
+      data-fade={more ? "true" : "false"}
+      className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      style={
+        more
+          ? {
+              maskImage:
+                "linear-gradient(to right, #000 calc(100% - 40px), transparent)",
+              WebkitMaskImage:
+                "linear-gradient(to right, #000 calc(100% - 40px), transparent)",
+            }
+          : undefined
+      }
+    >
+      {children}
     </div>
+  );
+}
+
+/** Accessible explainer for the Retired tab: which delisted assets the
+ *  bucket holds. The button's own label carries the full list, so it reads
+ *  the same with or without the hover/focus tooltip. */
+function RetiredHint({
+  symbols,
+}: {
+  symbols: ReadonlyArray<{ symbol: string; count: number }>;
+}) {
+  const list = symbols
+    .map(
+      (s) => `${displaySymbol(s.symbol)} (${s.count.toLocaleString("en-US")})`,
+    )
+    .join(", ");
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Retired assets: ${list}. No longer on the public peg surface; their receipts stay in the ledger.`}
+          className="inline-flex h-[22px] min-w-[22px] shrink-0 cursor-help items-center justify-center rounded-full bg-text/[0.08] px-1 font-mono text-[12px] leading-none text-text-muted transition-colors duration-200 hover:bg-text/[0.16] hover:text-text"
+        >
+          ?
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start">
+        <div className="mb-1 font-mono text-[12px] uppercase tracking-[0.08em] text-text-muted">
+          Retired
+        </div>
+        <ul className="grid gap-0.5">
+          {symbols.map((s) => (
+            <li key={s.symbol} className="flex justify-between gap-4">
+              <span>{displaySymbol(s.symbol)}</span>
+              <span className="font-mono tabular-nums text-text-muted">
+                {s.count.toLocaleString("en-US")}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-text-muted">
+          No longer on the public peg surface. Their receipts stay in the
+          ledger.
+        </p>
+      </TooltipContent>
+    </Tooltip>
   );
 }

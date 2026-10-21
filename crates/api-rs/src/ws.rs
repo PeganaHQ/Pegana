@@ -359,7 +359,7 @@ fn ws_reject(status: StatusCode, code: &str, message: &str, retry_after: Option<
     resp
 }
 
-/// `GET /v1/ws` — upgrade to a WebSocket carrying the live peg-state stream.
+/// `GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
 ///
 /// Not a JSON endpoint: a successful handshake returns `101 Switching
 /// Protocols`. After upgrade the server pushes `{op:"update", ...}` and
@@ -373,7 +373,7 @@ fn ws_reject(status: StatusCode, code: &str, message: &str, retry_after: Option<
     path = "/v1/ws",
     tag = "WebSocket",
     responses(
-        (status = 101, description = "Switching Protocols — WebSocket established"),
+        (status = 101, description = "Switching Protocols; WebSocket established"),
         (status = 400, description = "ws_upgrade_required: not a valid WebSocket upgrade request", body = ApiError),
         (status = 403, description = "origin_not_allowed: Origin present but not on the allowlist", body = ApiError),
         (status = 429, description = "ws_cap_exceeded: per-IP connection cap (20) reached; see Retry-After", body = ApiError),
@@ -607,7 +607,7 @@ async fn handle(
     info!("ws client disconnected");
 }
 /// Decrements the active-clients gauge on every exit path of `handle` (early
-/// return, break, drop). Gauge-only — the per-IP slot is freed separately by
+/// return, break, drop). Gauge-only; the per-IP slot is freed separately by
 /// [`WsSlotGuard`] so that a FAILED upgrade (where `handle` never runs, so the
 /// gauge was never incremented) doesn't drive the gauge negative.
 struct WsGaugeGuard;
@@ -620,7 +620,7 @@ impl Drop for WsGaugeGuard {
 /// Frees the per-IP connection slot on drop. Constructed in `ws_handler` right
 /// after `try_reserve` and MOVED into the `on_upgrade` closure, so the slot is
 /// released whether the upgrade SUCCEEDS (dropped when `handle` returns) OR
-/// FAILS — in which case the closure, and this guard with it, is dropped without
+/// FAILS; in which case the closure, and this guard with it, is dropped without
 /// ever running `handle`. Previously the release lived only inside `handle`, so a
 /// failed/aborted upgrade after `try_reserve` leaked the slot permanently until
 /// the process restarted (a per-IP DoS foothold).

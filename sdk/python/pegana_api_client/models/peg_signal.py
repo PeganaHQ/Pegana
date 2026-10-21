@@ -29,14 +29,14 @@ class PegSignal:
             anchor (Anchor): Peg anchor tells a consumer how to interpret the asset's fair value WITHOUT
                 knowing Pegana's internal taxonomy:
 
-                - `"USD"` — the asset targets exactly $1 (fiat-backed, RWA, delta-neutral,
+                - `"USD"`: the asset targets exactly $1 (fiat-backed, RWA, delta-neutral,
                   and CDP stablecoins). A discount from $1 IS the risk signal.
 
-                - `"FX"` — the asset targets a fixed non-USD fiat exchange rate (e.g.
+                - `"FX"`: the asset targets a fixed non-USD fiat exchange rate (e.g.
                   EURC→EUR, BRZ→BRL). Read `peg_target` for the specific currency. A
                   discount from the FX rate IS the risk signal.
 
-                - `"NAV"` — the asset's fair value is its intrinsic redemption/net-asset
+                - `"NAV"`: the asset's fair value is its intrinsic redemption/net-asset
                   value, which is NOT a fixed fiat rate (LSTs, yield-bearing stables,
                   synthetic leverage). The discount is relative to NAV, and NAV itself
                   moves.
@@ -46,11 +46,11 @@ class PegSignal:
                 price legitimately accrues above $1 over time.
             calibration (Calibration): Calibration status of an asset (and of an alert that asset emitted).
 
-                - `provisional` — a "beta" asset: released and alerting publicly, but its
+                - `provisional`: a "beta" asset: released and alerting publicly, but its
                   thresholds are not yet validated over a full post-launch calibration
                   window. Equivalent to `monitoring_only=true`. Read its alerts as
                   experimental.
-                - `calibrated` — a fully calibrated asset that counts in the launch
+                - `calibrated`: a fully calibrated asset that counts in the launch
                   denominator.
 
                 This is the SAME vocabulary the dispatcher emits on the webhook canonical
@@ -59,7 +59,7 @@ class PegSignal:
                 for the concept instead of `calibration` there and `monitoring_only` here.
             class_ (str):
             decimals (int):
-            mint (str): Canonical Solana mint — the join key each signal carries in the batch
+            mint (str): Canonical Solana mint; the join key each signal carries in the batch
                 `data[]` array (index the array by this).
             monitoring_only (bool):
             name (str):
@@ -86,7 +86,7 @@ class PegSignal:
             market_cap (None | str | Unset): Circulating market cap in USD (circulating supply × market price, mig 0065).
                 Serialized as a decimal string; omitted when either factor is unavailable.
             market_usd (None | str | Unset):
-            risk_score (int | None | Unset): Composite peg-risk score, 0–100 (higher = riskier) — the single number a
+            risk_score (int | None | Unset): Composite peg-risk score, 0–100 (higher = riskier); the single number a
                 consumer (e.g. tokens.xyz's risk block) can surface without Pegana's model.
                 Derived on `/v1/assets` (`risk_score.rs`); omitted when unavailable.
             state (None | PegState | Unset):
