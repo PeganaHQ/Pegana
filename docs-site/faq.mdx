@@ -131,8 +131,8 @@ description: "Common questions about scope, sources, pricing, reliability, and h
   [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). The
   `pegana-replay` CLI is also mirrored on its own at
   [`github.com/PeganaHQ/ReplayCLI`](https://github.com/PeganaHQ/ReplayCLI), so you can
-  independently re-derive and audit any Pegana verdict without trusting our
-  infrastructure.
+  independently re-derive and audit Pegana receipts without trusting our
+  infrastructure (use the release matching a receipt's methodology version; 0.4.0 onward).
 </Accordion>
 
 <Accordion title="Can I self-host Pegana?">
@@ -141,7 +141,7 @@ description: "Common questions about scope, sources, pricing, reliability, and h
   `docker-compose.dev.yml` for local development; see the README at
   [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). Separately, the
   [`pegana-replay`](https://github.com/PeganaHQ/ReplayCLI) verifier lets you reproduce
-  and check any alert receipt against the public methodology (you re-derive the verdict
+  and check an alert receipt (with the release matching its methodology version, 0.4.0 onward) against the public methodology (you re-derive the verdict
   from the recorded inputs; anchored severe transitions add on-chain input
   verification). Questions: `rafael@pegana.xyz`.
 </Accordion>
@@ -160,7 +160,9 @@ description: "Common questions about scope, sources, pricing, reliability, and h
   consumers to take "we computed `discount = 1 − market / intrinsic`" on faith.
   Instead, every threshold and smoothing parameter is public, and the `pegana-replay`
   verifier lets any consumer reproduce a recorded receipt and check the verdict math for
-  themselves — no trust in our compute required (it re-derives from the recorded inputs).
+  themselves, with no trust in our compute required (it re-derives from the recorded inputs,
+  using the release that matches the receipt's methodology version, 0.4.0 onward; a receipt's
+  hash also checks in the browser on its audit page, for every version).
 
   Also, more practically: the team is one person. An open, verifiable methodology is
   the cheapest path to ecosystem trust.

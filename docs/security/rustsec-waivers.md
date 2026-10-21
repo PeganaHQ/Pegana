@@ -5,8 +5,8 @@
 All waivers have:
 
 - Owner: Rafael Souza
-- Review date: 2026-08-03
-- Expiry: 2026-09-15
+- Review date: 2026-10-21
+- Expiry: 2026-12-15
 - Compensating control: CI continues to run pinned `cargo-audit` against every lockfile change, denies new vulnerability advisories by default, and denies new `unmaintained` and `unsound` warnings; dependency upgrades must re-check the affected inverse dependency tree and remove the waiver when reachable.
 
 ## Vulnerabilities
@@ -16,9 +16,7 @@ All waivers have:
 | RUSTSEC-2024-0344 | `curve25519-dalek` 3.2 timing; `solana-sdk → curve25519-dalek`. |
 | RUSTSEC-2022-0093 | `ed25519-dalek` 1.0 oracle; `solana-keypair → ed25519-dalek`. |
 | RUSTSEC-2023-0071 | `rsa` 0.9 Marvin timing; sqlx transitive; Pegana does not use MySQL. |
-| RUSTSEC-2026-0098 | `rustls-webpki` 0.101 name-constraint; `solana-pubsub-client → tokio-tungstenite 0.20 → rustls 0.21`. |
-| RUSTSEC-2026-0099 | `rustls-webpki` 0.101 name-constraint; `solana-pubsub-client → tokio-tungstenite 0.20 → rustls 0.21`. |
-| RUSTSEC-2026-0104 | `rustls-webpki` 0.101 CRL panic; `solana-pubsub-client → tokio-tungstenite 0.20 → rustls 0.21`. |
+| RUSTSEC-2026-0381 | `webpki-roots` 0.26.11 bundled roots trust distrusted emSign intermediates; `sqlx-core 0.8.6 → webpki-roots ^0.26` (no 0.26.x fix; fix is 1.0.10+). Only consulted when sqlx opens a TLS Postgres connection; every Pegana DB URL targets the in-compose `postgres:5432` over plaintext, so the root store is never used. The other `webpki-roots` consumers (reqwest) were bumped to 1.0.10. Remove on sqlx 0.9 migration. |
 | RUSTSEC-2021-0145 | `atty` unaligned read; `solana-logger → env_logger 0.9 → atty`. |
 | RUSTSEC-2026-0097 | `rand` 0.7 unsound with custom logger; `solana-keypair → ed25519-dalek 1.0 → rand 0.7`. |
 | RUSTSEC-2026-0235 | `rkyv` 0.7 archive validation; optional dependency declared by `rust_decimal` but disabled in every workspace and target graph (`cargo tree --target all -i rkyv -e features` is empty). Pegana does not serialize or validate rkyv archives. `rust_decimal` 1.42.1 still declares `rkyv` 0.7, so no upstream-compatible lock update removes it. |

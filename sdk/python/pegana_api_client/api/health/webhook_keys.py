@@ -1,50 +1,35 @@
 from http import HTTPStatus
-from typing import Any, cast
-from urllib.parse import quote
+from typing import Any
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response, UNSET
 from ... import errors
-
+from ...client import AuthenticatedClient, Client
 from ...models.api_error import ApiError
 from ...models.webhook_keys_response import WebhookKeysResponse
-from typing import cast
+from ...types import Response
 
 
-
-def _get_kwargs(
-    
-) -> dict[str, Any]:
-    
-
-    
-
-    
+def _get_kwargs() -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/v1/meta/webhook-keys",
     }
 
-
     return _kwargs
 
 
-
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> ApiError | WebhookKeysResponse | None:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> ApiError | WebhookKeysResponse | None:
     if response.status_code == 200:
         response_200 = WebhookKeysResponse.from_dict(response.json())
-
-
 
         return response_200
 
     if response.status_code == 429:
         response_429 = ApiError.from_dict(response.json())
-
-
 
         return response_429
 
@@ -54,7 +39,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
         return None
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[ApiError | WebhookKeysResponse]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[ApiError | WebhookKeysResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -66,9 +53,8 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
-
 ) -> Response[ApiError | WebhookKeysResponse]:
-    """ GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+    """GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
     inbound webhook signatures.
 
      Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
@@ -83,12 +69,9 @@ def sync_detailed(
 
     Returns:
         Response[ApiError | WebhookKeysResponse]
-     """
+    """
 
-
-    kwargs = _get_kwargs(
-        
-    )
+    kwargs = _get_kwargs()
 
     response = client.get_httpx_client().request(
         **kwargs,
@@ -96,12 +79,12 @@ def sync_detailed(
 
     return _build_response(client=client, response=response)
 
+
 def sync(
     *,
     client: AuthenticatedClient | Client,
-
 ) -> ApiError | WebhookKeysResponse | None:
-    """ GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+    """GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
     inbound webhook signatures.
 
      Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
@@ -116,20 +99,18 @@ def sync(
 
     Returns:
         ApiError | WebhookKeysResponse
-     """
-
+    """
 
     return sync_detailed(
         client=client,
-
     ).parsed
+
 
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
-
 ) -> Response[ApiError | WebhookKeysResponse]:
-    """ GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+    """GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
     inbound webhook signatures.
 
      Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
@@ -144,25 +125,20 @@ async def asyncio_detailed(
 
     Returns:
         Response[ApiError | WebhookKeysResponse]
-     """
+    """
 
+    kwargs = _get_kwargs()
 
-    kwargs = _get_kwargs(
-        
-    )
-
-    response = await client.get_async_httpx_client().request(
-        **kwargs
-    )
+    response = await client.get_async_httpx_client().request(**kwargs)
 
     return _build_response(client=client, response=response)
+
 
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
-
 ) -> ApiError | WebhookKeysResponse | None:
-    """ GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
+    """GET /v1/meta/webhook-keys — active Ed25519 public keys for verifying
     inbound webhook signatures.
 
      Lifted from the GitHub pattern (`GET /meta` with `ssh_keys`).
@@ -177,10 +153,10 @@ async def asyncio(
 
     Returns:
         ApiError | WebhookKeysResponse
-     """
+    """
 
-
-    return (await asyncio_detailed(
-        client=client,
-
-    )).parsed
+    return (
+        await asyncio_detailed(
+            client=client,
+        )
+    ).parsed

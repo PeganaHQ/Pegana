@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, ListFilter } from "lucide-react";
-import { useAlerts } from "@/lib/hooks/use-alerts";
+import { useAlertsWindow } from "@/lib/hooks/use-alerts";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useLive } from "@/lib/store/live-context";
 import { StatePip } from "@/components/atoms/state-pip";
@@ -168,21 +168,21 @@ function bucketForDay(day: string, todayKey: string): TimeBucket {
 export default function EventsPage() {
   const [classFilter, setClassFilter] = useState<ClassFilter>("all");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
-  // The 52-week heatmap needs a full year of data. /v1/alerts defaults to a
-  // ~7-day window when `since` is omitted, so ~51 of the 52 weeks rendered as
-  // falsely calm. Request an explicit 365-day window matching the visual.
-  // Memoized (computed once per mount) so the SWR key doesn't thrash — an
-  // inline Date.now() would change the `since` string on every render.
+  // The 52-week heatmap needs a full year. The /v1/audit ledger serves at most
+  // 100 rows per page, so `useAlertsWindow` pages it server-side (`since` +
+  // `before` cursor) until the window is exhausted or a 10-page cap is hit. If
+  // the cap is hit, days at or before `coverageFloorDay` are drawn as "not
+  // loaded", never as quiet days. Memoized so the SWR key does not thrash.
   const since = useMemo(
     () => new Date(Date.now() - 365 * MS_PER_DAY).toISOString(),
     [],
   );
-  const {
-    data: alerts,
-    isLoading,
-    error,
-    mutate,
-  } = useAlerts({ limit: 500, since });
+  const { data: windowData, isLoading, error, mutate } = useAlertsWindow({
+    since,
+    maxPages: 10,
+  });
+  const alerts = windowData?.rows;
+  const coverageFloorDay = windowData?.coverageFloorDay ?? null;
   const { data: assets } = useAssets();
   const { byAsset } = useLive();
   const previousLiveStates = useRef<Record<string, PegState>>({});
@@ -651,7 +651,10 @@ export default function EventsPage() {
             <p className="mb-3 text-[12px] text-text-caption/80">
               Each cell is one day. Intensity reflects the number of state transitions.
             </p>
-            <EventsHeatmap buckets={heatmapBuckets} />
+            <EventsHeatmap
+              buckets={heatmapBuckets}
+              unknownThroughDay={coverageFloorDay}
+            />
           </section>
 
           {/* Timeline */}
@@ -737,11 +740,10 @@ export default function EventsPage() {
                   </span>
                   <div>
                     <p className="text-[15px] font-medium text-text">
-                      No peg events in this window.
+                      No public receipts for this window yet.
                     </p>
                     <p className="mt-1.5 max-w-[46ch] text-[13px] leading-[1.6] text-text-muted">
-                      Every tracked asset held its peg. A quiet feed is the
-                      healthy default.
+                      Live states are on the dashboard.
                     </p>
                   </div>
                   <Link

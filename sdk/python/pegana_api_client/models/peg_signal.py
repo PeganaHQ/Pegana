@@ -1,34 +1,27 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-
-from ..types import UNSET, Unset
 
 from ..models.anchor import Anchor
 from ..models.calibration import Calibration
 from ..models.confidence import Confidence
 from ..models.peg_state import PegState
 from ..types import UNSET, Unset
-from typing import cast
 
 if TYPE_CHECKING:
-  from ..models.systemic_signal import SystemicSignal
-
-
-
+    from ..models.systemic_signal import SystemicSignal
 
 
 T = TypeVar("T", bound="PegSignal")
 
 
-
 @_attrs_define
 class PegSignal:
-    """ One asset's peg signal. A superset of the tokens.xyz contract subset; every
+    """One asset's peg signal. A superset of the tokens.xyz contract subset; every
     `Option` field is omitted (not null) when absent so a thin consumer can model
     only what it needs.
 
@@ -89,7 +82,7 @@ class PegSignal:
             systemic (None | SystemicSignal | Unset):
             updated_at (None | str | Unset): RFC3339 of the latest snapshot. Omitted when none.
             worst_abs_24h (None | str | Unset):
-     """
+    """
 
     anchor: Anchor
     calibration: Calibration
@@ -116,12 +109,9 @@ class PegSignal:
     worst_abs_24h: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
-
-
-
-
     def to_dict(self) -> dict[str, Any]:
         from ..models.systemic_signal import SystemicSignal
+
         anchor = self.anchor.value
 
         calibration = self.calibration.value
@@ -222,22 +212,23 @@ class PegSignal:
         else:
             worst_abs_24h = self.worst_abs_24h
 
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({
-            "anchor": anchor,
-            "calibration": calibration,
-            "class": class_,
-            "decimals": decimals,
-            "mint": mint,
-            "monitoring_only": monitoring_only,
-            "name": name,
-            "peg_target": peg_target,
-            "receipt_url": receipt_url,
-            "stale": stale,
-            "symbol": symbol,
-        })
+        field_dict.update(
+            {
+                "anchor": anchor,
+                "calibration": calibration,
+                "class": class_,
+                "decimals": decimals,
+                "mint": mint,
+                "monitoring_only": monitoring_only,
+                "name": name,
+                "peg_target": peg_target,
+                "receipt_url": receipt_url,
+                "stale": stale,
+                "symbol": symbol,
+            }
+        )
         if confidence is not UNSET:
             field_dict["confidence"] = confidence
         if discount is not UNSET:
@@ -265,21 +256,14 @@ class PegSignal:
 
         return field_dict
 
-
-
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.systemic_signal import SystemicSignal
+
         d = dict(src_dict)
         anchor = Anchor(d.pop("anchor"))
 
-
-
-
         calibration = Calibration(d.pop("calibration"))
-
-
-
 
         class_ = d.pop("class")
 
@@ -309,15 +293,12 @@ class PegSignal:
                     raise TypeError()
                 confidence_type_1 = Confidence(data)
 
-
-
                 return confidence_type_1
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
             return cast(Confidence | None | Unset, data)
 
         confidence = _parse_confidence(d.pop("confidence", UNSET))
-
 
         def _parse_discount(data: object) -> None | str | Unset:
             if data is None:
@@ -328,7 +309,6 @@ class PegSignal:
 
         discount = _parse_discount(d.pop("discount", UNSET))
 
-
         def _parse_discount_bps(data: object) -> float | None | Unset:
             if data is None:
                 return data
@@ -337,7 +317,6 @@ class PegSignal:
             return cast(float | None | Unset, data)
 
         discount_bps = _parse_discount_bps(d.pop("discount_bps", UNSET))
-
 
         def _parse_intrinsic_usd(data: object) -> None | str | Unset:
             if data is None:
@@ -348,7 +327,6 @@ class PegSignal:
 
         intrinsic_usd = _parse_intrinsic_usd(d.pop("intrinsic_usd", UNSET))
 
-
         def _parse_jitter_bps_24h(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -357,7 +335,6 @@ class PegSignal:
             return cast(None | str | Unset, data)
 
         jitter_bps_24h = _parse_jitter_bps_24h(d.pop("jitter_bps_24h", UNSET))
-
 
         def _parse_market_cap(data: object) -> None | str | Unset:
             if data is None:
@@ -368,7 +345,6 @@ class PegSignal:
 
         market_cap = _parse_market_cap(d.pop("market_cap", UNSET))
 
-
         def _parse_market_usd(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -378,7 +354,6 @@ class PegSignal:
 
         market_usd = _parse_market_usd(d.pop("market_usd", UNSET))
 
-
         def _parse_risk_score(data: object) -> int | None | Unset:
             if data is None:
                 return data
@@ -387,7 +362,6 @@ class PegSignal:
             return cast(int | None | Unset, data)
 
         risk_score = _parse_risk_score(d.pop("risk_score", UNSET))
-
 
         def _parse_state(data: object) -> None | PegState | Unset:
             if data is None:
@@ -399,15 +373,12 @@ class PegSignal:
                     raise TypeError()
                 state_type_1 = PegState(data)
 
-
-
                 return state_type_1
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
             return cast(None | PegState | Unset, data)
 
         state = _parse_state(d.pop("state", UNSET))
-
 
         def _parse_systemic(data: object) -> None | SystemicSignal | Unset:
             if data is None:
@@ -419,15 +390,12 @@ class PegSignal:
                     raise TypeError()
                 systemic_type_1 = SystemicSignal.from_dict(data)
 
-
-
                 return systemic_type_1
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
             return cast(None | SystemicSignal | Unset, data)
 
         systemic = _parse_systemic(d.pop("systemic", UNSET))
-
 
         def _parse_updated_at(data: object) -> None | str | Unset:
             if data is None:
@@ -438,7 +406,6 @@ class PegSignal:
 
         updated_at = _parse_updated_at(d.pop("updated_at", UNSET))
 
-
         def _parse_worst_abs_24h(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -447,7 +414,6 @@ class PegSignal:
             return cast(None | str | Unset, data)
 
         worst_abs_24h = _parse_worst_abs_24h(d.pop("worst_abs_24h", UNSET))
-
 
         peg_signal = cls(
             anchor=anchor,
@@ -474,7 +440,6 @@ class PegSignal:
             updated_at=updated_at,
             worst_abs_24h=worst_abs_24h,
         )
-
 
         peg_signal.additional_properties = d
         return peg_signal

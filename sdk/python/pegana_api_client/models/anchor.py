@@ -1,6 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
-class Anchor(str, Enum):
+
+class Anchor(StrEnum):
     FX = "FX"
     NAV = "NAV"
     USD = "USD"

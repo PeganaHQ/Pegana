@@ -1,6 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
-class Confidence(str, Enum):
+
+class Confidence(StrEnum):
     HIGH = "high"
     LOW = "low"
     MEDIUM = "medium"

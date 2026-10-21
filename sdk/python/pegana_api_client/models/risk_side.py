@@ -1,6 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
-class RiskSide(str, Enum):
+
+class RiskSide(StrEnum):
     BELOW = "below"
     EITHER = "either"
 

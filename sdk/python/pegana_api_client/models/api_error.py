@@ -1,42 +1,29 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
 
-from ..types import UNSET, Unset
-from typing import cast
-
-
-
-
-
-
 T = TypeVar("T", bound="ApiError")
-
 
 
 @_attrs_define
 class ApiError:
-    """ 
-        Attributes:
-            error (str): Stable, machine-readable code. Branch on this, never on `message`.
-            message (str): Human-readable explanation. NOT stable — for humans/logs; do not parse.
-            asset (None | str | Unset): The offending asset symbol, present only for asset-scoped errors.
-     """
+    """
+    Attributes:
+        error (str): Stable, machine-readable code. Branch on this, never on `message`.
+        message (str): Human-readable explanation. NOT stable — for humans/logs; do not parse.
+        asset (None | str | Unset): The offending asset symbol, present only for asset-scoped errors.
+    """
 
     error: str
     message: str
     asset: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
-
-
-
-
 
     def to_dict(self) -> dict[str, Any]:
         error = self.error
@@ -49,22 +36,21 @@ class ApiError:
         else:
             asset = self.asset
 
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({
-            "error": error,
-            "message": message,
-        })
+        field_dict.update(
+            {
+                "error": error,
+                "message": message,
+            }
+        )
         if asset is not UNSET:
             field_dict["asset"] = asset
 
         return field_dict
 
-
-
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         error = d.pop("error")
 
@@ -79,13 +65,11 @@ class ApiError:
 
         asset = _parse_asset(d.pop("asset", UNSET))
 
-
         api_error = cls(
             error=error,
             message=message,
             asset=asset,
         )
-
 
         api_error.additional_properties = d
         return api_error

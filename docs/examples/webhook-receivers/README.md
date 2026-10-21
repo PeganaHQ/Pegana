@@ -1,14 +1,13 @@
 # Pegana webhook receivers — reference implementations
 
-Three production-ready receivers that verify an Ed25519-signed Pegana
-webhook payload. Pick the one closest to your stack; all three pass
+Two production-ready receivers that verify an Ed25519-signed Pegana
+webhook payload. Pick the one closest to your stack; both pass
 the same test matrix in `crates/dispatcher-rs/tests/webhook_receivers.rs`.
 
 | Receiver | Stack | Verify API | Folder |
 |---|---|---|---|
 | 1 | TypeScript / Cloudflare Worker | Web Crypto API `crypto.subtle.verify` (Ed25519, Secure Curves) | `typescript-cloudflare-worker/` |
 | 2 | Rust / axum | `ed25519-dalek` (RFC-8032 strict mode) | `rust-axum/` |
-| 3 | Python / FastAPI | `cryptography.hazmat.primitives.asymmetric.ed25519` | `python-fastapi/` |
 
 ## Signing contract (canonical)
 
@@ -36,7 +35,7 @@ The response is `{ "pubkeys_b64": ["<primary>", "<secondary during rotation>"] }
 Receivers should trust every key in that list. During a rotation window, both keys
 are valid so Pegana can publish the next key before the signing cutover.
 
-The three reference receivers ship with a baked-in fallback plus an
+The two reference receivers ship with a baked-in fallback plus an
 environment override named `PEGANA_PUB_KEY_B64`. Set it to a comma-separated
 list (`primary,secondary`) if you want zero runtime dependency on the metadata
 endpoint.
@@ -60,5 +59,4 @@ endpoint.
 ## Pick a receiver
 
 - `typescript-cloudflare-worker/` — best for a low-ops edge endpoint.
-- `python-fastapi/` — best when your automation already lives in Python.
 - `rust-axum/` — best for a small binary with strict Ed25519 verification.

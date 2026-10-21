@@ -4,7 +4,7 @@
  * The `/v1` list endpoints return the uniform envelope
  * `{ ok, generated_at, count, data: [...] }`; `fetchList` (in client.ts) unwraps
  * `data` and hands callers the `T[]` they expect. These tests pin that for all
- * four list methods, including the empty-envelope case.
+ * three envelope list methods (alerts now reads the bare /v1/audit array; see tests/unit/lib/audit-alerts.test.ts), including the empty-envelope case.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { api } from "./client";
@@ -25,13 +25,11 @@ function stubFetchJson(payload: unknown, status = 200) {
 // The bare row each list endpoint returns; only the fields these tests assert
 // on need to be real.
 const ASSET = { symbol: "USDC" };
-const ALERT = { id: "a1", asset: "USDC" };
 const CALIB = { symbol: "USDC", health: "ok" };
 const POINT = { ts: "2026-07-24T00:00:00.000Z", discount: "0.0001" };
 
 const CASES = [
   { name: "assets", call: () => api.assets(), row: ASSET, key: "symbol" },
-  { name: "alerts", call: () => api.alerts(), row: ALERT, key: "id" },
   { name: "calibration", call: () => api.calibration(), row: CALIB, key: "symbol" },
   {
     name: "assetHistory",

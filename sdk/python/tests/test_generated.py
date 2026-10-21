@@ -22,7 +22,7 @@ def test_generated_client_imports_and_constructs() -> None:
 
     client = Client(base_url="https://api.pegana.xyz")
     assert client is not None
-    # Bearer auth for the /v1/me/* surface (token via POST /v1/auth/telegram).
+    # Generic bearer-auth client class (the public API itself needs no token).
     authed = AuthenticatedClient(base_url="https://api.pegana.xyz", token="jwt-abc")
     assert authed is not None
     # Every generated endpoint exposes the standard call surface.
@@ -36,7 +36,7 @@ def test_full_endpoint_coverage_present() -> None:
 
     api_dir = Path(api_pkg.__file__).resolve().parent
     tags = {p.name for p in api_dir.iterdir() if p.is_dir() and not p.name.startswith("_")}
-    for expected in ("assets", "alerts", "audit", "peg", "me", "methodology", "auth"):
+    for expected in ("assets", "audit", "peg", "methodology", "stats", "health"):
         assert expected in tags, f"missing api tag group: {expected} (have {sorted(tags)})"
 
 

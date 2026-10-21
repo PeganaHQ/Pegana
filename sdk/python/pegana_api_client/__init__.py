@@ -1,5 +1,5 @@
+"""A client library for accessing Pegana API"""
 
-""" A client library for accessing Pegana API """
 from .client import AuthenticatedClient, Client
 
 __all__ = (

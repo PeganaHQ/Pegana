@@ -7,4 +7,4 @@
 # To remove a waiver: delete its line when the advisory is patched or the waiver is retired.
 
 bigint-buffer-gate5|2026-09-04T19:46:00Z|docs/security/protocol-indexer-bigint-buffer-waiver.md
-rustsec-advisories|2026-09-15T00:00:00Z|docs/security/rustsec-waivers.md
+rustsec-advisories|2026-12-15T00:00:00Z|docs/security/rustsec-waivers.md

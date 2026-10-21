@@ -42,7 +42,8 @@ export default function ReleasesLanding() {
 
         <p className="mt-8 text-[16px] leading-[1.6] text-text-body">
           A small CLI that verifies a Pegana alert. It re-derives the receipt
-          hash byte-exact on your machine, and when a receipt carries an
+          hash byte-exact on your machine (using the release that matches the
+          receipt&apos;s methodology version, 0.4.0 onward), and when a receipt carries an
           on-chain anchor it also cross-checks that signer-pinned commitment on
           Solana, so anyone can confirm the published history wasn&apos;t
           altered. Pass <code>--offline</code> for a hash-only check with no RPC

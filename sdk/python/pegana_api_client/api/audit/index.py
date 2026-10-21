@@ -1,17 +1,12 @@
 from http import HTTPStatus
 from typing import Any, cast
-from urllib.parse import quote
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response, UNSET
 from ... import errors
-
+from ...client import AuthenticatedClient, Client
 from ...models.audit_index_row import AuditIndexRow
-from ...types import UNSET, Unset
-from typing import cast
-
+from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
@@ -19,11 +14,7 @@ def _get_kwargs(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
-
 ) -> dict[str, Any]:
-    
-
-    
 
     params: dict[str, Any] = {}
 
@@ -33,9 +24,7 @@ def _get_kwargs(
 
     params["state"] = state
 
-
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
-
 
     _kwargs: dict[str, Any] = {
         "method": "get",
@@ -43,19 +32,17 @@ def _get_kwargs(
         "params": params,
     }
 
-
     return _kwargs
 
 
-
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Any | list[AuditIndexRow] | None:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Any | list[AuditIndexRow] | None:
     if response.status_code == 200:
         response_200 = []
         _response_200 = response.json()
-        for response_200_item_data in (_response_200):
+        for response_200_item_data in _response_200:
             response_200_item = AuditIndexRow.from_dict(response_200_item_data)
-
-
 
             response_200.append(response_200_item)
 
@@ -71,7 +58,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
         return None
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[Any | list[AuditIndexRow]]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[Any | list[AuditIndexRow]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -86,9 +75,8 @@ def sync_detailed(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
-
 ) -> Response[Any | list[AuditIndexRow]]:
-    """ List recent audit receipts
+    """List recent audit receipts
 
     Args:
         limit (int | Unset):
@@ -101,14 +89,12 @@ def sync_detailed(
 
     Returns:
         Response[Any | list[AuditIndexRow]]
-     """
-
+    """
 
     kwargs = _get_kwargs(
         limit=limit,
-exclude_pegged=exclude_pegged,
-state=state,
-
+        exclude_pegged=exclude_pegged,
+        state=state,
     )
 
     response = client.get_httpx_client().request(
@@ -117,15 +103,15 @@ state=state,
 
     return _build_response(client=client, response=response)
 
+
 def sync(
     *,
     client: AuthenticatedClient | Client,
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
-
 ) -> Any | list[AuditIndexRow] | None:
-    """ List recent audit receipts
+    """List recent audit receipts
 
     Args:
         limit (int | Unset):
@@ -138,16 +124,15 @@ def sync(
 
     Returns:
         Any | list[AuditIndexRow]
-     """
-
+    """
 
     return sync_detailed(
         client=client,
-limit=limit,
-exclude_pegged=exclude_pegged,
-state=state,
-
+        limit=limit,
+        exclude_pegged=exclude_pegged,
+        state=state,
     ).parsed
+
 
 async def asyncio_detailed(
     *,
@@ -155,9 +140,8 @@ async def asyncio_detailed(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
-
 ) -> Response[Any | list[AuditIndexRow]]:
-    """ List recent audit receipts
+    """List recent audit receipts
 
     Args:
         limit (int | Unset):
@@ -170,21 +154,18 @@ async def asyncio_detailed(
 
     Returns:
         Response[Any | list[AuditIndexRow]]
-     """
-
+    """
 
     kwargs = _get_kwargs(
         limit=limit,
-exclude_pegged=exclude_pegged,
-state=state,
-
+        exclude_pegged=exclude_pegged,
+        state=state,
     )
 
-    response = await client.get_async_httpx_client().request(
-        **kwargs
-    )
+    response = await client.get_async_httpx_client().request(**kwargs)
 
     return _build_response(client=client, response=response)
+
 
 async def asyncio(
     *,
@@ -192,9 +173,8 @@ async def asyncio(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
-
 ) -> Any | list[AuditIndexRow] | None:
-    """ List recent audit receipts
+    """List recent audit receipts
 
     Args:
         limit (int | Unset):
@@ -207,13 +187,13 @@ async def asyncio(
 
     Returns:
         Any | list[AuditIndexRow]
-     """
+    """
 
-
-    return (await asyncio_detailed(
-        client=client,
-limit=limit,
-exclude_pegged=exclude_pegged,
-state=state,
-
-    )).parsed
+    return (
+        await asyncio_detailed(
+            client=client,
+            limit=limit,
+            exclude_pegged=exclude_pegged,
+            state=state,
+        )
+    ).parsed

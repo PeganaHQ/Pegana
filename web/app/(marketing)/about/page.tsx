@@ -38,8 +38,10 @@ const MANIFESTO = [
     <b className="font-medium text-[var(--v2-text)]">
       content-addressed receipt
     </b>
-    : the frozen inputs, the canon hash, the methodology version. A self-hosted
-    CLI replays any receipt byte-exact on your machine. Some receipts are
+    : the frozen inputs, the canon hash, the methodology version. Every receipt&apos;s
+    hash checks in your browser, and a self-hosted CLI re-derives it byte-exact
+    on your machine with the release matching its methodology version (0.4.0
+    onward). Some receipts are
     anchored on Solana itself. When the answer is uncertain, Pegana prints{" "}
     <b className="font-medium text-[var(--v2-text)]">Unknown</b> instead of
     guessing, and every incident our monitoring catches goes on the public

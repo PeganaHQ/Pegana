@@ -55,7 +55,8 @@ Every alert emits a public receipt with frozen inputs and an on-chain commit.
 
 ```bash
 curl -s https://api.pegana.xyz/v1/audit/<alert_id>
-# re-derive it byte-exact with the CLI (add --json for a CI-friendly verdict line):
+# re-derive it byte-exact with the CLI (add --json for a CI-friendly verdict line).
+# Older receipts exit 3 VERSION_MISMATCH and print the install command for the matching release (receipts older than 0.4.0 verify by hash only):
 cargo install pegana-replay && pegana-replay --alert-id <alert_id>
 ```
 

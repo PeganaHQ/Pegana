@@ -7,14 +7,13 @@ import { apiBase } from "@/lib/api/base";
 const API_BASE = apiBase();
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
 
+// `GET /v1/audit` index row (bare array). It has no class or discount.
 interface AlertRow {
   id: string;
   asset: string;
-  class: string;
   from_state: string;
   to_state: string;
   detected_at: string;
-  discount: string | null;
 }
 
 function xmlEscape(s: string): string {
@@ -42,16 +41,7 @@ function rfc822(iso: string): string {
 function alertToItem(a: AlertRow): string {
   const title = `${a.asset}: ${a.from_state} → ${a.to_state}`;
   const url = `${SITE_URL}/asset/${encodeURIComponent(a.asset)}`;
-  // Suppress the spread label if the snapshot is physically impossible
-  // (|discount| > 1.0). A corrupted upstream sample shouldn't bake a fake
-  // "-9218%" into the public RSS feed permanently.
-  const bps = (() => {
-    if (!a.discount) return null;
-    const n = parseFloat(a.discount);
-    if (!Number.isFinite(n) || Math.abs(n) > 1) return null;
-    return Math.round(n * 10000);
-  })();
-  const desc = `Pegana detected a state transition on ${a.asset}${bps != null ? ` (spread ${(bps / 100).toFixed(2)}%)` : ""}. Class: ${a.class}.`;
+  const desc = `Pegana detected a state transition on ${a.asset}: ${a.from_state} to ${a.to_state}.`;
   return `
     <item>
       <title>${xmlEscape(title)}</title>
@@ -59,7 +49,7 @@ function alertToItem(a: AlertRow): string {
       <guid isPermaLink="false">${xmlEscape(a.id)}</guid>
       <pubDate>${rfc822(a.detected_at)}</pubDate>
       <description>${xmlEscape(desc)}</description>
-      <category>${xmlEscape(a.class)}</category>
+      <category>${xmlEscape(a.to_state)}</category>
     </item>`.trim();
 }
 
@@ -68,15 +58,17 @@ export async function GET(_req: NextRequest) {
   let lastBuildDate = new Date().toUTCString();
 
   try {
-    const res = await fetch(`${API_BASE}/v1/alerts?limit=100`, {
+    // exclude_pegged is left at the server default (true): the feed lists
+    // transitions INTO a non-PEGGED state only, unlike the in-app views
+    // (api.alerts), which also include recoveries to PEGGED.
+    const res = await fetch(`${API_BASE}/v1/audit?limit=100`, {
       headers: { Accept: "application/json" },
       // Cache for 5 minutes — the feed is consumed by readers polling on
       // their own schedule (RSS clients typically poll 15–60 min).
       next: { revalidate: 300 },
     });
     if (res.ok) {
-      const body = (await res.json()) as { data: AlertRow[] };
-      const alerts = body.data;
+      const alerts = (await res.json()) as AlertRow[];
       items = alerts.map(alertToItem);
       if (alerts[0]?.detected_at) lastBuildDate = rfc822(alerts[0].detected_at);
     }

@@ -1,28 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, BinaryIO, TextIO, TYPE_CHECKING, Generator
+from typing import Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
 
-from ..types import UNSET, Unset
-from typing import cast
-
-
-
-
-
-
 T = TypeVar("T", bound="MethodologyCurrentResponse")
-
 
 
 @_attrs_define
 class MethodologyCurrentResponse:
-    """ Public methodology lifecycle pointer.
+    """Public methodology lifecycle pointer.
 
     `version`, `status`, and `fix_url` are the original (v1) shape — every
     current consumer (web/app/api/methodology/route.ts type-checks only
@@ -41,7 +32,7 @@ class MethodologyCurrentResponse:
                 release == adoption in this lifecycle (ADR-0003).
             status_reason (None | str | Unset): Operator note attached to a `deprecated`/`broken` transition, if any.
             superseded_by (None | str | Unset): Set when this version has been superseded by a newer one.
-     """
+    """
 
     status: str
     version: str
@@ -51,10 +42,6 @@ class MethodologyCurrentResponse:
     status_reason: None | str | Unset = UNSET
     superseded_by: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
-
-
-
-
 
     def to_dict(self) -> dict[str, Any]:
         status = self.status
@@ -91,13 +78,14 @@ class MethodologyCurrentResponse:
         else:
             superseded_by = self.superseded_by
 
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({
-            "status": status,
-            "version": version,
-        })
+        field_dict.update(
+            {
+                "status": status,
+                "version": version,
+            }
+        )
         if fix_url is not UNSET:
             field_dict["fix_url"] = fix_url
         if git_tag is not UNSET:
@@ -111,10 +99,8 @@ class MethodologyCurrentResponse:
 
         return field_dict
 
-
-
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         status = d.pop("status")
 
@@ -129,7 +115,6 @@ class MethodologyCurrentResponse:
 
         fix_url = _parse_fix_url(d.pop("fix_url", UNSET))
 
-
         def _parse_git_tag(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -138,7 +123,6 @@ class MethodologyCurrentResponse:
             return cast(None | str | Unset, data)
 
         git_tag = _parse_git_tag(d.pop("git_tag", UNSET))
-
 
         def _parse_released_at(data: object) -> None | str | Unset:
             if data is None:
@@ -149,7 +133,6 @@ class MethodologyCurrentResponse:
 
         released_at = _parse_released_at(d.pop("released_at", UNSET))
 
-
         def _parse_status_reason(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -158,7 +141,6 @@ class MethodologyCurrentResponse:
             return cast(None | str | Unset, data)
 
         status_reason = _parse_status_reason(d.pop("status_reason", UNSET))
-
 
         def _parse_superseded_by(data: object) -> None | str | Unset:
             if data is None:
@@ -169,7 +151,6 @@ class MethodologyCurrentResponse:
 
         superseded_by = _parse_superseded_by(d.pop("superseded_by", UNSET))
 
-
         methodology_current_response = cls(
             status=status,
             version=version,
@@ -179,7 +160,6 @@ class MethodologyCurrentResponse:
             status_reason=status_reason,
             superseded_by=superseded_by,
         )
-
 
         methodology_current_response.additional_properties = d
         return methodology_current_response

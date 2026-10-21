@@ -579,7 +579,7 @@ peg_target     = "EUR"
 # usually still reachable (see scripts/calibration-monitor.sql FX caveat).
 # SCOPE (verified live: EURC is monitoring_only=true since the Phase-0 launch —
 # migration 0048, "zero calibration history"): the weekend freeze does NOT reach
-# public alert egress (/v1/alerts etc. exclude monitoring_only) and no alert
+# public alert egress (the former /v1/alerts feed excluded monitoring_only; /v1/audit now lists them) and no alert
 # fires (state doesn't transition). EURC IS still DISPLAYED on the web (screener
 # + asset-detail) with a MONITORING badge; during the dark window the asset-detail
 # StaleBanner shows a calm "FX market closed — expected, not an outage" variant

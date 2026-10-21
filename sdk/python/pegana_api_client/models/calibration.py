@@ -1,6 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
-class Calibration(str, Enum):
+
+class Calibration(StrEnum):
     CALIBRATED = "calibrated"
     PROVISIONAL = "provisional"
 

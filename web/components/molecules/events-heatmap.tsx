@@ -17,6 +17,10 @@ interface Props {
    *  365 cells of "no activity", which is a specific and reassuring claim about
    *  the year. Rendered from nothing, it is a lie told calmly. */
   buckets: Record<string, number> | null;
+  /** UTC day (YYYY-MM-DD) at or before which the feed was cut off by the
+   *  paging cap. Those cells are drawn as "coverage incomplete", never as a
+   *  quiet day. `null`/absent when the whole year was fetched. */
+  unknownThroughDay?: string | null;
 }
 
 const ROW_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""];
@@ -29,12 +33,17 @@ function intensityClass(count: number): string {
   return "bg-st-critical";
 }
 
-export function EventsHeatmap({ buckets }: Props) {
+export function EventsHeatmap({ buckets, unknownThroughDay = null }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   // Generate 52 weeks × 7 days ending today
   const cells = useMemo(() => {
-    const out: { date: string; dow: number; count: number }[] = [];
+    const out: {
+      date: string;
+      dow: number;
+      count: number;
+      unknown: boolean;
+    }[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     // Walk back 364 days from today, day-by-day
@@ -42,10 +51,15 @@ export function EventsHeatmap({ buckets }: Props) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const iso = d.toISOString().slice(0, 10);
-      out.push({ date: iso, dow: d.getDay(), count: buckets?.[iso] ?? 0 });
+      out.push({
+        date: iso,
+        dow: d.getDay(),
+        count: buckets?.[iso] ?? 0,
+        unknown: unknownThroughDay != null && iso <= unknownThroughDay,
+      });
     }
     return out;
-  }, [buckets]);
+  }, [buckets, unknownThroughDay]);
 
   // Group into 52 weeks (columns)
   const weeks = useMemo(() => {
@@ -145,15 +159,26 @@ export function EventsHeatmap({ buckets }: Props) {
                   <button
                     type="button"
                     data-heatmap-cell
-                    aria-label={`${formatDayUS(cell.date)}: ${cell.count} ${cell.count === 1 ? "event" : "events"}`}
-                    className={`h-3 w-3 cursor-help ${intensityClass(cell.count)} focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text`}
+                    data-unknown={cell.unknown ? "true" : undefined}
+                    aria-label={
+                      cell.unknown
+                        ? `${formatDayUS(cell.date)}: coverage incomplete`
+                        : `${formatDayUS(cell.date)}: ${cell.count} ${cell.count === 1 ? "event" : "events"}`
+                    }
+                    className={`h-3 w-3 cursor-help ${
+                      cell.unknown
+                        ? "border border-dashed border-hairline bg-transparent"
+                        : intensityClass(cell.count)
+                    } focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text`}
                   />
                 );
                 return (
                   <Tooltip key={dow}>
                     <TooltipTrigger asChild>{cellEl}</TooltipTrigger>
                     <TooltipContent>
-                      {formatDayUS(cell.date)} · {cell.count} events
+                      {cell.unknown
+                        ? `${formatDayUS(cell.date)} · coverage incomplete`
+                        : `${formatDayUS(cell.date)} · ${cell.count} events`}
                     </TooltipContent>
                   </Tooltip>
                 );
@@ -171,6 +196,12 @@ export function EventsHeatmap({ buckets }: Props) {
         <span className="h-3 w-3 bg-st-depeg/70" />
         <span className="h-3 w-3 bg-st-critical" />
         <span>More</span>
+        {unknownThroughDay != null && (
+          <>
+            <span className="ml-2 h-3 w-3 border border-dashed border-hairline" />
+            <span>Not loaded</span>
+          </>
+        )}
       </div>
     </div>
   );

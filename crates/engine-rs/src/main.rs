@@ -1736,7 +1736,8 @@ async fn push_alert(
     on_chain_enabled: bool,
 ) -> Result<()> {
     // 1) Persist the alerts row. This is the durable record the dispatcher
-    //    consumes from /v1/alerts and webhook fan-out — if it fails the whole
+    //    consumes for webhook fan-out (and that backs the
+    //    public /v1/audit ledger) — if it fails the whole
     //    flow aborts (rule #10 still respects the order: alerts > evidence).
     //    `confidence` is plumbed from the same Pyth-derived label
     //    discount_snapshots records, so consumers see the same trustworthiness

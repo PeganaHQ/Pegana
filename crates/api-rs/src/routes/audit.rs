@@ -612,6 +612,82 @@ pub struct IndexParams {
     /// rows. Valid values: PEGGED, DRIFT, DEPEG, CRITICAL, BLACK_SWAN.
     /// Any other value yields HTTP 400 with `error: invalid_state`.
     pub state: Option<String>,
+    /// Exact asset symbol (case-sensitive), e.g. `USDe`. 1-32 chars of
+    /// `[A-Za-z0-9._-]`; anything else yields HTTP 400 `invalid_asset`.
+    pub asset: Option<String>,
+    /// Lower bound on `detected_at`, INCLUSIVE. RFC 3339.
+    pub since: Option<DateTime<Utc>>,
+    /// Upper bound on `detected_at`, EXCLUSIVE. RFC 3339. Must be after
+    /// `since` when both are given (else 400 `invalid_range`).
+    pub until: Option<DateTime<Utc>>,
+    /// Keyset paging cursor: return only rows strictly older than this
+    /// `detected_at` (RFC 3339, millisecond precision as emitted in rows).
+    /// Pass the last row's `detected_at` to fetch the next page.
+    pub before: Option<DateTime<Utc>>,
+    /// Tie-breaker for `before`: with it, rows sharing the cursor
+    /// millisecond are paged by `id` (descending) so none are skipped or
+    /// repeated. Pass the last row's `id`. Requires `before` (else 400
+    /// `invalid_cursor`).
+    pub before_id: Option<Uuid>,
+}
+
+/// Validated `asset` / time-window / cursor filters for the index.
+#[derive(Debug, PartialEq)]
+struct IndexFilters<'a> {
+    asset: Option<&'a str>,
+    since: Option<DateTime<Utc>>,
+    until: Option<DateTime<Utc>>,
+    before: Option<DateTime<Utc>>,
+    before_id: Option<Uuid>,
+}
+
+fn bad_request(body: serde_json::Value) -> (StatusCode, Json<serde_json::Value>) {
+    (StatusCode::BAD_REQUEST, Json(body))
+}
+
+/// Pure validation of the new index params (timestamps are already parsed by
+/// the query extractor, which 400s malformed RFC 3339 as `invalid_query`).
+fn validate_index_filters(
+    q: &IndexParams,
+) -> Result<IndexFilters<'_>, (StatusCode, Json<serde_json::Value>)> {
+    let asset = match q.asset.as_deref() {
+        None => None,
+        Some(a)
+            if (1..=32).contains(&a.len())
+                && a.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) =>
+        {
+            Some(a)
+        }
+        Some(other) => {
+            return Err(bad_request(json!({
+                "error": "invalid_asset",
+                "got": other,
+                "hint": "1-32 chars of [A-Za-z0-9._-]",
+            })));
+        }
+    };
+    if let (Some(since), Some(until)) = (q.since, q.until) {
+        if until <= since {
+            return Err(bad_request(json!({
+                "error": "invalid_range",
+                "hint": "`until` must be strictly after `since`",
+            })));
+        }
+    }
+    if q.before_id.is_some() && q.before.is_none() {
+        return Err(bad_request(json!({
+            "error": "invalid_cursor",
+            "hint": "`before_id` requires `before`",
+        })));
+    }
+    Ok(IndexFilters {
+        asset,
+        since: q.since,
+        until: q.until,
+        before: q.before,
+        before_id: q.before_id,
+    })
 }
 
 /// Accepted values for the optional `?state=` filter on `GET /v1/audit`.
@@ -627,7 +703,7 @@ const VALID_AUDIT_STATES: &[&str] = &["PEGGED", "DRIFT", "DEPEG", "CRITICAL", "B
     params(IndexParams),
     responses(
         (status = 200, description = "Index of recent audits, newest first", body = Vec<AuditIndexRow>),
-        (status = 400, description = "Invalid ?state= value (must be one of PEGGED|DRIFT|DEPEG|CRITICAL|BLACK_SWAN)"),
+        (status = 400, description = "Invalid ?state= value (PEGGED|DRIFT|DEPEG|CRITICAL|BLACK_SWAN), malformed RFC 3339 timestamp or UUID (invalid_query), invalid_asset, invalid_range (until <= since) or invalid_cursor (before_id without before)"),
     )
 )]
 pub async fn index(
@@ -660,6 +736,8 @@ pub async fn index(
         }
     };
 
+    let f = validate_index_filters(&q)?;
+
     // ADR-0020: the discoverable INDEX (and the RSS/Atom/CSV feeds that call
     // it) is gated on FEATURE_PUBLIC_ALERTS. During the calibration window
     // (flag false) the ledger must not be publicly enumerable, so we return
@@ -684,11 +762,29 @@ pub async fn index(
            FROM alerts a JOIN alert_evidence e ON e.alert_id = a.id
            WHERE ($1 = false OR a.to_state <> 'PEGGED')
              AND ($3::text IS NULL OR a.to_state::text = $3::text)
-           ORDER BY a.detected_at DESC LIMIT $2"#,
+             AND ($4::text IS NULL OR a.asset = $4::text)
+             AND ($5::timestamptz IS NULL OR a.detected_at >= $5::timestamptz)
+             AND ($6::timestamptz IS NULL OR a.detected_at < $6::timestamptz)
+             -- Keyset cursor. Rows carry millisecond timestamps while the
+             -- column is microsecond, so compare (and order) on the
+             -- millisecond-truncated value with `id` as the tie-break; that
+             -- is exactly what a client can echo back.
+             AND ($7::timestamptz IS NULL
+                  OR date_trunc('milliseconds', a.detected_at) < $7::timestamptz
+                  OR ($8::uuid IS NOT NULL
+                      AND date_trunc('milliseconds', a.detected_at) = $7::timestamptz
+                      AND a.id < $8::uuid))
+           ORDER BY date_trunc('milliseconds', a.detected_at) DESC, a.id DESC
+           LIMIT $2"#,
     )
     .bind(exclude_pegged)
     .bind(limit as i64)
     .bind(state_filter)
+    .bind(f.asset)
+    .bind(f.since)
+    .bind(f.until)
+    .bind(f.before)
+    .bind(f.before_id)
     .fetch_all(&state.pg)
     .await
     .map_err(db_error)?;
@@ -1037,4 +1133,88 @@ pub async fn csv(
         ),
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod index_filter_tests {
+    use super::*;
+
+    fn params() -> IndexParams {
+        IndexParams {
+            limit: None,
+            exclude_pegged: None,
+            state: None,
+            asset: None,
+            since: None,
+            until: None,
+            before: None,
+            before_id: None,
+        }
+    }
+
+    fn ts(s: &str) -> DateTime<Utc> {
+        s.parse().unwrap()
+    }
+
+    fn err_code(q: &IndexParams) -> String {
+        let (status, Json(body)) = validate_index_filters(q).unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        body["error"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn empty_params_are_valid() {
+        assert!(validate_index_filters(&params()).is_ok());
+    }
+
+    #[test]
+    fn asset_accepts_real_symbols_and_rejects_junk() {
+        for ok in ["USDe", "JupUSD", "sHYUSD", "wBTC.e", "a-b_c"] {
+            let mut q = params();
+            q.asset = Some(ok.into());
+            assert_eq!(validate_index_filters(&q).unwrap().asset, Some(ok));
+        }
+        for bad in ["", "a b", "x'; DROP TABLE alerts;--", &"A".repeat(33), "é"] {
+            let mut q = params();
+            q.asset = Some(bad.into());
+            assert_eq!(err_code(&q), "invalid_asset", "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn since_until_must_be_ordered() {
+        let mut q = params();
+        q.since = Some(ts("2026-01-02T00:00:00Z"));
+        q.until = Some(ts("2026-01-01T00:00:00Z"));
+        assert_eq!(err_code(&q), "invalid_range");
+        q.until = q.since;
+        assert_eq!(err_code(&q), "invalid_range");
+        q.until = Some(ts("2026-01-03T00:00:00Z"));
+        assert!(validate_index_filters(&q).is_ok());
+        // Either bound alone is fine.
+        q.until = None;
+        assert!(validate_index_filters(&q).is_ok());
+    }
+
+    #[test]
+    fn before_id_requires_before() {
+        let mut q = params();
+        q.before_id = Some(Uuid::nil());
+        assert_eq!(err_code(&q), "invalid_cursor");
+        q.before = Some(ts("2026-01-01T00:00:00Z"));
+        assert!(validate_index_filters(&q).is_ok());
+    }
+
+    #[test]
+    fn malformed_timestamp_is_rejected_by_the_extractor_as_400() {
+        use axum::extract::Query;
+        let parse = |qs: &str| {
+            Query::<IndexParams>::try_from_uri(&format!("http://x/v1/audit?{qs}").parse().unwrap())
+        };
+        assert!(parse("since=yesterday").is_err());
+        assert!(parse("before=not-a-time").is_err());
+        assert!(parse("before_id=nope").is_err());
+        let ok = parse("since=2026-01-01T00:00:00Z&before=2026-01-02T00:00:00.123Z&asset=USDe");
+        assert!(ok.is_ok());
+    }
 }

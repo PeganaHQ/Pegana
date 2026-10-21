@@ -3,8 +3,8 @@
 # CI orchestrator for the webhook reference receivers.
 #
 # Generates a fresh Ed25519 keypair, injects the public key into each
-# receiver source (TS / Rust / Python), boots them on ports 9001 / 9000
-# / 9002 in the background, then runs the dispatcher-rs integration
+# receiver source (TS / Rust), boots them on ports 9001 / 9000
+# in the background, then runs the dispatcher-rs integration
 # test (`tests/webhook_receivers.rs`) against each receiver in turn.
 
 set -euo pipefail
@@ -53,16 +53,13 @@ restore() {
 
 TS_FILE="$RECEIVERS_DIR/typescript-cloudflare-worker/worker.ts"
 RUST_FILE="$RECEIVERS_DIR/rust-axum/src/main.rs"
-PY_FILE="$RECEIVERS_DIR/python-fastapi/main.py"
 
 inject "$TS_FILE"
 inject "$RUST_FILE"
-inject "$PY_FILE"
 
 restore_all() {
   restore "$TS_FILE"
   restore "$RUST_FILE"
-  restore "$PY_FILE"
 }
 trap 'cleanup; restore_all' EXIT
 
@@ -92,19 +89,6 @@ if command -v cargo >/dev/null; then
     run_against "rust-axum" "http://127.0.0.1:9000"
   else
     echo "✗ Rust receiver never bound :9000"
-    exit 1
-  fi
-fi
-
-# Python / FastAPI on :9002
-if command -v uvicorn >/dev/null; then
-  echo "→ booting Python / FastAPI receiver on :9002"
-  (cd "$RECEIVERS_DIR/python-fastapi" && uvicorn main:app --host 127.0.0.1 --port 9002) &
-  PIDS+=($!)
-  if wait_for_port 9002; then
-    run_against "python-fastapi" "http://127.0.0.1:9002"
-  else
-    echo "✗ Python receiver never bound :9002"
     exit 1
   fi
 fi
