@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/seo/page-metadata";
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
 import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
 
 // The asset page itself is a client component (live WS data), so per-asset
@@ -34,6 +34,7 @@ export async function generateMetadata({
     // it — so a slow /v1/assets/{sym} would hold their render for the whole
     // request. 5s cap; the catch below already degrades to generic metadata.
     const r = await fetch(`${apiBase()}/v1/assets/${encodeURIComponent(sym)}`, {
+      headers: serverApiHeaders(),
       next: { revalidate: 60 },
       signal: AbortSignal.timeout(5_000),
     });
@@ -42,7 +43,11 @@ export async function generateMetadata({
         symbol?: string | null;
         name?: string | null;
         state?: string | null;
+        class?: string | null;
       };
+      // Leveraged synths are off the public peg surface and page.tsx answers
+      // 404 for them; their metadata must not say "Currently pegged".
+      if (a?.class === "synth_lev") unknownAsset = true;
       name = a?.name ?? sym;
       state = a?.state ?? null;
       // The API normalises casing — /v1/assets/jitosol and /JITOSOL both answer

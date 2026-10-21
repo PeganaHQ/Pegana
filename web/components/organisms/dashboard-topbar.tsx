@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, Search } from "lucide-react";
 import { useState, useRef, useEffect } from "react";

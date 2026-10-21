@@ -90,10 +90,30 @@ describe("app-wide metadata contract", () => {
       // the metadataBase and the site-wide OG defaults, and deliberately has no
       // canonical (a hardcoded "/" would canonicalise every page to the homepage).
       if (file.endsWith(join("app", "layout.tsx"))) continue;
+      // The global 404 serves every unmatched URL, so it must NOT carry a
+      // canonical or og:url (that would point every dead link at one URL). It
+      // only sets a title and noindex.
+      if (file.endsWith(join("app", "not-found.tsx"))) continue;
       if (!src.includes("pageMetadata")) {
         offenders.push(file.replace(process.cwd(), ""));
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("pageMetadata social image", () => {
+  it("carries the site card into openGraph and twitter (Next replaces the parent objects wholesale)", () => {
+    const m = pageMetadata({
+      title: "FAQ",
+      description: "Answers.",
+      path: "/faq",
+    });
+    const og = (m.openGraph as { images?: Array<{ url: string; width: number }> })
+      .images;
+    const tw = (m.twitter as { images?: Array<{ url: string }> }).images;
+    expect(og?.[0]?.url).toBe("/opengraph-image.png");
+    expect(og?.[0]?.width).toBe(1200);
+    expect(tw?.[0]?.url).toBe("/twitter-image.png");
   });
 });

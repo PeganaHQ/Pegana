@@ -1,7 +1,7 @@
 # 02 — Pricing Page Master Spec (`/pricing`)
 
 > **Status:** decision-ready · **Date:** 2026-06-02 · **Surface:** `web/app/(marketing)/pricing/page.tsx`
-> **Authority:** `/Users/rafazaum/Desktop/Projetos/pegana/brand.md` is the single source of truth. Every line below is reconciled to it. Where a generic pricing/skill default conflicts with the brand, the brand wins.
+> **Authority:** `<repo>/brand.md` is the single source of truth. Every line below is reconciled to it. Where a generic pricing/skill default conflicts with the brand, the brand wins.
 > **References modeled:** Helius (`helius.dev/pricing`, direct Solana-infra peer — weighted heaviest), Linear (`linear.app/pricing`, dark-SaaS comparison-matrix gold standard), Vercel (`vercel.com/pricing`, structural grid motif only — ignore its light canvas).
 
 ---

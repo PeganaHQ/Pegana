@@ -66,7 +66,7 @@ Times below are estimates for a focused operator with no surprises.
 | Step | Doc section | Time | Definition of done |
 |---|---|---|---|
 | 1. Provision VPS + DNS | §1 | 15 min | `dig api.pegana.xyz @1.1.1.1` returns the Hetzner IP; `dig www.pegana.xyz` resolves to Vercel |
-| 2. SSH hardening | §2 | 15 min | `ssh pegana@ip 'sudo -n true'` works; root login blocked |
+| 2. SSH hardening | [ssh-hardening.md](ssh-hardening.md) | 15 min | key login works; an unauthenticated probe gets `Permission denied (publickey)` with no `password` method |
 | 3. Docker install | §3 | 10 min | `docker compose version` works as `pegana` user |
 | 4. Clone + env | §4 | 10 min | `grep -E '^(...)' .env` shows every required key |
 | 5. First boot | §5 | 30 min | All 7 services `running` or `healthy` in `docker compose ps` |
@@ -129,34 +129,121 @@ dogfood window (see Epic 11 in ROADMAP.md) and ping @PeganaWatchBot's
 
 ---
 
-## Emergency rollback (≤ 10 min)
+## Emergency rollback
 
-If something breaks within minutes of the deploy and you can't
-diagnose:
+If something breaks within minutes of the deploy and you can't diagnose,
+redeploy the previous good commit with `scripts/deploy.sh` from the laptop.
+The full procedure (finding the last-good SHA from the box's `git reflog`,
+the rollback branch, what `deploy.sh` checks) is
+[`rollback.md`](rollback.md) §A. Do not `git checkout` plus
+`docker compose up -d --build` on the box.
+
+The box is `deploy@<prod-host>` (`$PEGANA_DEPLOY_SERVER`) with the stack in
+`~/pegana`. The Hetzner-era `pegana@<server-ip>` / `/opt/pegana` layout in
+older notes no longer exists.
+
+Schema is forward-compatible across the current migrations, so rolling back
+the code normally never requires rolling back the DB. If a migration changed
+semantics, follow [`rollback.md`](rollback.md) §B and [`restore.md`](restore.md).
+
+---
+
+## R1 backend fixes: production operations (fix/r1-backend)
+
+The code for these ships with the branch, but each item below needs an
+operator step on production. Do them in order, after the branch is merged
+to `main` and deployed with `scripts/deploy.sh`. Nothing here is done by
+the deploy itself unless stated.
+
+### (a) Web SSR rate-limit token (`PEGANA_WEB_SSR_TOKEN`)
+
+Without it the API keeps working, but the web app's server-side fetches
+share the anonymous 60 req/min per-IP budget of Vercel's egress IPs.
 
 ```bash
-ssh pegana@<server-ip>
-cd /opt/pegana
+# 1. Generate once, store in 1Password vault `pegana-prod-env`.
+TOKEN=$(openssl rand -hex 32)          # 64 hex chars; the API rejects short tokens
 
-# 1. Find the previous green deploy
-git log --oneline -10
+# 2. API host: add to the stack .env (REMOTE_DIR, default ~/pegana).
+ssh "$PEGANA_DEPLOY_SERVER" 'cd ~/pegana && grep -q ^PEGANA_WEB_SSR_TOKEN= .env \
+  || echo "PEGANA_WEB_SSR_TOKEN=<TOKEN>" >> .env'
+#    (paste the value in place of <TOKEN>; leave
+#     PEGANA_WEB_SSR_RATE_LIMIT_PER_MIN unset to keep the 3000 default)
 
-# 2. Revert to it
-git checkout <last-known-good-sha>
+# 3. Recreate only the api container so it reloads .env.
+./scripts/deploy.sh --config-only --services api
+#    expect the api log line: "web SSR rate-limit budget (PEGANA_WEB_SSR_TOKEN)" enabled=true
 
-# 3. Rebuild + redeploy
-docker compose up -d --build
+# 4. Vercel: same value, server-only (NOT NEXT_PUBLIC_), Production env.
+cd web && vercel env add PEGANA_WEB_SSR_TOKEN production
+#    then redeploy web (env changes apply only to new deployments).
 
-# 4. Verify
-docker compose ps
-curl -s https://api.pegana.xyz/healthz
+# 5. Verify the API honors the token (expect 3000), and that anonymous is still 60.
+curl -s -D - -o /dev/null -H "x-pegana-ssr-token: $TOKEN" \
+  https://api.pegana.xyz/v1/assets | grep -i '^ratelimit-limit'   # 3000
+curl -s -D - -o /dev/null https://api.pegana.xyz/v1/assets \
+  | grep -i '^ratelimit-limit'                                     # 60
 ```
 
-Schema is forward-compatible across all current migrations, so
-rolling back the code never requires rolling back the DB. **If you
-ran a destructive migration manually outside `docker compose run
-xtask migrate`, you're on your own — restore from `/backups/` per
-ops/deploy-hetzner.md §7.**
+Then load a server-rendered page (e.g. `https://www.pegana.xyz/`) a few
+times and confirm in the api logs / `pegana_api_rate_limited_total{route="web_ssr"}`
+that SSR requests are counted under the SSR budget and no 429 reaches web.
+Rollback: remove the line from both sides; the API falls back to per-IP.
+
+### (b) Migration 0080 (methodology release dates)
+
+0080 is a data backfill (`UPDATE methodology_versions SET released_at = ...`).
+It applies **only** through the sanctioned migrator:
+
+```bash
+./scripts/deploy.sh --migrate
+```
+
+Never run it by hand with psql (prod uses the legacy ledger path inside
+`deploy.sh`). Verify:
+
+```bash
+curl -s https://api.pegana.xyz/v1/methodology/current | jq -r .released_at
+#   expect 2026-07-16T19:26:11.000Z   (methodology 0.7.0)
+```
+
+### (c) Findings 12 / 21 (needs owner): Pyth Hermes API key
+
+Since the 2026-08 Pyth Core upgrade the public Hermes host returns 401
+without a key. The indexer then logs `pyth: no Hermes API key for the
+public host ... reading on-chain price accounts as the primary source`
+and the 8 assets reported dark in findings 12 / 21 stay `UNKNOWN`
+(`state_reason: stale_source`). Record their symbols before step 3:
+`curl -s https://api.pegana.xyz/v1/assets | jq -r '.data[] | select(.state=="UNKNOWN") | .symbol'`.
+
+1. Owner obtains a Pyth Hermes API key (account decision, not automatable).
+2. Add `PYTH_HERMES_API_KEY=<key>` to the API host `.env`.
+3. Recreate the indexer: `./scripts/deploy.sh --config-only --services indexer`.
+4. Verify:
+   ```bash
+   ssh "$PEGANA_DEPLOY_SERVER" 'cd ~/pegana && docker compose logs --since 5m indexer | grep -i pyth'
+   #   expect no "no Hermes API key" line and no repeating "pyth stream error"
+   curl -s https://api.pegana.xyz/v1/assets | jq -r '.data[] | select(.state=="UNKNOWN") | .symbol'
+   #   after ~2 min, the 8 previously dark assets must no longer be listed
+   ```
+
+### (d) Finding 2 (needs prod op): protocol-indexer HF enumeration
+
+Read-only diagnosis; decide the fix from the log line:
+
+```bash
+ssh "$PEGANA_DEPLOY_SERVER" 'cd ~/pegana && docker compose logs --since 24h protocol-indexer \
+  | grep -E "HELIUS_API_KEY not set|RPC quota exhausted"'
+```
+
+- `[kamino_hf] HELIUS_API_KEY not set` / `[jupiter_lend_hf] HELIUS_API_KEY not set`:
+  the key is missing. Set `HELIUS_API_KEY` in `.env`, then
+  `./scripts/deploy.sh --config-only --services protocol-indexer`.
+- `[kamino_hf] RPC quota exhausted at <symbol> - aborting cycle` (or the
+  `jupiter_lend_hf` equivalent): the key is present but the plan quota is
+  spent. Owner decision: raise the Helius plan or lengthen
+  `KAMINO_HF_POLL_MS` / `JUPITER_LEND_POLL_MS`.
+- Neither line: the enumeration is healthy; close the finding.
 
 ---
 

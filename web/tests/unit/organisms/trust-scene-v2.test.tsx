@@ -87,6 +87,21 @@ describe("TrustSceneV2 - reduced motion", () => {
     ).toBeInTheDocument();
   });
 
+  it("captions the chart as the USDe 2025-10-10 backtest under its methodology", () => {
+    render(<TrustSceneV2 />);
+    const caption = screen.getByTestId("replay-caption");
+    expect(caption).toHaveTextContent(
+      `USDe \u00b7 2025-10-10 \u00b7 backtest under methodology ${criticalMarker().bundle.methodology_version}`,
+    );
+  });
+
+  it("says exactly what the browser checks: the receipt hash", async () => {
+    render(<TrustSceneV2 />);
+    const ok = await screen.findByTestId("verify-match");
+    expect(ok).toHaveTextContent("hash checked in your browser: match");
+    expect(screen.getByTestId("result")).not.toHaveTextContent(/recomputed/);
+  });
+
   it("renders the final state instantly: all markers, CRITICAL pill, verified result", async () => {
     render(<TrustSceneV2 />);
     const markers = screen.getAllByTestId("marker");
@@ -97,7 +112,7 @@ describe("TrustSceneV2 - reduced motion", () => {
     expect(screen.getByTestId("result")).toHaveTextContent("CRITICAL");
     expect(screen.getByTestId("result")).toHaveTextContent("21:31 UTC");
     expect(screen.getByTestId("result-hash")).toHaveAttribute("title", c.sha256);
-    expect(await screen.findByTestId("verify-match")).toHaveTextContent(/recomputed in your browser: match/);
+    expect(await screen.findByTestId("verify-match")).toHaveTextContent(/hash checked in your browser: match/);
     expect(screen.getByRole("link", { name: /View receipt/ })).toHaveAttribute("href", receiptUrl(c.file));
   });
 
@@ -148,7 +163,7 @@ describe("TrustSceneV2 - reduced motion", () => {
     instant = false;
     render(<TrustSceneV2 />);
     expect(screen.queryByTestId("verify-match")).not.toBeInTheDocument();
-    expect(screen.getByTestId("result")).toHaveTextContent("recomputing");
+    expect(screen.getByTestId("result")).toHaveTextContent("hashing");
     await act(async () => pending.forEach((r) => r(true)));
     expect(await screen.findByTestId("verify-match")).toBeInTheDocument();
   });
@@ -173,7 +188,7 @@ describe("TrustSceneV2 - verification race", () => {
     expect(pending.length).toBe(base + 2);
     await act(async () => pending[base](true)); // resolves the stale first pick
     expect(screen.queryByTestId("verify-match")).not.toBeInTheDocument();
-    expect(screen.getByTestId("result")).toHaveTextContent("recomputing");
+    expect(screen.getByTestId("result")).toHaveTextContent("hashing");
     await act(async () => pending[base + 1](true));
     expect(await screen.findByTestId("verify-match")).toBeInTheDocument();
     expect(screen.getByTestId("result")).toHaveTextContent(REPLAY_MARKERS[1].state);

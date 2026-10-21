@@ -79,7 +79,7 @@ Effort: ~1 day. Output: agents get full self-service webhook lifecycle. Adds 2 p
 
 ### Repo + branch
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana
+cd <repo>
 git checkout main
 git pull origin main
 ```
@@ -157,7 +157,7 @@ cargo test -p api-rs --test me_endpoints -- --nocapture
 - **English-only** in code, comments, commits, docs. User explicitly enforced this.
 - **Never `git add .`** — stage files explicitly. Avoids picking up unrelated edits (we have `web/` changes from Rafael's other work that aren't ours).
 - **Never amend** — always new commits (CLAUDE Code convention).
-- **Memory:** `~/.claude/projects/-Users-rafazaum-Desktop-Projetos-pegana/memory/MEMORY.md` is the index; load via the auto-memory system. Key entries: `project_production_deploy.md`, `project_bot_state.md`, `project_brand_identity.md`, `feedback_deploy_workflow.md`.
+- **Memory:** `~/.claude/projects/<project>/memory/MEMORY.md` is the index; load via the auto-memory system. Key entries: `project_production_deploy.md`, `project_bot_state.md`, `project_brand_identity.md`, `feedback_deploy_workflow.md`.
 
 ### Env vars in production (Hetzner `~/pegana/.env`)
 - `PEGANA_WEBHOOK_SIGNING_KEY` — base64 32-byte Ed25519 seed (primary). REQUIRED for api + dispatcher.

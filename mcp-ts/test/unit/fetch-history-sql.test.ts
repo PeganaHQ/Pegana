@@ -23,17 +23,19 @@ import {
 // default export's Pool so `pool()` in src/db.ts builds our fake.
 const calls: Array<{ sql: string; params: unknown[] }> = [];
 const REALISTIC_ROWS = [
+  // What node-pg yields for the query: to_char ISO text, ROUND(AVG, 6)::text
+  // and AVG(...)::text with Postgres' long trailing-zero scale.
   {
-    ts: "2026-05-31 00:00:00+00",
-    discount: "-0.0041",
-    intrinsic_usd: "1.0000",
-    market_usd: "0.9959",
+    ts: "2026-05-31T00:00:00.000Z",
+    discount: "-0.004100",
+    intrinsic_usd: "1.00000000000000000000",
+    market_usd: "0.99590000000000000000",
   },
   {
-    ts: "2026-05-30 23:59:00+00",
-    discount: "-0.0038",
-    intrinsic_usd: "1.0000",
-    market_usd: "0.9962",
+    ts: "2026-05-30T23:59:00.000Z",
+    discount: "-0.003800",
+    intrinsic_usd: "104.413245656797405886395",
+    market_usd: "0.99620000000000000000",
   },
 ];
 
@@ -86,15 +88,29 @@ describe("fetchHistory SQL (real query builder)", () => {
     expect(calls[0]!.params[2]).toBe(1);
   });
 
-  it("returns the rows the driver yields, unchanged in shape", async () => {
+  it("formats ts as ISO-8601 UTC ms and rounds the bucket discount to 6 dp in SQL", async () => {
+    await fetchHistory("USDC", "1m", 10);
+    const sql = calls[0]!.sql;
+    expect(sql).toMatch(/to_char\(time_bucket\(\$1::interval, ts\) AT TIME ZONE 'UTC',\s*'YYYY-MM-DD"T"HH24:MI:SS\.MS"Z"'\) AS ts/);
+    expect(sql).toMatch(/ROUND\(AVG\(discount_smooth\), 6\)::text AS discount/);
+  });
+
+  it("normalizes decimals like REST (no trailing zeros, USD legs at 18 dp)", async () => {
     const rows = await fetchHistory("jitoSOL", "5m", 10);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({
-      ts: expect.any(String),
-      discount: expect.any(String),
-      intrinsic_usd: expect.any(String),
-      market_usd: expect.any(String),
-    });
+    expect(rows).toEqual([
+      {
+        ts: "2026-05-31T00:00:00.000Z",
+        discount: "-0.0041",
+        intrinsic_usd: "1",
+        market_usd: "0.9959",
+      },
+      {
+        ts: "2026-05-30T23:59:00.000Z",
+        discount: "-0.0038",
+        intrinsic_usd: "104.413245656797405886",
+        market_usd: "0.9962",
+      },
+    ]);
   });
 });
 

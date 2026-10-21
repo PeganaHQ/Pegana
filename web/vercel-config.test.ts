@@ -31,3 +31,14 @@ describe("Vercel docs-domain redirects", () => {
     });
   });
 });
+
+describe("Vercel app-host redirect", () => {
+  it("sends every app.pegana.xyz path to the same path on www", () => {
+    expect(config.redirects[3]).toEqual({
+      source: "/:path*",
+      has: [{ type: "host", value: "app.pegana.xyz" }],
+      destination: "https://www.pegana.xyz/:path*",
+      permanent: true,
+    });
+  });
+});

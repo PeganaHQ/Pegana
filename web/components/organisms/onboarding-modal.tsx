@@ -39,7 +39,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { AnimatePresence, m } from "framer-motion";
 import {
   Activity,

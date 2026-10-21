@@ -126,7 +126,7 @@ observability.
 ## Verification
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana
+cd <repo>
 cargo check --workspace --all-targets       # ✅ clean
 cargo test --manifest-path .claude/worktrees/exec-sprint-2026-05-25/crates/indexer-rs/Cargo.toml sources::hylo
 # 10 passed; 0 failed

@@ -1,12 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import {
   Suspense,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -40,13 +39,15 @@ import {
   ShareIconButton,
 } from "@/components/molecules/share-button";
 import { AssetNotFound } from "@/components/molecules/asset-not-found";
+import { LiveRefreshPaused } from "@/components/molecules/live-refresh-paused";
+import { isRateLimited, type ApiError } from "@/lib/api/client";
 import { StaleBanner } from "@/components/molecules/stale-banner";
 
 import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
 import { useAsset } from "@/lib/hooks/use-asset";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useAlerts } from "@/lib/hooks/use-alerts";
-import { useHistory } from "@/lib/hooks/use-history";
+import { useHistoryRange } from "@/lib/hooks/use-history-range";
 import { holderSignedPct, reconcileBps } from "@/lib/api/format";
 import { effectiveState } from "@/lib/asset/freshness";
 import { AssetStateAnnouncer } from "@/components/atoms/live-state-announcer";
@@ -154,16 +155,10 @@ function AssetPageInner({ fallbackAsset }: { fallbackAsset?: AssetCardData }) {
   const { data: peers } = useAssets();
 
   // Pre-fetch 24h history at page level so the hero KPIs render without
-  // waiting for the chart's dynamic import to mount.
-  const historyParams = useMemo(
-    () => ({
-      bucket: "1m" as const,
-      from: new Date(Date.now() - 24 * 3600_000).toISOString(),
-      limit: 2000,
-    }),
-    [],
-  );
-  const { data: history } = useHistory(symbol ?? null, historyParams);
+  // waiting for the chart's dynamic import to mount. Same SWR key as the
+  // chart's 24h range, so the two share one request.
+  const { data: history24h } = useHistoryRange(symbol ?? null, "24h");
+  const history = history24h?.points;
 
   const activeTab = parseTab(searchParams?.get("tab")) ?? "overview";
   const chartBucket = parseBucket(searchParams?.get("range")) ?? undefined;
@@ -321,7 +316,10 @@ function AssetPageInner({ fallbackAsset }: { fallbackAsset?: AssetCardData }) {
     return () => clearInterval(id);
   }, []);
 
-  if (isLoading || !symbol) {
+  // `isLoading` stays true while the first client fetch is in flight even when
+  // SWR is holding the server-rendered `fallbackAsset`, so gate the skeleton on
+  // having NO asset. Otherwise the SSR page flashes to a skeleton on hydrate.
+  if (!symbol || (isLoading && !asset)) {
     return (
       <main className="mx-auto max-w-[1440px] px-5 sm:px-6">
         <div className="pt-5 sm:pt-6">
@@ -343,13 +341,23 @@ function AssetPageInner({ fallbackAsset }: { fallbackAsset?: AssetCardData }) {
     );
   }
 
-  if (error || !asset) {
+  // Render from `asset` whenever we have one (server-rendered fallback or a
+  // previous successful poll). A failed refresh, including a 429 from the
+  // shared per-IP budget, only pauses live updates; it must never replace a
+  // page that already has real data with an outage screen.
+  if (!asset) {
     const status = (error as { status?: number } | undefined)?.status;
+    const rateLimited = isRateLimited(error);
     const apiUnreachable = !!error && status !== 404;
     return (
       <>
         <main>
-          <AssetNotFound symbol={symbol} apiUnreachable={apiUnreachable} />
+          <AssetNotFound
+            symbol={symbol}
+            apiUnreachable={apiUnreachable}
+            rateLimited={rateLimited}
+            retryAfterSec={(error as ApiError | undefined)?.retryAfterSec}
+          />
         </main>
       </>
     );
@@ -397,6 +405,7 @@ function AssetPageInner({ fallbackAsset }: { fallbackAsset?: AssetCardData }) {
 
   return (
     <>
+      {error ? <LiveRefreshPaused rateLimited={isRateLimited(error)} /> : null}
       <StaleBanner
         symbol={asset.symbol}
         updatedAt={asset.updated_at}

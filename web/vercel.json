@@ -17,6 +17,12 @@
       "has": [{ "type": "host", "value": "pegana.xyz" }],
       "destination": "https://www.pegana.xyz/:path*",
       "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "app.pegana.xyz" }],
+      "destination": "https://www.pegana.xyz/:path*",
+      "permanent": true
     }
   ]
 }

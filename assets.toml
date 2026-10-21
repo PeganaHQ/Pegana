@@ -249,11 +249,15 @@ intrinsic      = { kind = "sanctum_lst", symbol = "hyloSOL+" }
 market         = { kind = "jupiter_usd", numeraire = "SOL", numeraire_feed = "SOL/USD" }
 pyth_feed_id   = ""
 thresholds_bps = { drift = 30, depeg = 120, critical = 350 }
-# monitoring-only per migration 0049 on 2026-06-14 — FROZEN single-source signal:
-# discount pinned to one distinct value over the window while market moves (the
-# Sanctum sol_per_lst intrinsic is not advancing). Cannot detect real stress, so
-# contained (excluded from public egress) pending genuine price discovery. The
-# engine freeze-detector is the systemic fix. See validation handoff 2026-06-14.
+# History: contained (monitoring-only) by migration 0049 on 2026-06-14 for a
+# frozen single-source signal; promoted to calibrated by migration 0069 (owner
+# override, ADR-0015 D6, 2026-07-23), so it alerts publicly today.
+# Known noise (2026-10 review): drift = 30 sits inside this thin market's own
+# jitter (worst |discount| over 24h ~60 bps, ~$2k/day volume, one Jupiter quote
+# per ~50s), so a single route change crosses DRIFT and the 30s confirm window
+# commits it: ~10 PEGGED/DRIFT round trips in 3 days, 4-14 min each. Not an
+# engine bug. hyloSOL (same issuer) uses drift = 55 from its p99. Retuning is a
+# calibration decision for the owner (it changes the assets hash in receipts).
 
 [[assets]]
 symbol         = "sHYUSD"

@@ -1,8 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { cn } from "@/lib/utils/cn";
+import { advisoryNoteText, cascadeShare } from "@/lib/asset/loop-impact";
+import { displaySymbol } from "@/lib/asset/display-symbol";
+import { isRateLimited } from "@/lib/api/client";
+import { RATE_LIMITED_BODY } from "@/lib/api/rate-limit-copy";
 import { useLoopExposure } from "@/lib/hooks/use-loop-exposure";
 import type { AssetCardData } from "@/lib/api/types";
 
@@ -34,7 +38,9 @@ function shockLabel(bps: number): string {
 const BAR_MAX_PX = 96;
 
 export function SystemicImpact({ asset }: { asset: AssetCardData }) {
-  const { data: exp } = useLoopExposure(asset.symbol);
+  const { data: exp, error: expError } = useLoopExposure(asset.symbol);
+  // Render-boundary symbol only (sHYUSD renders as eHYUSD); fetches keep asset.symbol.
+  const sym = displaySymbol(asset.symbol);
 
   const hasExposure = !!exp && Number(exp.loop_exposure_usd) > 0;
 
@@ -65,6 +71,10 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
         ? firstBloodIdx
         : rungs.length - 1;
   const sel = rungs[activeIdx];
+  // The cascade runs over ALL collateral the health-factor bands cover, not
+  // the leveraged subset in the headline. See lib/asset/loop-impact.ts.
+  const selShare =
+    sel && exp ? cascadeShare(sel.liq, Number(exp.collateral_usd)) : null;
 
   const protocols = exp?.by_protocol
     .map((p) => PROTO_LABEL[p.protocol] ?? p.protocol)
@@ -81,12 +91,21 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
         </span>
       </header>
       <p className="mb-5 max-w-[54ch] text-[12px] leading-relaxed text-text-muted">
-        Leverage stacked on {asset.symbol} across Solana lending markets, and
-        how much of it would cross a liquidation threshold if {asset.symbol}{" "}
+        Leverage stacked on {sym} across Solana lending markets, and
+        how much of it would cross a liquidation threshold if {sym}{" "}
         depegs. The cross-protocol cascade no single lending dashboard shows.
       </p>
 
-      {!exp ? (
+      {!exp && expError ? (
+        // The hook does not retry on error (it re-polls every 60s), so without
+        // this branch a 429 at load left "Loading leverage exposure" up for a
+        // minute with no explanation.
+        <p className="text-[13px] text-text-muted" data-testid="loop-impact-error">
+          {isRateLimited(expError)
+            ? RATE_LIMITED_BODY
+            : "Leverage exposure is unavailable right now. This section retries every minute."}
+        </p>
+      ) : !exp ? (
         <div>
           <span className="sr-only">Loading leverage exposure</span>
           <div className="animate-pulse space-y-3" aria-hidden>
@@ -98,7 +117,7 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
       ) : !hasExposure ? (
         <div>
           <p className="text-[13px] text-text-muted">
-            No leveraged positions are tracked on {asset.symbol} across Kamino or
+            No leveraged positions are tracked on {sym} across Kamino or
             Jupiter Lend right now; negligible cross-protocol cascade risk.
           </p>
           <Link
@@ -116,7 +135,7 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
               {usdCompact(exp.loop_exposure_usd)}
             </div>
             <p className="mt-1.5 text-[12px] text-text-muted">
-              leveraged collateral stacked on {asset.symbol} across {protocols}
+              leveraged collateral stacked on {sym} across {protocols}
             </p>
           </div>
 
@@ -131,8 +150,19 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
                   {PROTO_LABEL[p.protocol] ?? p.protocol}
                 </span>
                 <span className="font-mono text-[11px] tabular-nums text-text-muted">
-                  {usdCompact(p.collateral_lev_usd)} lev ·{" "}
-                  {usdCompact(p.debt_usd)} debt
+                  {usdCompact(p.collateral_lev_usd)} lev
+                  {/* `debt_usd` is the amount of THIS asset borrowed on the
+                      venue (the indexer keys debt by the borrowed mint), not
+                      the debt owed against this collateral. Printed as
+                      "$0 debt" beside $36M liquidatable it read as
+                      contradictory, so it is labelled for what it is and
+                      omitted when zero. */}
+                  {Number(p.debt_usd) > 0 ? (
+                    <>
+                      {" "}
+                      · {usdCompact(p.debt_usd)} {sym} borrowed
+                    </>
+                  ) : null}
                 </span>
               </li>
             ))}
@@ -140,13 +170,13 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
 
           {/* Stress ladder — the cascade escalating with depeg depth. */}
           <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
-            Liquidation cascade: if {asset.symbol} depegs by…
+            Liquidation cascade: if {sym} depegs by…
           </div>
 
           {maxLiq === 0 ? (
             <div className="rounded-[14px] border border-hairline-soft p-4 text-[12px] text-text-muted">
               No tracked positions cross their liquidation threshold even at a{" "}
-              {shockLabel(deepest)} depeg; the leverage on {asset.symbol} is
+              {shockLabel(deepest)} depeg; the leverage on {sym} is
               deeply collateralised.
             </div>
           ) : (
@@ -222,9 +252,17 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
                   <p className="mt-1.5 text-[12px] text-text-muted">
                     {sel.liq > 0 ? (
                       <>
-                        of leveraged collateral crosses its liquidation
-                        threshold; {sel.positions} positions · coverage:{" "}
-                        {exp.coverage}
+                        of collateral backing a borrow crosses its
+                        liquidation threshold
+                        {selShare != null ? (
+                          <>
+                            {" "}
+                            ({Math.round(selShare * 100)}% of{" "}
+                            {usdCompact(exp.collateral_usd)} total {sym}{" "}
+                            supplied)
+                          </>
+                        ) : null}
+                        ; {sel.positions} positions, coverage {exp.coverage}
                       </>
                     ) : (
                       <>no tracked positions liquidate at this depth</>
@@ -236,7 +274,7 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
           )}
 
           <p className="mt-4 text-[11px] leading-relaxed text-text-muted">
-            {exp.advisory_note}
+            {advisoryNoteText(exp.advisory_note)}
           </p>
           {/* Honest-floor footnote: what `coverage` means + how many venues are
               tracked so far, so the number reads as a floor, never a ceiling. */}
@@ -244,12 +282,13 @@ export function SystemicImpact({ asset }: { asset: AssetCardData }) {
             <span className="font-mono uppercase tracking-[0.06em]">
               coverage {exp.coverage}
             </span>            {" "}
-            Risky bands may be k-anonymity–suppressed, and only{" "}
+            Risky bands may be k-anonymity suppressed, and only{" "}
             <strong className="font-medium text-text-muted">
               2 of ~6 Solana lending venues
             </strong>{" "}
-            are tracked so far (Kamino, Jupiter Lend). Read this as an honest
-            floor, not a ceiling.
+            are indexed so far (Kamino, Jupiter Lend)
+            {protocols ? <>; positions on {sym} came from {protocols}</> : null}
+            . Read this as an honest floor, not a ceiling.
           </p>
         </>
       )}

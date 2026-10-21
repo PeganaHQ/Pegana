@@ -1,5 +1,16 @@
+# Container log rotation, applied to every service below. The daemon default
+# on the box (/etc/docker/daemon.json: 10m x 3) kept only ~10h of engine logs
+# during warning floods. 50m x 5 = up to 250 MB per container, still small
+# against the 96 GB disk. Size-based, so a log flood cannot fill the disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   postgres:
+    logging: *default-logging
     image: timescale/timescaledb:latest-pg16@sha256:d8336a5c9cc49bdbf1e935234e8c87ab64b6d6d195fd2ecedff7b00185557631
     restart: unless-stopped
     environment:
@@ -14,6 +25,7 @@ services:
       retries: 5
 
   redis:
+    logging: *default-logging
     image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     restart: unless-stopped
     volumes: [redisdata:/data]
@@ -35,6 +47,7 @@ services:
   # in-network hostnames instead of the host-local development ports.
 
   indexer:
+    logging: *default-logging
     build:
       context: .
       dockerfile: crates/indexer-rs/Dockerfile
@@ -77,7 +90,7 @@ services:
       PYTH_INTRINSIC_INTERVAL_MS: ${PYTH_INTRINSIC_INTERVAL_MS:-30000}
       LST_DIRECTORY_POLL_MS: ${LST_DIRECTORY_POLL_MS:-900000}
       INTRINSIC_DIVERGENCE_TOLERANCE_BPS: ${INTRINSIC_DIVERGENCE_TOLERANCE_BPS:-300}
-      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,pegana=debug}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
@@ -96,6 +109,7 @@ services:
     restart: unless-stopped
 
   engine:
+    logging: *default-logging
     build:
       context: .
       dockerfile: crates/engine-rs/Dockerfile
@@ -104,6 +118,7 @@ services:
       REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
       ASSETS_FILE: ${ASSETS_FILE:-./assets.toml}
       PYTH_STALENESS_SECS: ${PYTH_STALENESS_SECS:-30}
+      PYTH_ONCHAIN_STALENESS_SECS: ${PYTH_ONCHAIN_STALENESS_SECS:-120}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
       SOLANA_RPC_URL_FALLBACK: ${SOLANA_RPC_URL_FALLBACK:-https://solana-rpc.publicnode.com}
       PEGANA_COMMIT_KEYPAIR: ${PEGANA_COMMIT_KEYPAIR:-/opt/pegana/.secrets/commit-keypair.json}
@@ -114,7 +129,7 @@ services:
       DB_MAX_CONNECTIONS: ${ENGINE_DB_MAX_CONNECTIONS:-10}
       DB_STATEMENT_TIMEOUT_MS: ${ENGINE_DB_STATEMENT_TIMEOUT_MS:-30000}
       AUDIT_BASE_URL: ${AUDIT_BASE_URL:-https://pegana.xyz}
-      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,pegana=debug}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
@@ -135,6 +150,7 @@ services:
     restart: unless-stopped
 
   dispatcher:
+    logging: *default-logging
     build:
       context: .
       dockerfile: crates/dispatcher-rs/Dockerfile
@@ -147,7 +163,7 @@ services:
       PEGANA_WEBHOOK_SIGNING_KEY_NEXT: ${PEGANA_WEBHOOK_SIGNING_KEY_NEXT:-}
       AUDIT_BASE_URL: ${AUDIT_BASE_URL:-https://pegana.xyz}
       WEBHOOK_SSRF_ALLOW_LOOPBACK: ${WEBHOOK_SSRF_ALLOW_LOOPBACK:-}
-      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,pegana=debug}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
@@ -165,6 +181,7 @@ services:
     restart: unless-stopped
 
   api:
+    logging: *default-logging
     build:
       context: .
       dockerfile: crates/api-rs/Dockerfile
@@ -173,6 +190,8 @@ services:
       REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
       API_BIND: ${API_BIND:-0.0.0.0:8080}
       API_RATE_LIMIT_PER_MIN: ${API_RATE_LIMIT_PER_MIN:-60}
+      PEGANA_WEB_SSR_TOKEN: ${PEGANA_WEB_SSR_TOKEN:-}
+      PEGANA_WEB_SSR_RATE_LIMIT_PER_MIN: ${PEGANA_WEB_SSR_RATE_LIMIT_PER_MIN:-3000}
       FEATURE_PUBLIC_ALERTS: ${FEATURE_PUBLIC_ALERTS:-false}
       CORS_EXTRA_ORIGINS: ${CORS_EXTRA_ORIGINS:-}
       PEGANA_WEBHOOK_SIGNING_KEY: ${PEGANA_WEBHOOK_SIGNING_KEY:-}
@@ -181,12 +200,18 @@ services:
       WEBHOOK_SSRF_ALLOW_LOOPBACK: ${WEBHOOK_SSRF_ALLOW_LOOPBACK:-}
       DB_MAX_CONNECTIONS: ${API_DB_MAX_CONNECTIONS:-25}
       DB_STATEMENT_TIMEOUT_MS: ${API_DB_STATEMENT_TIMEOUT_MS:-30000}
-      RUST_LOG: ${RUST_LOG:-info,sqlx=warn,pegana=debug}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       METRICS_BIND: ${API_METRICS_BIND:-0.0.0.0:9092}
+    # Docker's default soft nofile is 1024 (hard 524288). Every WebSocket and
+    # every REST connection is an fd, so 1024 capped the api at roughly 500
+    # live sockets before accept() failed with EMFILE for REST too. api-rs also
+    # raises soft to hard at startup; WS_MAX_TOTAL (10k) keeps well inside this.
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -199,6 +224,7 @@ services:
     restart: unless-stopped
 
   protocol-indexer:
+    logging: *default-logging
     build: ./protocol-indexer-ts
     container_name: pegana-protocol-indexer
     restart: unless-stopped
@@ -227,7 +253,10 @@ services:
       KAMINO_API_URL: ${KAMINO_API_URL:-https://api.kamino.finance}
       KAMINO_MARKETS: ${KAMINO_MARKETS:-}
       KAMINO_POLL_MS: ${KAMINO_POLL_MS:-300000}
-      KAMINO_HF_POLL_MS: ${KAMINO_HF_POLL_MS:-600000}
+      # 3600000 (hourly), matching the source default. Credit budget estimate:
+      # hourly ~= 1-2M Helius credits/month vs ~6.5-13M at 10 min (the 10-min
+      # setting exhausted the allowance on 2026-08-02; see src/rpc-quota.ts).
+      KAMINO_HF_POLL_MS: ${KAMINO_HF_POLL_MS:-3600000}
       KAMINO_HF_RESERVE_DELAY_MS: ${KAMINO_HF_RESERVE_DELAY_MS:-1500}
       JUPITER_LEND_API_URL: ${JUPITER_LEND_API_URL:-https://lite-api.jup.ag}
       JUPITER_LEND_POLL_MS: ${JUPITER_LEND_POLL_MS:-300000}
@@ -248,6 +277,7 @@ services:
       start_period: 15s
 
   mcp-ts:
+    logging: *default-logging
     build: ./mcp-ts
     container_name: pegana-mcp
     restart: unless-stopped
@@ -256,12 +286,20 @@ services:
       DATABASE_URL: ${MCP_DATABASE_URL:-postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD:-pegana}@postgres:5432/${POSTGRES_DB:-pegana}}
       # Every tool is free: no payment receiver and no facilitator credentials.
       SOLANA_NETWORK: ${SOLANA_NETWORK:-solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp}
-      PEGANA_API: ${PEGANA_API:-https://api.pegana.xyz}
+      # Internal api-rs, not the public URL: through Caddy every MCP caller
+      # shared the MCP container's one 60/min upstream bucket. mcp-ts forwards
+      # each caller's IP as X-Forwarded-For (src/shared/upstream.ts), which
+      # api-rs keys its limiter on. Public links use PEGANA_PUBLIC_API.
+      PEGANA_API: ${MCP_PEGANA_API:-http://api:8080}
+      PEGANA_PUBLIC_API: ${PEGANA_PUBLIC_API:-https://api.pegana.xyz}
       AUDIT_BASE_URL: ${AUDIT_BASE_URL:-https://pegana.xyz}
       HTTP_PORT: "8090"
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       NODE_ENV: ${NODE_ENV:-production}
+    # Same fd headroom as the api (Docker's default soft nofile is 1024).
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
     expose: ["8090"]
     depends_on:
       redis: { condition: service_started }
@@ -278,22 +316,28 @@ services:
       start_period: 15s
 
   caddy:
+    logging: *default-logging
     image: caddy:2@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
     restart: unless-stopped
     ports: ["80:80", "443:443"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Token and partner logos served at https://api.pegana.xyz/static/ (see
+      # the api vhost in the Caddyfile). DIRECTORY mounts of the web app's own
+      # public dirs, read-only: one copy of each file in the repo, and a
+      # deploy's `git reset --hard` is visible without recreating caddy (a
+      # single-file mount pins the old inode, see prometheus below).
+      - ./web/public/tokens:/srv/static/tokens:ro
+      - ./web/public/logos:/srv/static/logos:ro
       - caddydata:/data
       - caddyconfig:/config
     depends_on:
       # Only the upstreams caddy actually proxies (api, mcp-ts) gate on health.
-      # grafana is non-critical observability — do NOT couple the public TLS edge
-      # (api.pegana.xyz / mcp.pegana.xyz) to grafana's health on a bare `up`/reboot.
       api: { condition: service_healthy }
       mcp-ts: { condition: service_healthy }
-      grafana: { condition: service_started }
 
   prometheus:
+    logging: *default-logging
     image: prom/prometheus:v2.55.1@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3
     restart: unless-stopped
     # No host port mapping — the metrics surface stays on the internal docker
@@ -326,56 +370,122 @@ services:
     depends_on:
       api: { condition: service_started }
 
-  # Alertmanager — routes the rules in ops/alerts/pegana.yml to Telegram.
-  # Internal-only (no host port), reachable by Prometheus at
-  # http://alertmanager:9093 over the docker network.
+  # Alertmanager: routes the rules in ops/alerts/pegana.yml to Telegram and/or
+  # Discord. Internal-only (no host port), reachable by Prometheus at
+  # http://alertmanager:9093.
   #
-  # Alertmanager can't expand ${VAR} and validates strictly at boot (chat_id is
-  # int64), so the entrypoint renders ops/alertmanager/config.yml (a template
-  # with __BOT_TOKEN__ / __CHAT_ID__) via sed from compose-interpolated .env
-  # values. Both Telegram values are required in production; the container exits
-  # immediately when either is missing. The local overlay supplies
-  # explicit inert values so local config/startup testing remains isolated.
+  # The config is rendered at start by ops/alertmanager/render-config.sh:
+  #   - Telegram when ALERTMANAGER_TELEGRAM_BOT_TOKEN and a chat id
+  #     (ALERTMANAGER_TELEGRAM_CHAT_ID, else DOGFOOD_TELEGRAM_CHAT_ID) are set;
+  #   - Discord when ALERTMANAGER_DISCORD_WEBHOOK_URL is an https URL;
+  #   - both when both are set;
+  #   - otherwise ops/alertmanager/config-null.yml (a blackhole receiver) and a
+  #     loud WARN in the container log. A failed render or a rendered file that
+  #     fails `amtool check-config` also lands on the null config, so a missing
+  #     or broken owner input never keeps Alertmanager down.
+  #
+  # The two secrets reach the container as `configs:` files (the top-level
+  # `configs:` block at the end of this file), which compose copies into the
+  # container at create time. They are never in the container env, in process args or in
+  # `docker inspect`. The chat id is not a secret and is plain env.
+  #
+  # deploy.sh only recreates PEGANA_DEPLOY_SERVICES; bring this up once by hand
+  # (`docker compose up -d alertmanager`) or list it in PEGANA_DEPLOY_SERVICES.
+  # deploy.sh's post-deploy check fails when a long-running service has no
+  # container.
   alertmanager:
-    image: prom/alertmanager:latest@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d
+    image: prom/alertmanager:v0.33.1@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d
+    logging: *default-logging
     restart: unless-stopped
     volumes:
-      - ./ops/alertmanager/config.yml:/etc/alertmanager/config.tmpl.yml:ro
+      - ./ops/alertmanager/render-config.sh:/etc/alertmanager/render-config.sh:ro
+      - ./ops/alertmanager/config-null.yml:/etc/alertmanager/config-null.yml:ro
       - alertmanagerdata:/alertmanager
+    # uid/gid 65534 is `nobody`, the image's user; 0400 keeps the files
+    # readable by Alertmanager only. An unset variable yields a file holding
+    # only a newline, which the render script reads as "channel not
+    # configured" (see the top-level `configs:` block).
+    configs:
+      - source: alertmanager_telegram_bot_token
+        target: /run/secrets/alertmanager_telegram_bot_token
+        uid: "65534"
+        gid: "65534"
+        mode: 0400
+      - source: alertmanager_discord_webhook_url
+        target: /run/secrets/alertmanager_discord_webhook_url
+        uid: "65534"
+        gid: "65534"
+        mode: 0400
     environment:
-      ALERTMANAGER_TELEGRAM_BOT_TOKEN: ${ALERTMANAGER_TELEGRAM_BOT_TOKEN:-}
-      ALERTMANAGER_TELEGRAM_CHAT_ID: ${ALERTMANAGER_TELEGRAM_CHAT_ID:-}
+      ALERTMANAGER_TELEGRAM_CHAT_ID: ${ALERTMANAGER_TELEGRAM_CHAT_ID:-${DOGFOOD_TELEGRAM_CHAT_ID:-}}
     entrypoint:
       - /bin/sh
       - -c
       - |
-        : "$${ALERTMANAGER_TELEGRAM_BOT_TOKEN:?ALERTMANAGER_TELEGRAM_BOT_TOKEN required}"
-        : "$${ALERTMANAGER_TELEGRAM_CHAT_ID:?ALERTMANAGER_TELEGRAM_CHAT_ID required}"
-        sed -e "s|__BOT_TOKEN__|$${ALERTMANAGER_TELEGRAM_BOT_TOKEN}|g" \
-            -e "s|__CHAT_ID__|$${ALERTMANAGER_TELEGRAM_CHAT_ID}|g" \
-            /etc/alertmanager/config.tmpl.yml > /tmp/alertmanager.yml
-        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
+        CONFIG=$$(/bin/sh /etc/alertmanager/render-config.sh /tmp/alertmanager-rendered) || CONFIG=""
+        if [ -z "$$CONFIG" ] || [ ! -r "$$CONFIG" ]; then
+          echo "WARN: alertmanager config render FAILED; starting with the null config. Alerts are NOT delivered anywhere." >&2
+          CONFIG=/etc/alertmanager/config-null.yml
+        fi
+        exec /bin/alertmanager --config.file="$$CONFIG" --storage.path=/alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     depends_on:
       prometheus: { condition: service_started }
 
-  # Grafana — visual layer for Prometheus metrics. Exposed at
-  # grafana.pegana.xyz via Caddy reverse proxy. Dashboard JSON +
-  # Prometheus datasource provisioned via ./ops/grafana/.
+  # node-exporter — ONLY the textfile collector, which serves the backup
+  # metrics scripts/pg-backup.sh writes to ~/.pegana-metrics on the host
+  # (pegana_backup_*; rules in ops/alerts/pegana.yml group pegana.backups).
+  # Internal-only. ${HOME} is the deploy user's home (compose runs as deploy);
+  # install-pg-backup.sh creates the directory. create_host_path: false so a
+  # missing dir fails loudly instead of docker creating a root-owned one.
+  node-exporter:
+    image: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    logging: *default-logging
+    restart: unless-stopped
+    command:
+      - --collector.disable-defaults
+      - --collector.textfile
+      - --collector.textfile.directory=/textfile
+      - --web.listen-address=:9100
+    volumes:
+      - type: bind
+        source: ${PEGANA_METRICS_DIR:-${HOME}/.pegana-metrics}
+        target: /textfile
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # Grafana — visual layer for Prometheus metrics. NOT public: the
+  # grafana.pegana.xyz vhost was removed from the Caddyfile (its DNS points at
+  # Vercel, so Caddy failed ACME for it on every retry and it never served).
+  # The port is bound to the box's loopback only; reach it with an SSH tunnel:
+  #   ssh -L 3000:127.0.0.1:3000 deploy@<box>   then open http://localhost:3000
+  # Dashboard JSON + Prometheus datasource provisioned via ./ops/grafana/.
   # Admin password from .env (GRAFANA_ADMIN_PASSWORD).
   grafana:
+    logging: *default-logging
     image: grafana/grafana-oss:11.3.0@sha256:a0f881232a6fb71a0554a47d0fe2203b6888fe77f4cefb7ea62bed7eb54e13c3
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required in .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: https://grafana.pegana.xyz
+      GF_SERVER_ROOT_URL: http://localhost:3000
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
       - grafanadata:/var/lib/grafana
       - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./ops/grafana/dashboard.json:/var/lib/grafana/dashboards/pegana-overview.json:ro
+    ports: ["127.0.0.1:3000:3000"]
     depends_on:
       prometheus: { condition: service_started }
     healthcheck:
@@ -393,3 +503,15 @@ volumes:
   prometheusdata: {}
   grafanadata: {}
   alertmanagerdata: {}
+
+# Alertmanager channel secrets, copied into the alertmanager container as
+# files (see that service). The trailing "\n" is load-bearing: compose treats
+# an EMPTY `content` as "no inline content" and falls back to a bind mount with
+# an empty source, which fails container create. With it, an unset variable
+# yields a file holding only a newline, which the render script reads as
+# "channel not configured" (Alertmanager trims whitespace from both files).
+configs:
+  alertmanager_telegram_bot_token:
+    content: "${ALERTMANAGER_TELEGRAM_BOT_TOKEN:-}\n"
+  alertmanager_discord_webhook_url:
+    content: "${ALERTMANAGER_DISCORD_WEBHOOK_URL:-}\n"

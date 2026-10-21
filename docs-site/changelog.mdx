@@ -16,6 +16,90 @@ Two related surfaces, for different questions:
 
 ---
 
+## 2026-10-21: Documentation corrections and behavior changes
+
+- **`discount` sign documented correctly.** The API has always returned
+  `discount = 1 − market / intrinsic`: positive means the market trades below fair value, negative
+  is a premium. Several pages and examples said the opposite; they are fixed. The dashboard shows
+  the holder's view of the same number with the opposite sign (a positive API `discount` of
+  `0.0120` displays as `−1.20%`).
+- **OpenAPI description.** The spec now states the real default rate limit (60 req/min per IP;
+  read `RateLimit-Limit` for the live budget) and the real anchor policy: only transitions into
+  `DEPEG`, `CRITICAL` or `BLACK_SWAN` are anchored on-chain, and only when on-chain commits are
+  enabled. `DRIFT` and recoveries never are.
+- **Errors.** [Errors](/guides/errors) now lists every code the API emits, including the
+  `/v1/audit` codes, which add keys such as `hint` or `got` next to `message`.
+- **`/v1/audit` paging.** [Pagination](/guides/pagination#the-receipt-ledger)
+  documents the `before` / `before_id` keyset cursor and the `since` / `until` / `asset` filters.
+- **WebSocket.** [WebSocket](/guides/websocket) documents what the stream really does: a frame per
+  engine recompute (not only on state changes), the `asset: "system"` subscribe acknowledgement,
+  `pong` on unsubscribe, and the 120-second idle ping.
+- **Removed endpoints.** The 2026-10-20 removals are now documented as an exception to the
+  stability contract, with a [migration table](#migrating-from-removed-endpoints).
+- **`pegana-replay`.** For receipts older than methodology 0.4.0, the `VERSION_MISMATCH` hint no
+  longer claims an on-chain anchor it never checked, and links the receipt's own page at
+  `https://www.pegana.xyz/audit/<alert_id>`. Ships in the next CLI release.
+
+### Behavior changes
+
+These change what the API and the MCP server return. Integrators who relied on the old
+behavior should check each line.
+
+**REST API**
+
+- `GET /v1/assets/{symbol}/history` with a symbol that was never tracked now returns `404`
+  `unknown_asset` (it was `200` with an empty series).
+- New `400 invalid_asset` for a symbol or mint that cannot name any asset (bad characters or
+  length; a NUL byte used to produce a `500`, other bad input a `404`). New `400 invalid_range`
+  when `from` is after `to` (it was `200` with an empty series).
+- `/v1/assets` and the asset card: `state` and `state_reason` are no longer `null` for an asset
+  without a fresh snapshot. They read `UNKNOWN` and `stale_source`.
+- `risk_side` is `below` for `lst`, `stable_yield` and `synth_lev` assets (it was `either`),
+  matching the engine's rule that a premium on those classes is informational. A `synth_lev`
+  premium now scores `0` in `risk_score`.
+- `/v1/peg/feed`: `receipt_url` uses the host `www.pegana.xyz` and a percent-encoded symbol;
+  `discount_bps` is rounded to 4 decimal places.
+- `/v1/audit` accepts `?state=UNKNOWN`. `/v1/audit.csv` decimals have trailing zeros trimmed,
+  like the JSON.
+- CORS: `Access-Control-Allow-Credentials` is no longer sent, allowed methods are `GET`, `HEAD`
+  and `OPTIONS`, and `x-request-id` is an allowed request header.
+- Cascade and systemic exposure data older than 3 hours is omitted instead of served under a
+  current timestamp; `simulate-depeg` then returns `coverage: "unknown"`.
+
+**WebSocket** (`/v1/ws`)
+
+- Update frames use the REST wire format: `discount` at 6 decimal places, USD values at up to 18
+  decimal places with trailing zeros trimmed, and millisecond RFC 3339 timestamps (the heartbeat
+  `ts` too).
+- The per-IP connection cap is 20 (it was 5).
+
+**MCP server**
+
+- `structuredContent` now matches the published `outputSchema` exactly. Undeclared keys such as
+  the engine's `kind` are removed. Added fields: `updated_at` on `get_assets` and
+  `get_asset_state`, a per-asset `stale` on `get_assets`, `stale` and `data_age_sec` on
+  `get_loop_exposure` and `simulate_depeg_impact`, `cascade_stale` and `cascade_data_age_sec`
+  on `get_loop_exposure`, and `replay_bundle_url` on `verify_alert`.
+- `get_asset_history` for an unknown symbol returns `isError` (it returned an empty series).
+- Request bodies over 64 KiB get `413`. A `GET /` SSE probe gets `405`.
+- The rate limit is keyed on the client IP only.
+
+---
+
+## 2026-10-21: Data correction, stale-NAV history removed for 38 LSTs
+
+- **History trimmed (applied 2026-10-21, about 15:25 UTC).** For 38 Sanctum-priced LSTs (all active LSTs except jitoSOL, STKESOL,
+  corvusSOL, rkuSOL and hyloSOL+), discount and `intrinsic_usd` history before
+  2026-10-20 10:50 UTC was removed. From 2026-10-17 09:20 UTC to 2026-10-20 10:46 UTC the stored
+  intrinsic value came from a stale Sanctum API NAV and was 1.8-3.6% too low (average 2.5%), which
+  showed as a false premium. The affected rows were deleted (not estimated) and a post-check found no remaining bad rows. Peg states, alerts and receipts were not affected.
+- **What you will see.** `GET /v1/assets/{symbol}/history`, MCP `get_asset_history`,
+  `series_24h`, `worst_abs_24h` and `jitter_bps_24h` for these assets start at
+  2026-10-20 10:50 UTC. `/v1/assets/{symbol}/state` `since` can predate the first history point.
+  Other assets are unchanged. Details: [status incident log](https://pegana.xyz/status).
+
+---
+
 ## 2026-10-20 — Open-source release: all-free, no accounts
 
 - **Pegana is open source and free.** The full product is public at
@@ -30,6 +114,19 @@ Two related surfaces, for different questions:
   currently 60 req/min, reported in the `RateLimit-Limit` header.
 - **Webhook registration** is no longer offered, so the webhook guides were removed. The
   Ed25519 verification keys remain published at `GET /v1/meta/webhook-keys` (list currently empty).
+
+### Migrating from removed endpoints
+
+These removals happened inside `v1` without a `v2` prefix or a `Sunset` period, an exception
+to the [stability contract](/guides/rest-api#stability-contract) that the accounts going away
+made unavoidable. The removed routes now answer `404 not_found`.
+
+| Removed | Use instead |
+|---|---|
+| `GET /v1/alerts` | `GET /v1/audit` (newest-first ledger of every transition, keyset paging with `before` + `before_id`; see [Pagination](/guides/pagination#the-receipt-ledger)) or `GET /v1/audit.csv` for a dated window. It is a bare JSON array, not the `{ ok, data }` envelope. |
+| `/v1/me/*` (account, keys, webhooks) | Nothing: there are no accounts. Every read endpoint is public and needs no key. |
+| `/v1/auth/*` (sign-in, tokens) | Nothing: drop the `Authorization` header. |
+| Webhook delivery | Poll `GET /v1/audit`, or stream `wss://api.pegana.xyz/v1/ws` (see [WebSocket](/guides/websocket)). |
 
 ---
 
@@ -59,7 +156,7 @@ Two related surfaces, for different questions:
   asset deliberately taken off the peg surface. All four surfaces now agree: 68 assets, 56
   calibrated, 12 provisional.
 
-### Verifying a receipt — the pinning table
+### Pinning table
 
 Verification is exact-match by design (ADR-0028): a build verifies exactly one methodology
 version. **Always pass `--locked`**, or cargo re-resolves the methodology dependency and the
@@ -105,7 +202,7 @@ The CLI prints the right command for you on a mismatch.
 - Fixed a degenerate TimescaleDB asof-join that made `GET /v1/assets/{symbol}`
   and `…/history` hang up to ~100s for ~15 DEX-priced USD stables carrying an
   empty `pyth_feed_id`. Responses are byte-identical — only latency changes
-  (eUSX 106s → <1s). No contract change. DB connection pools across all backend
+  (eUSX 106s → under 1s). No contract change. DB connection pools across all backend
   services were also given explicit sizing + a `statement_timeout` backstop.
 
 ## 2026-07-24 — `/v1` response shapes made uniform (breaking, coordinated)
@@ -154,15 +251,15 @@ See the updated [Response format](/guides/rest-api#response-format) and
   now returns how much leveraged collateral rides on an asset across Solana lending
   (**Kamino + Jupiter Lend**, over $800M mapped across ~30 assets — a live figure) plus a `cascade` array —
   the liquidatable collateral at each preset depeg shock, in one call.
-  [`GET /v1/assets/{symbol}/simulate-depeg?shock_bps=`](/guides/rest-api#single-shock-v1-assets-symbol-simulate-depeg)
+  [`GET /v1/assets/{symbol}/simulate-depeg?shock_bps=`](/guides/rest-api#single-shock)
   gives a single rung. All **advisory, anonymous by construction** (k-anonymised
   distributions, no wallet/owner ever read) — never a verifiable receipt.
-- **Partner feed enrichment.** [`/v1/peg/feed`](/guides/rest-api#partner-feed-v1-peg-feed) gains an
+- **Partner feed enrichment.** [`/v1/peg/feed`](/guides/rest-api#partner-feed) gains an
   optional additive **`systemic`** block per mint (exposure + cascade + coverage), namespaced
   away from the verifiable peg fields and **omitted when a token has no tracked leverage**. No
   breaking change; existing consumers are unaffected.
 - **Risk on the dashboard board.** The command-center board now leads with the live,
-  state-anchored [`risk_score`](/guides/rest-api#risk-score-one-number-to-branch-on) (0–100,
+  state-anchored [`risk_score`](/guides/rest-api#risk-score) (0–100,
   sortable), replacing the old static structural grade.
 
 ## 2026-07-23 — V1 is live in production (methodology 0.7.0)
@@ -206,7 +303,7 @@ dispatcher and API, with migrations 0064–0068 applied.
   live universe and the 2025-10-10 backtest (no verdict moved).
 - **Verify version-pinning:** receipts declare their `methodology_version`, and verification is
   exact-match by design (ADR-0028). See the
-  [current pinning table](#2026-07-30-v1-is-live-verifier-0-5-2-sdks-published) — the versions
+  [current pinning table](#pinning-table) — the versions
   quoted in this entry were correct on 2026-07-01 and have since moved.
 - **`state_reason` on the dashboard:** UNKNOWN assets now show *why* (e.g. "price above NAV looks
   unreliable — thin market") instead of a generic wait message.

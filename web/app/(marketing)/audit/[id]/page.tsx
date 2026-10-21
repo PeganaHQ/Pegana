@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/seo/page-metadata";
 import { cn } from "@/lib/utils/cn";
@@ -17,7 +17,9 @@ import { HashChip } from "@/components/molecules/hash-chip";
 import { ReplayCopyPill } from "@/components/molecules/replay-copy-pill";
 import { PillGhost, StatePillV2 } from "@/components/organisms/v2/shared";
 import { displaySymbol } from "@/lib/asset/display-symbol";
+import { isCliReplayable } from "@/lib/audit/cli-replayable";
 import type { PegState } from "@/lib/api/types";
+import { serverApiHeaders } from "@/lib/api/base";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "https://api.pegana.xyz";
 
@@ -100,6 +102,7 @@ const fetchAudit = cache(async (id: string): Promise<FetchOutcome> => {
   let resp: Response;
   try {
     resp = await fetch(`${API_BASE}/v1/audit/${id}`, {
+      headers: serverApiHeaders(),
       next: { revalidate: 60 },
     });
   } catch (err) {
@@ -122,7 +125,11 @@ const fetchAudit = cache(async (id: string): Promise<FetchOutcome> => {
     return { kind: "failed_permanent", data };
   }
   if (!resp.ok) {
-    throw new Error(`audit API ${resp.status}`);
+    // 429 (rate limited) or 5xx: the API is up but cannot answer right now.
+    // That is the same "unreachable" outcome as a network failure, not a
+    // crash: throwing here turned an API 429 into a 500 page for crawlers.
+    console.error("audit fetch non-ok", resp.status);
+    return { kind: "unreachable" };
   }
   const data = (await resp.json()) as AuditReadyResponse;
   return { kind: "ready", data };
@@ -242,6 +249,10 @@ export default async function AuditPage({
   // row so the smoothed number beside it is not mistaken for the same value.
   const rawSpread = computedNum(evidence.computed, "discount_raw");
   const replayCmd = `pegana-replay --alert-id ${alert.id}`;
+  // Receipts older than methodology 0.4.0 predate every published CLI build
+  // (FAQ, /releases). For those the honest offer is the browser hash check,
+  // not a CLI replay command that has no matching release.
+  const cliReplayable = isCliReplayable(evidence.methodology_version);
 
   return (
     <main className={cn("pegana-v2", switzerV2.variable, geistMonoV2.variable)}>
@@ -393,22 +404,33 @@ export default async function AuditPage({
             },
           ]}
           replayLine={
-            <>
-              $ {replayCmd}
-              {evidence.has_replay_artifact && (
-                <>
-                  {" "}
-                  <b>&#10003; replay bundle available</b>
-                </>
-              )}
-            </>
+            cliReplayable ? (
+              <>
+                $ {replayCmd}
+                {evidence.has_replay_artifact && (
+                  <>
+                    {" "}
+                    <b>&#10003; replay bundle available</b>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                Hash check only: this receipt predates the published CLI
+                builds (methodology 0.4.0 onward).
+              </>
+            )
           }
         />
 
         <p className="v2-in-prose">
           This receipt is a <b>frozen computation</b>: the exact inputs, canon
-          and methodology version that produced the verdict. Replaying it
-          recomputes the same bytes on your machine, or fails loudly.{" "}
+          and methodology version that produced the verdict.{" "}
+          {cliReplayable
+            ? "Replaying it recomputes the same bytes on your machine, or fails loudly. "
+            : evidence.has_replay_artifact
+              ? "It predates every published CLI build, so it verifies by hash: the check below recomputes its receipt hash in your browser. "
+              : "It predates every published CLI build, so it verifies by hash only. "}
           {/* The version and commit are TEXT, and the link goes to the
               published tree that exists.
 
@@ -455,7 +477,7 @@ export default async function AuditPage({
         )}
 
         <div className="mt-9 flex flex-wrap gap-3.5">
-          <ReplayCopyPill command={replayCmd} />
+          {cliReplayable && <ReplayCopyPill command={replayCmd} />}
           <PillGhost href="/audit">Back to the ledger</PillGhost>
         </div>
 

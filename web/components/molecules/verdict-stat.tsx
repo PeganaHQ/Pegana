@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { cardSurface } from "@/components/atoms/surface-card";
 import { cn } from "@/lib/utils/cn";
 

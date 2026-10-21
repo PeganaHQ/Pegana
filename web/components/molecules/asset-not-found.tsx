@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useMemo } from "react";
 import { IconArrowRight } from "@/components/atoms/icon-arrow-right";
 import { useAssets } from "@/lib/hooks/use-assets";
@@ -10,12 +10,24 @@ interface AssetNotFoundProps {
   symbol: string;
   /** When true, the upstream fetch failed network-side rather than with a 404. */
   apiUnreachable?: boolean;
+  /**
+   * The API answered 429: this browser's IP used up its public 60/min budget.
+   * The API is healthy, so this is worded as a pause, never as an outage.
+   * Takes precedence over `apiUnreachable`.
+   */
+  rateLimited?: boolean;
+  /** Seconds from Retry-After, when the API sent one. */
+  retryAfterSec?: number;
 }
 
 export function AssetNotFound({
   symbol,
-  apiUnreachable = false,
+  apiUnreachable: apiUnreachableProp = false,
+  rateLimited = false,
+  retryAfterSec,
 }: AssetNotFoundProps) {
+  // A rate-limited visitor gets neither the outage copy nor the 404 copy.
+  const apiUnreachable = apiUnreachableProp || rateLimited;
   const { data: assets } = useAssets();
 
   // For ~22 assets a case-insensitive substring match is plenty. Avoids
@@ -26,8 +38,12 @@ export function AssetNotFound({
     return assets
       .filter(
         (a) =>
-          a.symbol.toLowerCase().includes(q) ||
-          q.includes(a.symbol.toLowerCase()),
+          // Never suggest the symbol that just 404'd (e.g. xSOL, a leveraged
+          // synth off the public surface) or another synth_lev.
+          a.class !== "synth_lev" &&
+          a.symbol.toLowerCase() !== q &&
+          (a.symbol.toLowerCase().includes(q) ||
+            q.includes(a.symbol.toLowerCase())),
       )
       .slice(0, 3);
   }, [assets, symbol, apiUnreachable]);
@@ -36,11 +52,13 @@ export function AssetNotFound({
     <section className="mx-auto max-w-[1280px] px-5 py-16 sm:px-8 sm:py-24">
       <div className="grid items-baseline gap-4 md:grid-cols-[110px_1fr] md:gap-16">
         <span className="inline-flex w-fit rounded-full border border-hairline px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-text-caption">
-          {apiUnreachable ? "503 · feed" : "404"}
+          {rateLimited ? "429 · paused" : apiUnreachable ? "503 · feed" : "404"}
         </span>
         <div className="max-w-[720px]">
           <h1 className="text-[40px] font-medium leading-[1.05] tracking-[-0.035em] sm:text-[56px]">
-            {apiUnreachable ? (
+            {rateLimited ? (
+              "Too many requests from this network."
+            ) : apiUnreachable ? (
               "Live feed unreachable."
             ) : (
               <>
@@ -49,7 +67,13 @@ export function AssetNotFound({
             )}
           </h1>
           <p className="mt-5 max-w-[560px] text-[15px] leading-snug text-text-muted sm:text-[17px]">
-            {apiUnreachable
+            {rateLimited
+              ? `The Pegana API is up, but it allows 60 requests a minute per IP and this network has used them. The page retries on its own${
+                  typeof retryAfterSec === "number" && retryAfterSec > 0
+                    ? ` in about ${retryAfterSec}s`
+                    : " within a minute"
+                }.`
+              : apiUnreachable
               ? "The Pegana API isn't responding right now. The live dashboard and per-asset detail will come back automatically as soon as it's healthy."
               : "Pegana tracks a fixed list of Solana LSTs, stables and synthetics. The full universe lives on the dashboard."}
           </p>

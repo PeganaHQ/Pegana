@@ -16,17 +16,16 @@
     "depeg",
     "oracle",
     "defi",
-    "x402",
     "usdc"
   ],
   "homepage": "https://pegana.xyz",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PeganaHQ/ReplayCLI.git",
+    "url": "https://github.com/PeganaHQ/Pegana.git",
     "directory": "mcp-ts"
   },
   "bugs": {
-    "url": "https://github.com/PeganaHQ/ReplayCLI/issues"
+    "url": "https://github.com/PeganaHQ/Pegana/issues"
   },
   "license": "MIT",
   "author": "Pegana <hello@pegana.xyz> (https://pegana.xyz)",

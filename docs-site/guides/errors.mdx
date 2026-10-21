@@ -3,8 +3,8 @@ title: "Errors"
 description: "Every error is JSON with a stable machine code. Branch on `error`, never on `message`."
 ---
 
-Every error response across the API — from a 400 to a 500 — is JSON with the **same
-envelope**, so a client that `.json()`s every response never breaks on an error.
+Every error response on the REST API, from a 400 to a 500, is a JSON object with a stable
+**`error`** code, so a client that `.json()`s every response never breaks on an error.
 
 ```json
 { "error": "unknown_asset", "message": "asset 'FOO' is not in the tracked universe", "asset": "FOO" }
@@ -14,6 +14,14 @@ envelope**, so a client that `.json()`s every response never breaks on an error.
 Branch on the stable **`error`** code, never on the human-readable `message` (which may
 be reworded at any time). `asset` is present only on asset-scoped errors.
 </Note>
+
+Every JSON error uses the `{ error, message, asset? }` envelope above. Some codes add
+route-specific keys next to `message`, mostly on the receipt-ledger routes under `/v1/audit`:
+`hint`, `got`, `valid`, `max_days`, `alert_id`, `detail` or `commit_status`. Treat those extra
+keys as optional and branch on `error`.
+
+The one non-JSON error is the WebSocket handshake: when the per-IP connection cap is reached,
+`GET /v1/ws` answers `429` with the plain-text body `too many ws connections`.
 
 ## Status codes
 
@@ -29,13 +37,52 @@ The HTTP status tells you the class; the `error` code tells you the specifics.
 
 ## Error codes
 
+These are every `error` code the API emits today. New codes may be added; existing codes are
+not renamed within `/v1`.
+
+### Any endpoint
+
 | `error` | Status | When |
 | --- | --- | --- |
-| `unknown_asset` | 404 | The symbol/mint is not in the tracked universe. Carries `asset`. |
-| `not_found` | 404 | No such endpoint — see [`GET /`](https://api.pegana.xyz/) or [`/openapi.json`](https://api.pegana.xyz/openapi.json). |
-| `invalid_body` | 400 | The request body failed validation. |
-| `rate_limited` | 429 | Per-IP limit exceeded; a `Retry-After` header tells you when to retry. |
+| `not_found` | 404 | No such endpoint. See [`GET /`](https://api.pegana.xyz/) or [`/openapi.json`](https://api.pegana.xyz/openapi.json). |
+| `invalid_query` | 400 | The query string could not be parsed: a required parameter is missing or a value has the wrong type (for example a malformed timestamp or UUID). |
+| `rate_limited` | 429 | Per-IP limit exceeded; the `Retry-After` header tells you when to retry. See [Rate limits](/guides/rate-limits). |
 | `internal` | 500 | Unexpected server error. Retry with backoff; if it persists, quote the `x-request-id`. |
+
+### Assets and peg feed (`/v1/assets/*`, `/v1/peg/feed/*`)
+
+| `error` | Status | When |
+| --- | --- | --- |
+| `unknown_asset` | 404 | The symbol or mint is not in the tracked universe. Carries `asset`. |
+| `no_data` | 404 | The asset is tracked but no snapshot is stored for it (`/v1/assets/{symbol}/state`). List endpoints show it as `state: "UNKNOWN"`, `state_reason: "stale_source"`. Carries `asset`. |
+| `invalid_asset` | 400 | A symbol or mint that cannot name any asset (symbols: 1-32 chars of `[A-Za-z0-9._+*-]`; mints: base58, 32-44 chars). |
+| `invalid_bucket` | 400 | Unsupported `bucket` on `/v1/assets/{symbol}/history`. The message lists the valid values. |
+| `invalid_range` | 400 | `from` is after `to` on `/v1/assets/{symbol}/history`. |
+| `bad_request` | 400 | A parameter failed validation, for example a `shock_bps` outside the allowed set on `/simulate-depeg`. |
+
+### Receipt ledger (`/v1/audit*`)
+
+| `error` | Status | When |
+| --- | --- | --- |
+| `invalid_uuid` | 400 | The `{alert_id}` path segment is not a UUID. |
+| `invalid_state` | 400 | `?state=` is not one of `PEGGED`, `DRIFT`, `DEPEG`, `CRITICAL`, `BLACK_SWAN`, `UNKNOWN`. Carries `got` and `valid`. |
+| `invalid_asset` | 400 | `?asset=` is not 1 to 32 characters of `[A-Za-z0-9._+*-]`. Carries `got`. |
+| `invalid_range` | 400 | `until` is not strictly after `since`. |
+| `invalid_cursor` | 400 | `before_id` was sent without `before`. |
+| `date_range_too_large` | 400 | `/v1/audit.csv` window longer than 90 days. Carries `max_days`. |
+| `invalid_date_range` | 400 | `/v1/audit.csv` `to` is not strictly after `from`. |
+| `alert_not_found` | 404 | No alert with that id. |
+| `evidence_missing` | 404 | The alert exists but its receipt was never persisted. |
+| `no_replay_artifact` | 404 | `/replay-bundle`: no replay bundle is stored for that id. |
+| `not_applicable` | 404 | `/onchain`: this alert has no on-chain anchor and never will (see [Receipts and on-chain anchors](/guides/rest-api#audit-receipts)). Carries `commit_status` and `detail`. |
+| `not_committed_yet` | 404 | `/onchain`: the anchor is still in flight or the receipt is still being persisted (poll again later). Also returned, with `commit_status: "unknown"`, for an alert id the ledger does not know. |
+| `retry_exhausted` | 404 | `/onchain`: commit retries were exhausted; the receipt still verifies offline. |
+| `wallet_drained` | 404 | `/onchain`: the operator commit wallet ran out of funds; the receipt still verifies offline. |
+| `persistence_failed` | 404 | `/onchain`: receipt persistence failed permanently, so no anchor will exist. |
+
+`GET /v1/audit/{alert_id}` also answers `202` (receipt persistence pending, retry after
+`retry_after_seconds`) and `410` (persistence failed permanently). Those are not errors in
+the table above; see the [REST API guide](/guides/rest-api#audit-receipts).
 
 ## Debugging with `x-request-id`
 

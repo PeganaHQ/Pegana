@@ -57,7 +57,7 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
   {
     name: "get_methodology",
     price: FREE_PRICE,
-    description: "Per-class peg-mechanism and scoring methodology.",
+    description: "How this asset's intrinsic and market prices are sourced, plus the state machine.",
   },
   {
     name: "verify_alert",
@@ -67,7 +67,7 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
   {
     name: "ping_paid",
     price: FREE_PRICE,
-    description: "Liveness probe that also exercises the MCP call path.",
+    description: "Legacy alias of ping, kept for compatibility.",
   },
   {
     name: "get_asset_history",

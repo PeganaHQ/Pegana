@@ -10,6 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 pegana-common = { path = "../common" }
+# risk_side derives from the same premium carve-out the engine classifies with.
+pegana-methodology = { path = "../methodology" }
 
 tokio = { workspace = true }
 anyhow = { workspace = true }
@@ -27,6 +29,8 @@ uuid = { workspace = true }
 metrics = { workspace = true }
 dotenvy = { workspace = true }
 envy = "0.4"
+# setrlimit: raise the nofile soft limit at startup (main.rs).
+libc = "0.2"
 
 axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "limit", "compression-gzip"] }
@@ -50,6 +54,7 @@ sha2 = "0.10"
 hex = "0.4"
 
 [dev-dependencies]
+toml = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
 serde_json = { workspace = true }
@@ -57,3 +62,5 @@ chrono = { workspace = true }
 # In-process e2e/stress test of the middleware stack (DX headers + rate limit)
 # drives the real Router via `ServiceExt::oneshot` — no DB required.
 tower = { version = "0.5", features = ["util"] }
+# WebSocket client for the in-process ws fan-out resource test (ws.rs).
+tokio-tungstenite = "0.24"

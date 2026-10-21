@@ -6,7 +6,7 @@
 // being explicit avoids the VERIFY scenario flagged in Plan 2 A2.
 
 import * as Sentry from "@sentry/node";
-import { buildApp } from "@/transport";
+import { buildApp, TRANSPORT_MAX_BODY_BYTES } from "@/transport";
 import { startCacheWarming } from "@/redis";
 
 // Initialize Sentry FIRST (before any code that could throw) when a
@@ -34,6 +34,10 @@ const app = await buildApp();
 Bun.serve({
   port,
   fetch: app.fetch,
+  // Backstop only. The real 64 KiB cap is the Hono bodyLimit on POST /,
+  // which returns a JSON-RPC 413; this ceiling sits far above it so Bun never
+  // resets the connection first (see TRANSPORT_MAX_BODY_BYTES).
+  maxRequestBodySize: TRANSPORT_MAX_BODY_BYTES,
 });
 
 console.log(`pegana-mcp listening on :${port}`);

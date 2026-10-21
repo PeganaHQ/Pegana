@@ -95,14 +95,14 @@ export function CloseV2() {
         </h2>
         {/* One universal line — no per-audience segmentation, smaller and
             complete (Rafael 2026-07-16): every asset, vs intrinsic, one feed,
-            a signed receipt the moment one breaks. */}
+            a hashed receipt the moment one breaks. */}
         <div
           ref={icp.ref}
           style={icp.style}
           className="mx-auto mt-[22px] max-w-[76ch] text-balance text-[15.5px] leading-[1.55] text-[var(--v2-muted)] sm:text-[16px]"
         >
           Every pegged asset in one live feed, measured against its own
-          intrinsic value. With a signed, replayable receipt the moment
+          intrinsic value. With a hashed, replayable receipt the moment
           one breaks, before it&rsquo;s a headline.
         </div>
         <div

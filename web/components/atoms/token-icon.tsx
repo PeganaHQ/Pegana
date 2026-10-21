@@ -4,9 +4,10 @@ import { useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import type { AssetClass } from "@/lib/api/types";
 import { monogramInitials, classTint } from "@/lib/token-icons/monogram";
+import { tokenIconUrl } from "@/lib/static-assets";
 
 interface TokenIconProps {
-  /** SPL mint — selects the vendored file `/tokens/{mint}.webp`. */
+  /** SPL mint — selects the vendored file `tokens/{mint}.webp` (lib/static-assets.ts). */
   mint: string;
   /** Used for the monogram initials and the accessible label. */
   symbol: string;
@@ -96,7 +97,7 @@ export function TokenIcon({
         </span>
       ) : (
         <img
-          src={`/tokens/${mint}.webp`}
+          src={tokenIconUrl(mint)}
           width={size}
           height={size}
           alt=""

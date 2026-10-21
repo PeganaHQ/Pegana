@@ -7,6 +7,7 @@ mod extract;
 mod market_score;
 mod openapi;
 mod oracle_degraded;
+mod params;
 mod rate_limit;
 mod response;
 mod risk_score;
@@ -34,10 +35,22 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-/// Concurrent WebSocket connections allowed from a single IP. The WS
-/// handler opens a dedicated Redis pubsub subscriber per client, so an
-/// unbounded fan-out from one IP could exhaust the Redis client pool.
-pub const WS_MAX_PER_IP: u32 = 5;
+/// Concurrent WebSocket connections allowed from a single IP. Every socket
+/// is a receiver on ONE shared Redis subscription (ws.rs `WsHub`), so the cap
+/// bounds per-address fan-out cost (one fd + a broadcast receiver each), not
+/// Redis clients.
+///
+/// 20, not 5: the web console opens one socket per (app) tab, and offices,
+/// campuses and mobile CGNAT put many people behind one address, so 5 locked
+/// the sixth tab behind a NAT out of live updates (429 on the handshake).
+pub const WS_MAX_PER_IP: u32 = 20;
+
+/// Server-wide WebSocket cap. Each socket costs one file descriptor; the api
+/// runs with `nofile` 65536 (docker-compose ulimits, and `raise_nofile_limit`
+/// at startup), so 10k sockets leave ample room for REST accepts, the Postgres
+/// pool and Redis. Past the cap the handshake gets a JSON 503 + Retry-After
+/// instead of the process hitting EMFILE.
+pub const WS_MAX_TOTAL: usize = 10_000;
 
 /// Hard cap on inbound request body size. The public surface is GET-only, but
 /// the limit stays as a defensive default for any future write route and keeps
@@ -47,9 +60,12 @@ pub const MAX_REQUEST_BODY_BYTES: usize = 64 * 1024;
 #[derive(Clone)]
 pub struct AppState {
     pub pg: PgPool,
-    /// Cloneable Redis client. Each WS connection spawns its own pub/sub
-    /// subscriber via `client.get_async_pubsub()` — fine at single-VPS scale.
+    /// Cloneable Redis client (REST caches). The WebSocket stream does NOT
+    /// open per-socket connections: see `ws_hub`.
     pub redis: redis::Client,
+    /// Shared fan-out from the single `pegana:discount` subscription to every
+    /// WebSocket (ws.rs).
+    pub ws_hub: Arc<ws::WsHub>,
     pub started_at: chrono::DateTime<chrono::Utc>,
     /// Origins (Origin header values) that are allowed to open a WebSocket.
     /// Built once at startup from the same allowlist used for CORS.
@@ -69,6 +85,7 @@ pub struct AppState {
 async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
     init_tracing();
+    raise_nofile_limit();
     let _sentry = pegana_common::observability::init_sentry("api");
     pegana_common::observability::init_metrics("0.0.0.0:9092");
 
@@ -119,8 +136,20 @@ async fn main() -> Result<()> {
         started_at: chrono::Utc::now(),
         allowed_origins: Arc::new(allowed_origin_strings),
         ws_per_ip: Arc::new(Mutex::new(HashMap::new())),
+        ws_hub: ws::WsHub::new(ws::WS_BROADCAST_CAPACITY),
         feature_public_alerts: cfg.feature_public_alerts,
     });
+    // One Redis subscriber for every WebSocket, plus the non-public symbol set
+    // the stream filters on (xSOL), plus fd gauges for capacity alerting.
+    // The symbol set loads (awaited) BEFORE the fan-out starts, so xSOL is
+    // filtered from the first frame. If this load fails the hub withholds all
+    // updates (heartbeats still flow) and the refresh task retries every 5s.
+    if !ws::load_excluded(&state.pg, &state.ws_hub).await {
+        tracing::warn!("ws updates withheld until the non-public symbol set loads");
+    }
+    ws::spawn_redis_fanout(state.redis.clone(), state.ws_hub.clone());
+    ws::spawn_excluded_refresh(state.pg.clone(), state.ws_hub.clone());
+    spawn_fd_gauges();
 
     // Pre-warm the /v1/assets list cache every 4s (just under its 5s TTL) so the
     // shared Redis cache never lapses cold. That endpoint's cost is a per-asset
@@ -242,9 +271,10 @@ async fn main() -> Result<()> {
     //   - public read endpoints (audit, assets, stats, meta, openapi) echo ANY
     //     origin back → simple AND preflight GETs work cross-origin
     //   - everything else (notably /v1/ws) keeps the strict allowlist
-    // .allow_credentials(true) is safe here because predicate echoes the
-    // exact origin (never the wildcard *), which satisfies the CORS spec's
-    // credentials+wildcard restriction.
+    // No credentials: the API is public, keyless and cookie-free, and every
+    // route is a GET. Reflecting any origin TOGETHER with
+    // Access-Control-Allow-Credentials: true (the old setting) let any site
+    // make credentialed reads; there is nothing to credential, so drop it.
     let allowed_origin_bytes: Vec<Vec<u8>> = allowed_origin_headers
         .iter()
         .map(|h| h.as_bytes().to_vec())
@@ -252,9 +282,8 @@ async fn main() -> Result<()> {
     let cors = CorsLayer::new()
         .allow_methods([
             axum::http::Method::GET,
-            axum::http::Method::POST,
-            axum::http::Method::PATCH,
-            axum::http::Method::DELETE,
+            axum::http::Method::HEAD,
+            axum::http::Method::OPTIONS,
         ])
         .allow_origin(AllowOrigin::predicate(move |origin, parts| {
             let path = parts.uri.path();
@@ -265,8 +294,7 @@ async fn main() -> Result<()> {
                 return true;
             }
             // Non-read surfaces (notably /v1/ws): strict allowlist. Predicate
-            // echoes the matched origin (no wildcard), so
-            // .allow_credentials(true) on the layer remains spec-compliant.
+            // echoes the matched origin (no wildcard).
             allowed_origin_bytes
                 .iter()
                 .any(|allowed| allowed.as_slice() == origin.as_bytes())
@@ -274,6 +302,8 @@ async fn main() -> Result<()> {
         .allow_headers([
             axum::http::header::CONTENT_TYPE,
             axum::http::header::AUTHORIZATION,
+            // Clients may send their own request id; it is echoed back.
+            axum::http::HeaderName::from_static("x-request-id"),
         ])
         // Let browser consumers read the DX headers cross-origin (they're on the
         // public read surface): the request id + the rate-limit budget.
@@ -286,17 +316,25 @@ async fn main() -> Result<()> {
             axum::http::HeaderName::from_static("x-ratelimit-remaining"),
             axum::http::HeaderName::from_static("x-ratelimit-reset"),
             axum::http::header::RETRY_AFTER,
-        ])
-        .allow_credentials(true);
+        ]);
 
     // ADR-0014: bundle of per-route limiters. Main limit covers everything
-    // (default 300/min via PEGANA_API_RATE_LIMIT_PER_MIN); the CSV-specific
+    // (default 60/min, `default_rate_limit()`, overridable via API_RATE_LIMIT_PER_MIN); the CSV-specific
     // 10/min is hardcoded because the ADR is the source of truth — operators
     // who need to tune it should bump the ADR + the constant, not env.
     let limits = rate_limit::RateLimits {
         main: rate_limit::RateLimiter::new(cfg.api_rate_limit_per_min),
         csv: rate_limit::RateLimiter::new(10),
+        ssr: rate_limit::SsrBypass::from_config(
+            cfg.pegana_web_ssr_token.as_deref(),
+            cfg.pegana_web_ssr_rate_limit_per_min,
+        ),
     };
+    info!(
+        enabled = limits.ssr.is_some(),
+        per_min = cfg.pegana_web_ssr_rate_limit_per_min,
+        "web SSR rate-limit budget (PEGANA_WEB_SSR_TOKEN)"
+    );
     rate_limit::spawn_janitor(limits.main.clone());
     rate_limit::spawn_janitor(limits.csv.clone());
 
@@ -382,6 +420,7 @@ async fn main() -> Result<()> {
         // P2.1 — cap inbound bodies. Applies to every POST/PATCH;
         // the WebSocket upgrade is unaffected (no body).
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
+        .layer(axum::middleware::from_fn(reject_oversized_body))
         .layer(CompressionLayer::new())
         // /v1/ws merged here — OUTSIDE compression/rate-limit/body-limit so the
         // WebSocket 101 upgrade is never mangled (see ws_router above). The
@@ -415,6 +454,14 @@ struct ApiConfig {
     /// /healthz and /readyz are excluded so external monitoring can poll freely.
     #[serde(default = "default_rate_limit")]
     pub api_rate_limit_per_min: u32,
+    /// Shared secret the web app's SERVER sends in `x-pegana-ssr-token` so its
+    /// rendering fetches use their own budget instead of the public per-IP
+    /// one (see `rate_limit::SsrBypass`). Unset = no bypass. Min 32 chars.
+    #[serde(default)]
+    pub pegana_web_ssr_token: Option<String>,
+    /// Requests per minute for the whole web tier when it presents the token.
+    #[serde(default = "default_web_ssr_rate_limit")]
+    pub pegana_web_ssr_rate_limit_per_min: u32,
     /// Launch switch (ADR-0020). While `false` (the default, and the
     /// calibration-window state) the discoverable read surface of the ledger —
     /// `GET /v1/audit` index and the feeds built on it — returns an empty
@@ -440,6 +487,9 @@ fn default_bind() -> String {
 }
 fn default_rate_limit() -> u32 {
     60
+}
+fn default_web_ssr_rate_limit() -> u32 {
+    3000
 }
 fn default_false() -> bool {
     false
@@ -496,6 +546,41 @@ async fn not_found() -> impl axum::response::IntoResponse {
             "message": "no such endpoint — see GET / for the index or /openapi.json for the full surface",
         })),
     )
+}
+
+/// 413 JSON for a declared body over [`MAX_REQUEST_BODY_BYTES`], answered
+/// from the headers alone. Without it an oversized POST hit the fallback,
+/// which returned without reading the body; the connection then closed under
+/// Caddy's still-streaming write and the client saw a 502 ("broken pipe").
+/// Caddy also enforces the same cap (`request_body max_size`).
+async fn reject_oversized_body(req: Request, next: Next) -> Response {
+    let declared = req
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<u64>().ok());
+    if declared.is_some_and(|n| n > MAX_REQUEST_BODY_BYTES as u64) {
+        return payload_too_large();
+    }
+    next.run(req).await
+}
+
+fn payload_too_large() -> Response {
+    use axum::response::IntoResponse;
+    let mut resp = (
+        axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+        axum::Json(serde_json::json!({
+            "error": "payload_too_large",
+            "message": format!("request body exceeds the {} KiB limit", MAX_REQUEST_BODY_BYTES / 1024),
+        })),
+    )
+        .into_response();
+    // Tell hyper not to keep a connection whose unread body we are abandoning.
+    resp.headers_mut().insert(
+        axum::http::header::CONNECTION,
+        axum::http::HeaderValue::from_static("close"),
+    );
+    resp
 }
 
 async fn track_latency(req: Request, next: Next) -> Response {
@@ -570,6 +655,67 @@ fn health_code(health: &str) -> f64 {
     }
 }
 
+/// Raise the soft `RLIMIT_NOFILE` to the hard limit. Docker hands the process
+/// a 1024 soft limit (hard 524288) unless compose sets `ulimits`; at 1024 the
+/// whole api (REST accepts included) failed with EMFILE once enough sockets
+/// were open. Compose also sets `ulimits: nofile`, this is the belt to it.
+fn raise_nofile_limit() {
+    #[cfg(unix)]
+    {
+        let mut lim = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // SAFETY: getrlimit/setrlimit only read/write the struct we pass.
+        unsafe {
+            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {
+                tracing::warn!("getrlimit(RLIMIT_NOFILE) failed");
+                return;
+            }
+            let before = lim.rlim_cur;
+            if lim.rlim_cur < lim.rlim_max {
+                lim.rlim_cur = lim.rlim_max;
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) != 0 {
+                    tracing::warn!(soft = before, "setrlimit(RLIMIT_NOFILE) failed");
+                    return;
+                }
+            }
+            info!(
+                soft_before = before,
+                soft = lim.rlim_cur,
+                hard = lim.rlim_max,
+                "nofile limit"
+            );
+        }
+    }
+}
+
+/// Export open fds and the soft fd limit every 15s (`pegana_api_open_fds`,
+/// `pegana_api_fd_limit`), so an alert can fire well before EMFILE. Linux
+/// only (`/proc/self/fd`); a no-op elsewhere.
+fn spawn_fd_gauges() {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(15));
+        loop {
+            tick.tick().await;
+            if let Ok(dir) = std::fs::read_dir("/proc/self/fd") {
+                metrics::gauge!("pegana_api_open_fds").set(dir.count() as f64);
+            }
+            #[cfg(unix)]
+            {
+                let mut lim = libc::rlimit {
+                    rlim_cur: 0,
+                    rlim_max: 0,
+                };
+                // SAFETY: getrlimit only writes the struct we pass.
+                if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) } == 0 {
+                    metrics::gauge!("pegana_api_fd_limit").set(lim.rlim_cur as f64);
+                }
+            }
+        }
+    });
+}
+
 fn init_tracing() {
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
     let env_filter = EnvFilter::try_from_default_env()
@@ -606,6 +752,38 @@ mod tests {
     // present (+ legacy `X-RateLimit-*` mirror), an inbound request id is echoed,
     // and the limiter holds under BOTH sequential and concurrent load (429 +
     // Retry-After + remaining 0, no panic/deadlock on the shared limiter).
+    /// An oversized declared body is a 413 JSON answered from the headers (not
+    /// a fallback 404 that leaves the body unread and makes Caddy 502).
+    #[tokio::test]
+    async fn oversized_body_is_413_json() {
+        use axum::body::Body;
+        use axum::http::{header, Request, StatusCode};
+        use axum::Router;
+        use tower::ServiceExt;
+
+        let app = Router::new()
+            .fallback(super::not_found)
+            .layer(axum::middleware::from_fn(super::reject_oversized_body));
+        let big = Request::post("/v1/replay")
+            .header(header::CONTENT_LENGTH, "2000000")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(big).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let bytes = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["error"], "payload_too_large");
+
+        let ok = Request::post("/v1/replay")
+            .header(header::CONTENT_LENGTH, "10")
+            .body(Body::from("0123456789"))
+            .unwrap();
+        assert_eq!(
+            app.oneshot(ok).await.unwrap().status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+
     #[tokio::test]
     async fn dx_headers_and_rate_limit_e2e_and_stress() {
         use axum::body::Body;
@@ -620,6 +798,7 @@ mod tests {
         let limits = crate::rate_limit::RateLimits {
             main: crate::rate_limit::RateLimiter::new(LIMIT),
             csv: crate::rate_limit::RateLimiter::new(10),
+            ssr: None,
         };
         let app = Router::new()
             .route("/ping", get(|| async { "ok" }))

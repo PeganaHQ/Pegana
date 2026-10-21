@@ -10,12 +10,6 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Pool } from "pg";
-import {
-  address,
-  getCompiledTransactionMessageEncoder,
-  getTransactionEncoder,
-  getBase64Decoder,
-} from "@solana/kit";
 
 import { withCallLog } from "@/middleware/call-log";
 import { withRateLimit } from "@/middleware";
@@ -23,10 +17,7 @@ import {
   RATE_LIMIT_PER_MIN,
   _resetForTests,
 } from "@/middleware/rate-limit";
-import {
-  extractFingerprint,
-  fingerprintFromMeta,
-} from "@/middleware/fingerprint";
+import { clientIp, extractFingerprint } from "@/middleware/fingerprint";
 
 function makePool(query: (...args: unknown[]) => Promise<unknown>): () => Pool {
   return () => ({ query } as unknown as Pool);
@@ -147,124 +138,69 @@ describe("withRateLimit", () => {
   });
 });
 
-// ── Fingerprint paid-path tests ────────────────────────────────────
+// ── Fingerprint: client IP only (R1 audit idx 16) ─────────────────
 //
-// Audit B P1 (#1): hashing the raw X-PAYMENT envelope was broken because
-// every signed payment carries a fresh recent-blockhash, so the rate
-// limit never engaged for paid tools. The fix decodes the SVM wire
-// transaction and hashes its `staticAccounts` (payer wallet, payer
-// token account, receiver token account, token program, fee payer, …),
-// which IS stable across payments from the same payer to the same
-// receiver. These tests pin that contract: same payer = same
-// fingerprint; different payer = different fingerprint.
-//
-// We build minimal but valid x402 SVM envelopes via @solana/kit's own
-// codecs so the test verifies the actual decode path the production
-// middleware takes, not a parallel mock.
+// The fingerprint used to prefer an x402 `X-PAYMENT` header and hash it
+// without verifying any payment, so a random header value per call minted a
+// fresh bucket and bypassed the limit. No client-supplied value may pick the
+// bucket now; only the proxy-set client IP does.
 
-function buildSvmEnvelope(opts: {
-  payer: string;
-  payerTokenAccount: string;
-  // Recent blockhash. Vary between payments from the same payer to prove
-  // the envelope bytes change while the fingerprint does NOT.
-  recentBlockhash: string;
-}): string {
-  // Static accounts: index 0 must be the fee-payer / signer; we put the
-  // user wallet there for simplicity. Index 1 onward = readonly non-
-  // signers (their token account, etc).
-  const staticAccounts = [
-    address(opts.payer),
-    address(opts.payerTokenAccount),
-    // Receiver / facilitator token account — kept constant across all
-    // payments in these tests so the only varying static-account is the
-    // payer wallet between distinct payers.
-    address("So11111111111111111111111111111111111111112"),
-  ];
-  const compiled = {
-    version: 0 as const,
-    header: {
-      numSignerAccounts: 1,
-      numReadonlySignerAccounts: 0,
-      numReadonlyNonSignerAccounts: 2,
-    },
-    staticAccounts,
-    instructions: [],
-    lifetimeToken: opts.recentBlockhash,
-  };
-  const messageBytes = getCompiledTransactionMessageEncoder().encode(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    compiled as any,
-  ) as Uint8Array;
-  // Wire-encode with one all-zero signature for the single signer.
-  const transactionBytes = getTransactionEncoder().encode({
-    signatures: [new Uint8Array(64)],
-    messageBytes,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any) as Uint8Array;
-  const transactionB64 = getBase64Decoder().decode(transactionBytes);
-  const envelope = {
-    x402Version: 1,
-    scheme: "exact",
-    network: "solana",
-    payload: { transaction: transactionB64 },
-  };
-  return Buffer.from(JSON.stringify(envelope), "utf8").toString("base64");
-}
-
-describe("extractFingerprint paid path (audit B P1 #1)", () => {
-  // A pair of well-formed base58 Solana addresses. These are NOT real
-  // mainnet wallets — they're just two distinct valid pubkeys.
-  const PAYER_A = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
-  const PAYER_B = "11111111111111111111111111111112";
-  const PAYER_A_TOKEN = "DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy";
-  const PAYER_B_TOKEN = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-
-  it("two payments from the same payer produce the SAME fingerprint", () => {
-    const env1 = buildSvmEnvelope({
-      payer: PAYER_A,
-      payerTokenAccount: PAYER_A_TOKEN,
-      recentBlockhash: "11111111111111111111111111111111",
+describe("extractFingerprint", () => {
+  it("ignores X-PAYMENT: a random payment header never changes the bucket", () => {
+    const plain = extractFingerprint({ "x-forwarded-for": "203.0.113.9" });
+    const withPayment = extractFingerprint({
+      "x-forwarded-for": "203.0.113.9",
+      "x-payment": "deadbeefcafebabe",
     });
-    const env2 = buildSvmEnvelope({
-      payer: PAYER_A,
-      payerTokenAccount: PAYER_A_TOKEN,
-      // Different recent blockhash → different envelope bytes, but same payer.
-      recentBlockhash: "11111111111111111111111111111112",
-    });
-    expect(env1).not.toBe(env2); // sanity: envelopes themselves differ
-    const fp1 = extractFingerprint({ "x-payment": env1 });
-    const fp2 = extractFingerprint({ "x-payment": env2 });
-    expect(fp1).toBeDefined();
-    expect(fp1).toBe(fp2);
+    expect(plain).toBeDefined();
+    expect(withPayment).toBe(plain);
   });
 
-  it("payments from different payers produce DIFFERENT fingerprints", () => {
-    const envA = buildSvmEnvelope({
-      payer: PAYER_A,
-      payerTokenAccount: PAYER_A_TOKEN,
-      recentBlockhash: "11111111111111111111111111111111",
-    });
-    const envB = buildSvmEnvelope({
-      payer: PAYER_B,
-      payerTokenAccount: PAYER_B_TOKEN,
-      recentBlockhash: "11111111111111111111111111111111",
-    });
-    const fpA = extractFingerprint({ "x-payment": envA });
-    const fpB = extractFingerprint({ "x-payment": envB });
-    expect(fpA).toBeDefined();
-    expect(fpB).toBeDefined();
-    expect(fpA).not.toBe(fpB);
+  it("uses the first X-Forwarded-For entry, then X-Real-IP", () => {
+    expect(
+      extractFingerprint({ "x-forwarded-for": "198.51.100.1, 10.0.0.2" }),
+    ).toBe(extractFingerprint({ "x-forwarded-for": "198.51.100.1" }));
+    expect(extractFingerprint({ "x-real-ip": "198.51.100.1" })).toBe(
+      extractFingerprint({ "x-forwarded-for": "198.51.100.1" }),
+    );
+    expect(clientIp({ "x-forwarded-for": " 198.51.100.1 ,1.1.1.1" })).toBe(
+      "198.51.100.1",
+    );
   });
 
-  it("fingerprintFromMeta agrees with extractFingerprint on the same payer", () => {
-    const env = buildSvmEnvelope({
-      payer: PAYER_A,
-      payerTokenAccount: PAYER_A_TOKEN,
-      recentBlockhash: "11111111111111111111111111111111",
+  it("returns undefined without any IP header, even with X-PAYMENT", () => {
+    expect(extractFingerprint({ "x-payment": "anything" })).toBeUndefined();
+    expect(extractFingerprint(undefined)).toBeUndefined();
+  });
+});
+
+describe("withRateLimit cannot be bypassed with X-PAYMENT", () => {
+  beforeEach(() => {
+    _resetForTests();
+  });
+
+  it("keeps rejecting an exhausted IP whatever X-PAYMENT it sends", async () => {
+    const handler = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "ok" }],
     });
-    const fromHeader = extractFingerprint({ "x-payment": env });
-    const fromMeta = fingerprintFromMeta({ "x402/payment": env });
-    expect(fromHeader).toBe(fromMeta);
+    const wrapped = withRateLimit(
+      "ping",
+      handler,
+      makePool(async () => ({ rows: [] })),
+    );
+    for (let i = 0; i < RATE_LIMIT_PER_MIN; i++) {
+      await wrapped({} as Record<string, unknown>, HEADERS_FROM_IP("192.0.2.7"));
+    }
+    for (const payment of ["a1b2c3d4", "e5f6a7b8"]) {
+      const res = await wrapped({} as Record<string, unknown>, {
+        requestInfo: {
+          headers: { "x-forwarded-for": "192.0.2.7", "x-payment": payment },
+        },
+        _meta: { "x402/payment": payment },
+      });
+      expect((res as { isError?: boolean }).isError).toBe(true);
+    }
+    expect(handler).toHaveBeenCalledTimes(RATE_LIMIT_PER_MIN);
   });
 });
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { ExitLiquidity } from "@/components/organisms/exit-liquidity";
 import type { AssetCardData } from "@/lib/api/types";
@@ -67,5 +67,122 @@ describe("ExitLiquidity — UNKNOWN gate", () => {
   it("DOES render normally when no state prop is passed (backward compat)", () => {
     render(<ExitLiquidity asset={{ ...ASSET, state: "PEGGED" }} />);
     expect(screen.queryByText(/insufficient signal/i)).toBeNull();
+  });
+});
+
+describe("parseImpactPct", () => {
+  it("treats missing, empty and non-numeric values as unknown", async () => {
+    const { parseImpactPct } = await import("@/components/organisms/exit-liquidity");
+    expect(parseImpactPct(undefined)).toBeNull();
+    expect(parseImpactPct("")).toBeNull();
+    expect(parseImpactPct("abc")).toBeNull();
+    expect(parseImpactPct("0")).toBe(0);
+    expect(parseImpactPct("0.004")).toBeCloseTo(0.4);
+  });
+});
+
+describe("quoteWithRetry", () => {
+  it("retries a failed quote and returns the first success", async () => {
+    const { quoteWithRetry } = await import(
+      "@/components/organisms/exit-liquidity"
+    );
+    let n = 0;
+    const out = await quoteWithRetry(
+      async () => {
+        n++;
+        if (n < 3) throw new Error("Quote unavailable");
+        return "ok";
+      },
+      () => false,
+      [0, 0],
+    );
+    expect(out).toBe("ok");
+    expect(n).toBe(3);
+  });
+
+  it("gives up after the bounded retries", async () => {
+    const { quoteWithRetry } = await import(
+      "@/components/organisms/exit-liquidity"
+    );
+    let n = 0;
+    await expect(
+      quoteWithRetry(
+        async () => {
+          n++;
+          throw new Error("429");
+        },
+        () => false,
+        [0, 0],
+      ),
+    ).rejects.toThrow("429");
+    expect(n).toBe(3);
+  });
+});
+
+describe("ExitLiquidity flat curve", () => {
+  const stubQuotes = (priceImpactPct: string) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const amount = Number(new URL(url, "http://x").searchParams.get("amount"));
+        return {
+          ok: true,
+          json: async () => ({
+            outAmount: String(amount),
+            priceImpactPct,
+            routePlan: [{ swapInfo: { label: "Orca" } }],
+          }),
+        };
+      }),
+    );
+  };
+
+  it("shows a compact 'no measurable price impact' line instead of the chart", async () => {
+    stubQuotes("0");
+    render(<ExitLiquidity asset={{ ...ASSET, state: "PEGGED" }} state="PEGGED" />);
+    const note = await screen.findByTestId("exit-no-impact", {}, { timeout: 5000 });
+    expect(note).toHaveTextContent("No measurable price impact up to $1M");
+    expect(screen.queryByText(/price-impact curve/i)).toBeNull();
+    // The table stays.
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["empty string", ""],
+    ["garbled", "abc"],
+  ])("does not claim 'no impact' when priceImpactPct is %s", async (_n, v) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const amount = Number(new URL(url, "http://x").searchParams.get("amount"));
+        return {
+          ok: true,
+          json: async () => ({
+            outAmount: String(amount),
+            ...(v === undefined ? {} : { priceImpactPct: v }),
+            routePlan: [{ swapInfo: { label: "Orca" } }],
+          }),
+        };
+      }),
+    );
+    render(<ExitLiquidity asset={{ ...ASSET, state: "PEGGED" }} state="PEGGED" />);
+    await waitFor(() => expect(screen.getAllByText("n/a").length).toBeGreaterThan(0), {
+      timeout: 5000,
+    });
+    expect(screen.queryByTestId("exit-no-impact")).toBeNull();
+    expect(screen.queryByText("<0.001%")).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the chart when an impact is visible", async () => {
+    stubQuotes("0.004");
+    render(<ExitLiquidity asset={{ ...ASSET, state: "PEGGED" }} state="PEGGED" />);
+    await waitFor(() => expect(screen.getByText(/price-impact curve/i)).toBeInTheDocument(), {
+      timeout: 5000,
+    });
+    expect(screen.queryByTestId("exit-no-impact")).toBeNull();
+    vi.unstubAllGlobals();
   });
 });

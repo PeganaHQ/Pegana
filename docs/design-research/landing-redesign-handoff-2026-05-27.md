@@ -120,8 +120,8 @@ ChannelCards + HowItComputes + UseCasesStrip + PingedCTA are NOT generic — the
 ## What NOT to do
 
 - Don't build another monolithic HTML mock file. Two failed already at:
-  - `/Users/rafazaum/Desktop/Projetos/pegana/.superpowers/brainstorm/48379-1779889253/content/landing-mock.html`
-  - `/Users/rafazaum/Desktop/Projetos/pegana/.superpowers/brainstorm/48379-1779889253/content/landing-mock-v2.html`
+  - `<repo>/.superpowers/brainstorm/48379-1779889253/content/landing-mock.html`
+  - `<repo>/.superpowers/brainstorm/48379-1779889253/content/landing-mock-v2.html`
 - Don't propose KPI strip with giant numbers + tiny labels.
 - Don't propose "Problem → Solution → Pricing" narrative arc — generic SaaS.
 - Don't add emoji icons anywhere. Use the existing glyphs (`{}` `<>` `[ ]` `↗` `@`) or Hugeicons Stroke Sharp.
@@ -134,15 +134,15 @@ ChannelCards + HowItComputes + UseCasesStrip + PingedCTA are NOT generic — the
 
 ## Tactical reference
 
-- Brainstorm session dir (visual companion + mocks): `/Users/rafazaum/Desktop/Projetos/pegana/.superpowers/brainstorm/48379-1779889253/`
+- Brainstorm session dir (visual companion + mocks): `<repo>/.superpowers/brainstorm/48379-1779889253/`
 - Failed mocks: `content/landing-mock.html`, `content/landing-mock-v2.html` (kept for diff reference, do not extend)
-- Companion server may have stopped (30-min idle timeout) — restart with: `/Users/rafazaum/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh --project-dir /Users/rafazaum/Desktop/Projetos/pegana`
+- Companion server may have stopped (30-min idle timeout) — restart with: `~/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh --project-dir <repo>`
 - Existing landing file: `web/app/(marketing)/page.tsx`
 - Marketing header (with nav dropdowns): `web/components/organisms/marketing-header.tsx`
 - All organisms: `web/components/organisms/`
 - Design tokens: `web/app/globals.css`
 - Fonts loaded at: `web/app/layout.tsx`
-- Brand source of truth: `/Users/rafazaum/Desktop/Projetos/pegana/brand.md`
+- Brand source of truth: `<repo>/brand.md`
 
 ---
 

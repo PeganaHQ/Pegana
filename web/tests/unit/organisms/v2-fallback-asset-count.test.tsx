@@ -79,9 +79,20 @@ describe("V2 asset count when the live list is unavailable", () => {
     // deactivated and absent from the live 68 — under a hardcoded "14 issuers".
     expect(screen.getByText(String(LOGO_ITEMS.length))).toBeInTheDocument();
     expect(
-      screen.getByText("issuers, venues and oracles behind the numbers"),
+      screen.getByText("issuers, venues and oracles featured below"),
     ).toBeInTheDocument();
     expect(LOGO_ITEMS.some((l) => l.slug === "drift")).toBe(false);
     expect(LOGO_ITEMS.some((l) => l.slug === "piggybank")).toBe(false);
+  });
+
+  it("sources heading is an h2 (no h1 to h3 skip) and the replay claim is scoped", () => {
+    render(<SourcesV2 />);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Where the numbers come from." }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("byte-exact replay, every receipt since methodology 0.4.0"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/every verdict replays identically/)).toBeNull();
   });
 });

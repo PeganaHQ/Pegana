@@ -7,7 +7,7 @@
 [![methodology](https://img.shields.io/badge/methodology-0.7.0-blue.svg)](https://crates.io/crates/pegana-methodology)
 [![cli](https://img.shields.io/badge/pegana--replay-0.5.2-blue.svg)](https://crates.io/crates/pegana-replay)
 
-Pegana is the **specialized peg-risk oracle for Solana**. It monitors the divergence between the **intrinsic value** (what an asset *should* be worth, based on its peg mechanism) and the **market value** (what you'd actually get swapping it right now) for **67 assets on the public peg surface** (72 canon · 70 active · 56 calibrated) on Solana mainnet — the live list is always [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). When the gap exceeds per-asset thresholds, Pegana publishes the transition via REST, WebSocket, MCP, and Webhook, and emits a reproducible audit receipt.
+Pegana is the **specialized peg-risk oracle for Solana**. It monitors the divergence between the **intrinsic value** (what an asset *should* be worth, based on its peg mechanism) and the **market value** (what you'd actually get swapping it right now) for **67 assets on the public peg surface** (72 canon · 68 active · 55 calibrated and 12 provisional, live on 2026-10-21) on Solana mainnet — the live list is always [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). When the gap exceeds per-asset thresholds, Pegana publishes the transition via REST, WebSocket and MCP, and emits a reproducible audit receipt.
 
 **V1 — live in production since 2026-07-23** (methodology **0.7.0**; product status: **Technical Preview**): every state transition emits a public receipt at `/v1/audit/{id}` with the methodology version, frozen inputs, and an optional on-chain commit via a Solana SPL Memo (see ADR-0004). Receipts are reproducible offline via the [`pegana-replay`](crates/pegana-replay-cli/) CLI (`--json` for machine-readable CI output) — verification is exact-match per ADR-0028, so always install with `--locked`:
 
@@ -16,11 +16,11 @@ cargo install pegana-replay --locked
 pegana-replay --alert-id <uuid>          # recomputes the hash + checks the on-chain anchor
 ```
 
-**Typed clients** — [`sdk/typescript`](sdk/typescript/) (`@peganahq/sdk-ts` **0.3.1 on npm**) and [`sdk/python`](sdk/python/) (`pegana-sdk` **0.3.0**) cover **every** `/v1` endpoint (generated from the OpenAPI 3.1 spec at `GET /openapi.json`), plus a hand-written live-feed WebSocket helper (`PegFeed` / `peg_feed`) for `GET /v1/ws`.
+**Typed clients**: [`sdk/typescript`](sdk/typescript/) (`@peganahq/sdk-ts`) and [`sdk/python`](sdk/python/) (`pegana-sdk`) cover **every** `/v1` endpoint (generated from the OpenAPI 3.1 spec at `GET /openapi.json`), plus a hand-written live-feed WebSocket helper (`PegFeed` / `peg_feed`) for `GET /v1/ws`. The source here is 0.4.0, which drops the removed `/v1/alerts`, `/v1/auth/*` and `/v1/me/*` calls; the releases on npm (0.3.1) and PyPI (0.3.0) still include them until 0.4.0 is published.
 
 ## What it covers (v2)
 
-**44 Liquid Staking Tokens** — SOL-pegged, priced off stake-pool NAV via Sanctum's SOL-value calculator, direct SPL-stake-pool reads (`jitoSOL`), and Hylo (`hyloSOL`, `hyloSOL+`). e.g. `jitoSOL` · `mSOL` · `bSOL` · `INF` · `JupSOL` · `BNSOL` …
+**43 Liquid Staking Tokens** — SOL-pegged, priced off stake-pool NAV via Sanctum's SOL-value calculator, direct SPL-stake-pool reads (`jitoSOL`), and Hylo (`hyloSOL`, `hyloSOL+`). e.g. `jitoSOL` · `mSOL` · `bSOL` · `INF` · `JupSOL` · `BNSOL` …
 
 **10 Yield-bearing stables** — peg-to-NAV, not peg-to-$1 (NAV grows as the strategy earns)
 `USDY` (Ondo · T-bills) · `sUSD` (Solayer · Token-2022 rebasing) · `syrupUSDC` (Maple) · `sUSDe` (Ethena) · `ONyc` (OnRe · reinsurance) · `JLP` (Jupiter LP) · `eHYUSD` (Hylo Earn pool — API symbol `sHYUSD`) …
@@ -32,13 +32,13 @@ pegana-replay --alert-id <uuid>          # recomputes the hash + checks the on-c
 
 Not on the peg surface: **`xSOL`** (Hylo's leveraged junior tranche) is tracked internally but excluded from `/v1/assets`, `/v1/peg/feed`, `/v1/stats` and `/v1/calibration` since 2026-07-23 — a leveraged tranche trades 60–85% away from its own NAV *by design*, so "market vs intrinsic" measures leverage, not peg deviation.
 
-**72 in the canon · 70 active on mainnet · 67 on the public peg surface (the number every user-facing surface reports) · 56 calibrated.** The authoritative, always-current list is [`assets.toml`](assets.toml) and the live [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). Deactivated entries — e.g. `dSOL` (after the 2026-04-01 Drift exploit) and `BRZ` (thin market liquidity) — stay in `assets.toml` with `active = false` for historical snapshots.
+**72 in the canon · 68 active on mainnet · 67 on the public peg surface (the number every user-facing surface reports; the 68th is `xSOL`) · 55 calibrated (live on 2026-10-21; [`GET /v1/calibration`](https://api.pegana.xyz/v1/calibration) has the current split).** The authoritative, always-current list is [`assets.toml`](assets.toml) and the live [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). Deactivated entries — e.g. `dSOL` (after the 2026-04-01 Drift exploit) and `BRZ` (thin market liquidity) — stay in `assets.toml` with `active = false` for historical snapshots.
 
 Per-asset peg mechanisms drive per-asset intrinsic calculation: fiat-backed assets peg to $1, LSTs read Sanctum's SOL-value calculator, hyUSD computes its collateral ratio from on-chain Hylo Exchange state, and yield-bearing stables consume issuer-attested NAV (Pyth Redemption Rate feeds, or the Token-2022 rebasing rate for `sUSD`).
 
 ## Systemic Impact (Sub-C Loop Intelligence)
 
-Pegana also tracks **cross-protocol leverage cascade risk** — the "Chaos Labs for Solana" feature (ADR-0036). The `protocol-indexer-ts` service polls Kamino and Jupiter Lend for **anonymous, aggregate** leverage exposure (never per-wallet; k-anonymity k>=5) across **31 assets / 2 protocols ($837M collateral)**. `GET /v1/assets/{symbol}/loop-exposure` and `simulate_depeg?shock_bps=` expose the cascade simulation (e.g. JupSOL 10% depeg -> $4.75M liquidations; 20% -> $11.33M). Surfaces on the `/asset` Overview tab ("Systemic impact" stress ladder) and the `/systemic` page. Advisory only — walled off from the verifiable receipt.
+Pegana also tracks **cross-protocol leverage cascade risk** — the "Chaos Labs for Solana" feature (ADR-0036). The `protocol-indexer-ts` service polls Kamino and Jupiter Lend for **anonymous, aggregate** leverage exposure (never per-wallet; k-anonymity k>=5). `GET /v1/assets/{symbol}/loop-exposure` and `GET /v1/assets/{symbol}/simulate-depeg?shock_bps=` expose the cascade simulation (for example, `GET /v1/assets/JupSOL/simulate-depeg?shock_bps=1000` returns the live `liquidatable_usd` estimate for a 10% JupSOL depeg, and each response reports its own `coverage`). Surfaces on the `/asset` Overview tab ("Systemic impact" stress ladder) and the `/systemic` page. Advisory only — walled off from the verifiable receipt.
 
 ## Architecture
 
@@ -78,7 +78,7 @@ Read the full spec at `docs/spec.html`.
 
 # 1. Clone + setup
 git clone https://github.com/PeganaHQ/Pegana.git
-cd pegana
+cd Pegana
 cp .env.example .env  # edit secrets
 
 # 2. Start stateful deps
@@ -114,10 +114,10 @@ rollback playbook.
 | Ingestion + processing | Rust 1.90 · tokio · sqlx · reqwest |
 | Systemic risk indexer | TypeScript · Bun · @kamino-finance/klend-sdk · @jup-ag/lend-read |
 | Storage | Postgres 16 + TimescaleDB · Redis 7 |
-| Alert delivery | Webhook fan-out (`webhook_subscriptions`, Ed25519-signed) |
+| Alert delivery | REST, WebSocket and MCP on the hosted service. `dispatcher-rs` also ships Ed25519-signed webhook fan-out (`webhook_subscriptions`) for self-hosted deployments; the hosted service does not offer webhook registration. |
 | Typed API clients | TypeScript (`@peganahq/sdk-ts` on npm) · Python (`pegana-sdk`) — OpenAPI-generated |
 | Edge | Caddy 2 (auto-TLS) |
-| Observability | Tracing JSON · Prometheus · Alertmanager · Sentry |
+| Observability | Tracing JSON · Prometheus metrics and alert rules · Alertmanager notifications once a Discord webhook is configured · Sentry in the web app once a project DSN is configured |
 
 ## Testing
 

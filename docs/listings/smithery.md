@@ -46,7 +46,7 @@ For future MCPs / re-listing on other directories:
 ### Submission 2026-05-27
 
 - Listing URL: https://smithery.ai/server/pegana/pegana-oracle
-- Namespace: `pegana` (changed from initial `rafinha-lima1` for brand match)
+- Namespace: `pegana`
 - CLI install (once listed public):
   ```
   smithery mcp add pegana/pegana-oracle

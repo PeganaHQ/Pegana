@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pegana-sdk"
-version = "0.3.0"
+version = "0.4.0"
 description = "Typed Python client for the Pegana peg-risk oracle API — full OpenAPI-generated coverage of all /v1 endpoints, plus the stable v0.1 receipt-verification surface."
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Pegana", email = "ops@pegana.xyz" }]
 keywords = ["pegana", "solana", "depeg", "peg-risk", "stablecoin", "audit"]
 classifiers = [
@@ -16,7 +16,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -31,14 +30,12 @@ dependencies = [
     "websockets>=12",
 ]
 
-# No Source URL: this client is generated from the PUBLIC OpenAPI spec at
-# https://api.pegana.xyz/openapi.json, but its source lives in a private repo.
-# PeganaHQ/ReplayCLI mirrors only the three verifier crates, so pointing Source
-# there would resolve to nothing.
 [project.urls]
 Homepage = "https://pegana.xyz"
 Documentation = "https://docs.pegana.xyz"
-Issues = "https://github.com/PeganaHQ/ReplayCLI/issues"
+Source = "https://github.com/PeganaHQ/Pegana/tree/main/sdk/python"
+Issues = "https://github.com/PeganaHQ/Pegana/issues"
+Changelog = "https://github.com/PeganaHQ/Pegana/blob/main/sdk/python/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pegana_sdk", "pegana_api_client"]

@@ -134,8 +134,16 @@ fn default_db_statement_timeout_ms() -> u64 {
     30_000
 }
 
+/// `Authorization` value for Hermes. An empty/blank key counts as no key:
+/// docker-compose passes `PYTH_HERMES_API_KEY=` through as an empty string,
+/// and `Bearer ` with nothing after it is not a credential.
 pub(crate) fn pyth_bearer(key: Option<&str>) -> Option<String> {
-    key.map(|k| format!("Bearer {k}"))
+    effective_pyth_key(key).map(|k| format!("Bearer {k}"))
+}
+
+/// The configured Hermes key, trimmed, or `None` when unset or blank.
+pub(crate) fn effective_pyth_key(key: Option<&str>) -> Option<&str> {
+    key.map(str::trim).filter(|k| !k.is_empty())
 }
 
 impl Config {
@@ -192,6 +200,8 @@ redis_url = "redis://localhost:6379"
     #[test]
     fn pyth_bearer_formats_optional_authorization_value() {
         assert_eq!(pyth_bearer(None), None);
+        assert_eq!(pyth_bearer(Some("")), None, "empty env value is no key");
+        assert_eq!(pyth_bearer(Some("   ")), None, "blank env value is no key");
         assert_eq!(
             pyth_bearer(Some("hermes-secret")),
             Some("Bearer hermes-secret".to_string())

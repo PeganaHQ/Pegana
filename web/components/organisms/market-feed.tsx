@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import { isOptimizableNewsImage, newsThumbSrc } from "@/lib/news/thumb";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
@@ -124,11 +126,14 @@ export function MarketFeed() {
             : null,
         );
         // Warm the thumbnails so expanding the panel paints complete.
+        // Only the small X thumbnails are warmed: CoinGecko tiles go
+        // through the optimizer, and warming their originals would download
+        // the full-size files this panel is meant to avoid.
         for (const it of next.slice(0, 8)) {
-          if (!it.image) continue;
+          if (!it.image || isOptimizableNewsImage(it.image)) continue;
           const img = new window.Image();
           img.referrerPolicy = "no-referrer";
-          img.src = it.image;
+          img.src = newsThumbSrc(it.image);
         }
       } catch {
         if (!cancelled) setFailed(true);
@@ -310,12 +315,29 @@ export function MarketFeed() {
                       rel="noopener noreferrer"
                       className="flex gap-3 px-4 py-3 outline-none transition-colors hover:bg-text/[0.03] focus-visible:bg-text/[0.03] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-muted"
                     >
-                      {item.image && !brokenImages.has(item.url) ? (
-                        /* Plain <img>, not next/image: these are arbitrary
-                           third-party hosts and each would need allow-listing
-                           in next.config before the optimiser would touch it. */
+                      {item.image &&
+                      !brokenImages.has(item.url) &&
+                      isOptimizableNewsImage(item.image) ? (
+                        /* CoinGecko has no small variant, so its full-size
+                           article image is resized by the optimizer
+                           (allow-listed in next.config images). */
+                        <Image
+                          src={newsThumbSrc(item.image)}
+                          alt=""
+                          width={48}
+                          height={48}
+                          sizes="48px"
+                          loading="lazy"
+                          onError={() =>
+                            setBrokenImages((prev) => new Set(prev).add(item.url))
+                          }
+                          className="size-12 shrink-0 rounded-[10px] border border-hairline object-cover"
+                        />
+                      ) : item.image && !brokenImages.has(item.url) ? (
+                        /* Plain <img> for the other hosts, at the smallest
+                           variant the host serves (lib/news/thumb.ts). */
                         <img
-                          src={item.image}
+                          src={newsThumbSrc(item.image)}
                           alt=""
                           loading="lazy"
                           referrerPolicy="no-referrer"

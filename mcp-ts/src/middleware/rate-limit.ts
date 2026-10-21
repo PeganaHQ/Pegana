@@ -1,7 +1,7 @@
 // Per-agent rate limiter for MCP tool calls (ADR-0011).
 //
-// 100 calls/min per agent fingerprint (paid: hashed x402 payment header;
-// free: hashed source IP — see middleware/fingerprint.ts). Mirrors the
+// 100 calls/min per agent fingerprint (the hashed client IP; see
+// middleware/fingerprint.ts). Mirrors the
 // in-memory sliding window in crates/api-rs/src/rate_limit.rs; same
 // rationale (single VPS, sub-1k QPS peak, lock contention negligible).
 //

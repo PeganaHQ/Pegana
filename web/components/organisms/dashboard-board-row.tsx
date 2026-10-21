@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { memo, useRef, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, ChevronsUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
@@ -12,7 +12,10 @@ import { HelpIcon } from "@/components/atoms/help-icon";
 import { SparklineCell } from "@/components/molecules/sparkline-cell";
 import { MonitoringBadge } from "@/components/molecules/monitoring-badge";
 import { SustainedBadge } from "@/components/molecules/sustained-badge";
-import { CalibrationGauge } from "@/components/atoms/calibration-gauge";
+import {
+  CalibrationGauge,
+  calibrationShownByBetaBadge,
+} from "@/components/atoms/calibration-gauge";
 import {
   Tooltip,
   TooltipContent,
@@ -22,7 +25,7 @@ import { stateMeta } from "@/lib/asset/state-meta";
 import { JITTER_COLOR } from "@/lib/asset/row-color";
 import { formatGap, formatJitterPct } from "@/lib/api/format";
 import { severityTextClass, spreadSignClass } from "@/lib/state-class";
-import { thresholdsFor } from "@/lib/alerts/policy";
+import { isCollateralRatioThresholds, thresholdsFor } from "@/lib/alerts/policy";
 import { useTickFlash } from "@/lib/motion/use-tick-flash";
 import { displaySymbol } from "@/lib/asset/display-symbol";
 import type { AssetCardData, PegState } from "@/lib/api/types";
@@ -431,7 +434,9 @@ export function DashboardBoardMobileCard({
               className="shrink-0"
             />
           )}
-          <CalibrationGauge asset={asset} className="shrink-0" />
+          {!calibrationShownByBetaBadge(asset) && (
+            <CalibrationGauge asset={asset} className="shrink-0" />
+          )}
         </div>
         <span
           ref={spreadRef}
@@ -478,6 +483,7 @@ export function DashboardBoardMobileCard({
           thresholds={t}
           state={state}
           klass={asset.class}
+          crBand={isCollateralRatioThresholds(asset.thresholds)}
           className="flex-1"
         />
         <SparklineCell
@@ -623,25 +629,37 @@ export const DashboardBoardRow = memo(function DashboardBoardRow({
                 data-asset={asset.symbol}
                 tabIndex={rovingActive ? 0 : -1}
                 className={cn(
-                  "truncate font-mono text-[13px] font-medium text-text",
+                  // shrink-0: the symbol is the row's identity and must never
+                  // be the thing that gives way. With truncate alone, a row
+                  // carrying BETA + SUSTAINED + PROVISIONAL (eHYUSD in DRIFT)
+                  // collapsed the symbol to 0px and pushed the badges over
+                  // the Spread column.
+                  "shrink-0 font-mono text-[13px] font-medium text-text",
                   "after:absolute after:inset-0 after:content-['']",
                   "focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-inset focus-visible:after:ring-outline",
                 )}
               >
                 {displaySymbol(asset.symbol)}
               </Link>
-              {asset.monitoring_only && (
-                <MonitoringBadge className="shrink-0" />
-              )}
-              {asset.sustained && (
-                <SustainedBadge
-                  state={asset.state}
-                  durationSecs={asset.current_state_duration_secs}
-                  sustained={asset.sustained}
-                  className="shrink-0"
-                />
-              )}
-              <CalibrationGauge asset={asset} className="shrink-0" />
+              {/* Badges absorb the squeeze instead: they clip inside the
+                  cell (min-w-0 + overflow-hidden) rather than overflowing
+                  into the next column. */}
+              <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                {asset.monitoring_only && (
+                  <MonitoringBadge className="shrink-0" />
+                )}
+                {asset.sustained && (
+                  <SustainedBadge
+                    state={asset.state}
+                    durationSecs={asset.current_state_duration_secs}
+                    sustained={asset.sustained}
+                    className="shrink-0"
+                  />
+                )}
+                {!calibrationShownByBetaBadge(asset) && (
+                  <CalibrationGauge asset={asset} className="shrink-0" />
+                )}
+              </span>
             </div>
             <div className="truncate text-[11px] text-text-muted">
               {asset.name}
@@ -700,6 +718,7 @@ export const DashboardBoardRow = memo(function DashboardBoardRow({
           thresholds={t}
           state={state}
           klass={asset.class}
+          crBand={isCollateralRatioThresholds(asset.thresholds)}
         />
       </td>
 

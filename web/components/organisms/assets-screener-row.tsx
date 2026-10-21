@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { memo, type ReactNode } from "react";
 import { ChevronsUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
@@ -25,7 +25,7 @@ import {
 } from "@/lib/api/format";
 import {
   spreadSignClass } from "@/lib/state-class";
-import { thresholdsFor } from "@/lib/alerts/policy";
+import { isCollateralRatioThresholds, thresholdsFor } from "@/lib/alerts/policy";
 import { JITTER_COLOR, SAFETY_COLOR } from "@/lib/asset/row-color";
 import { displaySymbol } from "@/lib/asset/display-symbol";
 import {
@@ -477,7 +477,13 @@ export function AssetsScreenerMobileCard({ row }: { row: Row }) {
       </div>
       <div className="mt-2.5 flex items-center gap-3">
         <div className="flex-1">
-          <BandGauge bps={bps} thresholds={t} state={state} klass={a.class} />
+          <BandGauge
+            bps={bps}
+            thresholds={t}
+            state={state}
+            klass={a.class}
+            crBand={isCollateralRatioThresholds(a.thresholds)}
+          />
         </div>
         {hasSpark && (
           <Sparkline
@@ -642,7 +648,13 @@ export const AssetsScreenerRow = memo(function AssetsScreenerRow({
       </td>
 
       <td className={cn("h-14 py-0 align-middle", SCREENER_COL_PAD.band)}>
-        <BandGauge bps={bps} thresholds={t} state={state} klass={a.class} />
+        <BandGauge
+          bps={bps}
+          thresholds={t}
+          state={state}
+          klass={a.class}
+          crBand={isCollateralRatioThresholds(a.thresholds)}
+        />
       </td>
 
       <td

@@ -4,6 +4,7 @@ import { useStats } from "@/lib/hooks/use-stats";
 import { useAppReducedMotion } from "@/lib/motion/use-reduced-motion";
 import { useRevealV2 } from "@/lib/motion/use-reveal-v2";
 import { cn } from "@/lib/utils/cn";
+import { partnerLogoUrl } from "@/lib/static-assets";
 import { LOGO_ITEMS } from "@/components/organisms/v2/shared";
 
 // Bento grid (redesign 2026-08-05): 4 equal cards in a single row on
@@ -70,21 +71,21 @@ export function SourcesV2() {
     },
     {
       value: String(LOGO_ITEMS.length),
-      label: "issuers, venues and oracles behind the numbers",
+      label: "issuers, venues and oracles featured below",
     },
     { value: "5", label: "peg states, one finite-state machine" },
     {
       value: "1:1",
-      label: "byte-exact, every verdict replays identically",
+      label: "byte-exact replay, every receipt since methodology 0.4.0",
     },
   ];
 
   return (
     <section className="pb-11 pt-14 max-[759px]:pb-[30px] max-[759px]:pt-10">
       <div className="mx-auto max-w-[1180px] px-6 sm:px-10">
-        <h3 className="mb-[30px] text-[19px] font-medium tracking-[-0.015em] text-[var(--v2-text)] max-[760px]:mb-[22px] sm:text-[22px]">
+        <h2 className="mb-[30px] text-[19px] font-medium leading-[1.5] tracking-[-0.015em] text-[var(--v2-text)] max-[760px]:mb-[22px] sm:text-[22px]">
           Where the numbers come from.
-        </h3>
+        </h2>
 
         <div className="mb-9 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4 max-[639px]:gap-2.5">
           {cards.map((card, i) => (
@@ -110,7 +111,7 @@ export function SourcesV2() {
                   className="flex cursor-default items-center gap-3 px-[34px] opacity-[0.62] transition-opacity duration-300 ease-[var(--v2-ease)] hover:opacity-100"
                 >
                   <img
-                    src={`/logos/${logo.slug}.svg`}
+                    src={partnerLogoUrl(logo.slug)}
                     loading="lazy"
                     alt=""
                     aria-hidden

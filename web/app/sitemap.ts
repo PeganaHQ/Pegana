@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { serverApiHeaders } from "@/lib/api/base";
 
 const SITE_URL = "https://www.pegana.xyz";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "https://api.pegana.xyz";
@@ -9,6 +10,7 @@ type AuditEntry = { id: string; detected_at?: string | null };
 async function fetchAssets(): Promise<AssetEntry[]> {
   try {
     const res = await fetch(`${API_BASE}/v1/assets`, {
+      headers: serverApiHeaders(),
       next: { revalidate: 3600 },
     });
     if (!res.ok) return [];
@@ -37,6 +39,7 @@ async function fetchAssets(): Promise<AssetEntry[]> {
 async function fetchRecentAudits(): Promise<AuditEntry[]> {
   try {
     const res = await fetch(`${API_BASE}/v1/audit?limit=100`, {
+      headers: serverApiHeaders(),
       next: { revalidate: 3600 },
     });
     if (!res.ok) return [];

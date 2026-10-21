@@ -7,51 +7,34 @@
 // is emitted only on the happy path — MCP skips outputSchema validation
 // when isError=true (SDK behaviour).
 
-import { z } from "zod";
+import { symbolSchema } from "@/shared/symbol";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getCachedState } from "@/redis";
-
-const PEG_STATES = [
-  "PEGGED",
-  "DRIFT",
-  "DEPEG",
-  "CRITICAL",
-  "BLACK_SWAN",
-  "UNKNOWN",
-] as const;
+import { isNonPublicSymbol, missingSnapshotMessage } from "@/shared/asset-registry";
+import {
+  ageSeconds,
+  snapshotShape,
+  STALE_AFTER_SEC,
+} from "@/shared/snapshot-schema";
 
 export const getAssetStateTool = {
   name: "get_asset_state",
   description:
     "Free. Returns the current peg state for a single tracked asset on Solana. " +
-    "On success, `structuredContent` is `{ asset, state, discount, intrinsic_usd, market_usd, ts }` — " +
+    "On success, `structuredContent` is `{ asset, state, discount, intrinsic_usd, market_usd, ts, updated_at }`: " +
     "`state` is one of `PEGGED | DRIFT | DEPEG | CRITICAL | BLACK_SWAN | UNKNOWN`, " +
-    "`discount` = 1 − market/intrinsic, signed: NEGATIVE = trading ABOVE intrinsic (a premium), POSITIVE = trading BELOW intrinsic (a discount) — a decimal string; prices are USD as strings, `ts` is unix seconds. " +
+    "`discount` = 1 − market/intrinsic, signed: NEGATIVE = trading ABOVE intrinsic (a premium), POSITIVE = trading BELOW intrinsic (a discount), as a decimal string; prices are USD as strings, `ts` is unix seconds and `updated_at` the same instant in ISO-8601. " +
     "Example: `{ symbol: \"jitoSOL\" }` → current state of Jito's jitoSOL LST. " +
     "Returns `isError: true` with `_meta.lastFreshSec` if the cached state is older than 5 minutes, " +
-    "or if the symbol is not tracked (call `get_assets` first to enumerate valid symbols). " +
-    "Prefer this over `get_assets` when you already know the symbol — it skips the full enumeration.",
+    "or if there is no live snapshot for the symbol; the error text says whether the symbol is tracked but has no snapshot yet, is listed but inactive, or is not tracked at all (call `get_assets` to enumerate symbols with live data). " +
+    "Prefer this over `get_assets` when you already know the symbol: it skips the full enumeration.",
   inputSchema: {
-    symbol: z
-      .string()
-      .min(1)
-      .max(20)
+    symbol: symbolSchema()
       .describe(
-        "Case-sensitive asset symbol as published by Pegana. Examples: `jitoSOL`, `mSOL`, `INF`, `USDC`, `USDT`, `PYUSD`, `USDe`, `sUSDe`, `USDS`, `hyUSD`. Run `get_assets` to enumerate the live list.",
+        "Case-sensitive asset symbol as published by Pegana. Examples: `jitoSOL`, `mSOL`, `INF`, `USDC`, `USDT`, `PYUSD`, `USDe`, `USDS`, `hyUSD`. Run `get_assets` to enumerate the live list.",
       ),
   },
-  outputSchema: {
-    asset: z.string(),
-    state: z.enum(PEG_STATES),
-    discount: z
-      .string()
-      .describe(
-        "Signed decimal as string: negative = ABOVE intrinsic (a premium), positive = BELOW (a discount). E.g. `-0.0042` = 42bps above intrinsic (a premium).",
-      ),
-    intrinsic_usd: z.string(),
-    market_usd: z.string(),
-    ts: z.number().int().describe("Unix seconds at the snapshot timestamp."),
-  },
+  outputSchema: snapshotShape,
   annotations: {
     title: "Get current peg state for one asset",
     readOnlyHint: true,
@@ -60,20 +43,21 @@ export const getAssetStateTool = {
     openWorldHint: false,
   } satisfies ToolAnnotations,
   async handler(args: { symbol: string }) {
-    const snap = getCachedState(args.symbol);
+    // Off-surface classes (xSOL) are not tracked publicly; REST answers 404.
+    const snap = isNonPublicSymbol(args.symbol) ? undefined : getCachedState(args.symbol);
     if (!snap) {
       return {
         content: [
           {
             type: "text" as const,
-            text: `Error: asset '${args.symbol}' not tracked. Use get_assets() to list tracked symbols.`,
+            text: missingSnapshotMessage(args.symbol),
           },
         ],
         isError: true,
       };
     }
-    const ageSec = Math.floor(Date.now() / 1000 - snap.ts);
-    if (ageSec > 300) {
+    const ageSec = ageSeconds(snap.ts);
+    if (ageSec > STALE_AFTER_SEC) {
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(snap, null, 2) },

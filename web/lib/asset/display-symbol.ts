@@ -9,7 +9,7 @@
  * sHYUSD -> eHYUSD: Hylo renamed the Stability Pool receipt token to
  * "eHYUSD" (Earn pool), 2026-07. Zero DB/replay change — display-only.
  */
-const SYMBOL_DISPLAY_ALIASES: Readonly<Record<string, string>> = {
+export const SYMBOL_DISPLAY_ALIASES: Readonly<Record<string, string>> = {
   sHYUSD: "eHYUSD",
 };
 

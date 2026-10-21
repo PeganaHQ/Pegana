@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What Pegana is
 
-A **peg-risk oracle for Solana**: it tracks the divergence between an asset's **intrinsic value** (what it *should* be worth given its peg mechanism) and its **market value** (what a swap actually returns) for ~69 live LSTs and stablecoins on mainnet. When the gap crosses per-asset thresholds it publishes a state transition over REST, WebSocket, MCP, and Webhook, and emits a reproducible audit receipt.
+A **peg-risk oracle for Solana**: it tracks the divergence between an asset's **intrinsic value** (what it *should* be worth given its peg mechanism) and its **market value** (what a swap actually returns) for the 67 LSTs and stablecoins on the public peg surface on mainnet. When the gap crosses per-asset thresholds it publishes a state transition over REST, WebSocket and MCP (webhook fan-out exists in `dispatcher-rs` for self-hosting only), and emits a reproducible audit receipt.
 
 The single most important mental model: **`intrinsic − market = discount → EWMA smoothing → threshold classification with hysteresis → state machine → transition → alert + receipt`**. Everything in the Rust workspace exists to feed, compute, or fan out that pipeline.
 

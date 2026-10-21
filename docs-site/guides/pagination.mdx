@@ -29,16 +29,78 @@ History granularity: `raw` (per-sample) or `1m` (1-minute aggregate).
 </ParamField>
 
 <ParamField query="limit" type="integer">
-Max rows returned. History defaults to 500. The audit ledger (`GET /v1/audit`) and its CSV
-export (`GET /v1/audit.csv`) are capped per ADR-0014 (100-row page / 50k CSV rows).
+Max rows returned. History defaults to 500. The audit CSV export (`GET /v1/audit.csv`) is
+capped at 50k rows per ADR-0014.
 </ParamField>
 
-<ParamField query="exclude_pegged / state" type="boolean / string">
-`GET /v1/audit` returns the newest receipts first (`limit` default 50, max 100). Narrow it
-with `state` (`PEGGED`, `DRIFT`, `DEPEG`, `CRITICAL`, `BLACK_SWAN`) or `exclude_pegged`
-(default `true`). The bulk export `GET /v1/audit.csv` takes `from`, `to` and `asset`.
+## The receipt ledger
+
+`GET /v1/audit` is the public transition ledger. It returns a **bare JSON array** (not the
+`{ ok, generated_at, count, data }` envelope), ordered **newest first** by `detected_at`, then
+by `id` descending. Page through it with a keyset cursor.
+
+<Warning>
+**The ledger has a gap.** No receipts exist from 2026-08-26 01:09 UTC to 2026-10-17 09:20 UTC.
+The production host was rebuilt with a fresh database on 2026-10-17. Receipts from 2026-05-27
+to 2026-08-26 were restored; the ledger holds nothing for the period in between.
+A walk across that window returns no rows for it. That is missing history, not a quiet period.
+</Warning>
+
+<ParamField query="limit" type="integer">
+Page size. Default 50, max 100 (larger values are clamped to 100).
 </ParamField>
+
+<ParamField query="before" type="string (RFC3339)">
+Cursor. Returns only rows strictly older than this `detected_at`. Pass the **last row's**
+`detected_at`, exactly as it was emitted (millisecond precision).
+</ParamField>
+
+<ParamField query="before_id" type="string (UUID)">
+Tie-breaker for `before`. Pass the **last row's** `id` too, so rows that share the cursor
+millisecond are neither skipped nor repeated. Requires `before` (otherwise `400 invalid_cursor`).
+</ParamField>
+
+<ParamField query="since / until" type="string (RFC3339)">
+Time window on `detected_at`: `since` is inclusive, `until` is exclusive. `until` must be after
+`since` (otherwise `400 invalid_range`).
+</ParamField>
+
+<ParamField query="asset" type="string">
+Exact symbol, **case-sensitive** (`USDe`, not `usde`). 1 to 32 characters of
+`[A-Za-z0-9._+*-]` (otherwise `400 invalid_asset`).
+</ParamField>
+
+<ParamField query="state / exclude_pegged" type="string / boolean">
+`state` filters on the destination state: `PEGGED`, `DRIFT`, `DEPEG`, `CRITICAL`,
+`BLACK_SWAN` or `UNKNOWN` (anything else is `400 invalid_state`).
+`exclude_pegged` defaults to `true`, which hides recoveries back to `PEGGED`; pass
+`exclude_pegged=false` to walk every transition.
+</ParamField>
+
+Walk the full ledger by feeding the last row of each page back as the cursor, and stop when a
+page comes back with fewer rows than `limit`:
+
+```bash
+url="https://api.pegana.xyz/v1/audit?limit=100&exclude_pegged=false"
+page=$(curl -s "$url")
+while [ "$(echo "$page" | jq length)" -gt 0 ]; do
+  echo "$page" | jq -c '.[] | {id, asset, from_state, to_state, detected_at}'
+  [ "$(echo "$page" | jq length)" -lt 100 ] && break
+  before=$(echo "$page" | jq -r '.[-1].detected_at')
+  before_id=$(echo "$page" | jq -r '.[-1].id')
+  page=$(curl -s "$url&before=$before&before_id=$before_id")
+done
+```
+
+`since` only bounds the window; it is not a forward cursor. Because the ledger is
+newest-first, `since` plus `limit` always returns the newest rows inside the window, so use
+`before` / `before_id` to move to older rows.
+
+For bulk export, `GET /v1/audit.csv` takes a required `from` / `to` window (both inclusive,
+at most 90 days, otherwise `400 date_range_too_large`) and an optional `asset`. It is limited
+to 10 requests/min per IP on top of the global limit.
 
 <Note>
-The audit ledger is append-only and time-ordered — for older data use the `from`/`to` window on `GET /v1/audit.csv`. History is returned **newest-first**.
+The audit ledger is append-only. History (`/v1/assets/{symbol}/history`) is also returned
+**newest-first**.
 </Note>

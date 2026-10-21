@@ -17,7 +17,8 @@ rule_files:
   - /etc/prometheus/rules/pegana.yml
 
 # Route fired rules to Alertmanager (internal-only service; resolves on the
-# docker network). Alertmanager fans out to Telegram — see ops/alertmanager/.
+# docker network). Alertmanager posts to Telegram and/or Discord; see
+# ops/alertmanager/render-config.sh.
 alerting:
   alertmanagers:
     - static_configs:
@@ -33,6 +34,13 @@ scrape_configs:
     static_configs:
       - targets: ["alertmanager:9093"]
         labels: { service: alertmanager }
+
+  # Host-side cron metrics (scripts/pg-backup.sh -> ~/.pegana-metrics), served
+  # by the textfile-only node-exporter service.
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels: { service: backup }
 
   - job_name: pegana-indexer
     metrics_path: /metrics
@@ -64,10 +72,8 @@ scrape_configs:
       - targets: ["protocol-indexer:8091"]
         labels: { service: protocol-indexer }
 
-  # v2: hosted MCP server. Exposes pegana_mcp_tool_calls_total,
-  # pegana_mcp_tool_latency_seconds, and pegana_mcp_payments_total
-  # (when x402 settlements record on-chain). See
-  # docs/grafana/dashboards/mcp-ts.md for the PromQL panels.
+  # Hosted MCP server (every tool is free). Exposes
+  # pegana_mcp_tool_calls_total and pegana_mcp_tool_latency_seconds.
   - job_name: pegana-mcp-ts
     metrics_path: /metrics
     static_configs:

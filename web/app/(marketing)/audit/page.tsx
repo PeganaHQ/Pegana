@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/seo/page-metadata";
 import { cn } from "@/lib/utils/cn";
@@ -28,6 +28,7 @@ import { HashChip } from "@/components/molecules/hash-chip";
 import { PillGhost, StatePillV2 } from "@/components/organisms/v2/shared";
 import { displaySymbol } from "@/lib/asset/display-symbol";
 import type { PegState } from "@/lib/api/types";
+import { serverApiHeaders } from "@/lib/api/base";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "https://api.pegana.xyz";
 
@@ -67,6 +68,7 @@ async function fetchIndex(
   if (assetFilter) params.set("asset", assetFilter);
   try {
     const r = await fetch(`${API_BASE}/v1/audit?${params.toString()}`, {
+      headers: serverApiHeaders(),
       next: { revalidate: 60 },
     });
     if (!r.ok) {
@@ -137,12 +139,13 @@ export default async function AuditIndexPage({
   const params = await searchParams;
   const rawState = (params.state ?? "").toUpperCase();
   const stateFilter = ALLOWED_STATE_FILTERS.has(rawState) ? rawState : null;
-  // Sanitise the asset param: allow only alphanumeric + common token characters
-  // (letters, digits, hyphens, underscores). Strip anything that looks like
-  // an injection or path-traversal attempt before forwarding to the API.
+  // Sanitise the asset param to the API's own symbol charset (1-32 chars of
+  // letters, digits and . _ + * -; real symbols include wBTC.e, hyloSOL+ and
+  // USD*). Anything else is dropped before forwarding; URLSearchParams encodes
+  // the value on the way out.
   const rawAsset = params.asset ?? "";
   const assetFilter =
-    rawAsset.length > 0 && /^[A-Za-z0-9_-]{1,20}$/.test(rawAsset)
+    rawAsset.length > 0 && /^[A-Za-z0-9._+*-]{1,32}$/.test(rawAsset)
       ? rawAsset
       : null;
   const [fetched, canon] = await Promise.all([

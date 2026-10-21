@@ -22,8 +22,19 @@
 //! `@pythnetwork/pyth-solana-receiver` SDK's `getPriceFeedAccountForProgram`.
 //! No external mapping service is consulted, so the fallback keeps working
 //! even when Hermes (and any id→account registry it might host) is 403.
+//!
+//! ## Keyless mode (on-chain first)
+//!
+//! Since the Pyth Core upgrade (August 2026) the public Hermes host
+//! (`hermes.pyth.network`) answers `401 unauthorized` to every price request
+//! that carries no API key. Probing it every 5 minutes without a key can only
+//! fail, so when no key is configured for that host and the fallback is on,
+//! the source skips Hermes entirely and runs on the on-chain accounts as its
+//! primary path, without the reconnect/error log cycle. Configure
+//! `PYTH_HERMES_API_KEY` (or point `PYTH_HERMES_URL` at another Hermes
+//! deployment) to put the stream back in front.
 
-use crate::config::pyth_bearer;
+use crate::config::{effective_pyth_key, pyth_bearer};
 use crate::sinks;
 use crate::state::{AppState, PythEntry};
 use anyhow::{bail, Context, Result};
@@ -85,6 +96,10 @@ const DEFAULT_ONCHAIN_POLL_MS: u64 = 12_000;
 /// How often to re-probe Hermes while the fallback is carrying the board.
 const DEFAULT_HERMES_RETRY_MS: u64 = 300_000;
 
+/// Public Hermes host. It requires an API key since the Pyth Core upgrade
+/// (August 2026); see the module docs.
+const PUBLIC_HERMES_HOST: &str = "hermes.pyth.network";
+
 /// Floor for both fallback cadences, so a zero/typo'd env value cannot turn
 /// the fallback into an RPC hammer.
 const MIN_CADENCE_MS: u64 = 1_000;
@@ -101,6 +116,19 @@ const DEFAULT_ONCHAIN_MAX_AGE_SECS: i64 = 7 * 24 * 3600;
 enum PriceOrigin {
     Hermes,
     OnChain,
+}
+
+impl PriceOrigin {
+    /// Wire label carried as `origin` on the SRC_PYTH Redis envelopes. The
+    /// engine widens its staleness window for `onchain` prints, whose real
+    /// cadence is the push-feed heartbeat (about 60s) plus our poll interval,
+    /// not Hermes' ~1 Hz.
+    fn as_str(self) -> &'static str {
+        match self {
+            PriceOrigin::Hermes => "hermes",
+            PriceOrigin::OnChain => "onchain",
+        }
+    }
 }
 
 /// A decoded on-chain `PriceUpdateV2`, in raw Pyth integer form.
@@ -216,6 +244,25 @@ fn poll_decision(elapsed_in_fallback: Duration, retry_after: Duration) -> PollDe
     } else {
         PollDecision::Poll
     }
+}
+
+/// Host part of a Hermes base URL (`https://host[:port]/path` → `host`),
+/// lower-cased. Pure so the keyless decision is unit-testable.
+fn url_host(url: &str) -> String {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority
+        .rsplit_once('@')
+        .map(|(_, h)| h)
+        .unwrap_or(authority);
+    host.split(':').next().unwrap_or("").to_ascii_lowercase()
+}
+
+/// `true` when the configured Hermes endpoint is the public host and no key
+/// is set: every request would be rejected with 401, so the on-chain path
+/// should be primary rather than a fallback re-probed every few minutes.
+fn hermes_keyless_public(url: &str, key: Option<&str>) -> bool {
+    effective_pyth_key(key).is_none() && url_host(url) == PUBLIC_HERMES_HOST
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -392,7 +439,31 @@ pub async fn run(state: AppState, shutdown: CancellationToken) -> Result<()> {
         (None, None)
     };
 
-    let mut hermes_down = false;
+    // Keyless public Hermes can only answer 401, so run on-chain first and
+    // never probe it (see module docs). Without the fallback there is no
+    // other path, so we still try Hermes and let the errors speak.
+    let onchain_only = fallback.enabled
+        && hermes_keyless_public(
+            &state.config.pyth_hermes_url,
+            state.config.pyth_hermes_api_key.as_deref(),
+        );
+    if onchain_only {
+        info!(
+            poll_ms = fallback.poll_interval.as_millis(),
+            "pyth: no Hermes API key for the public host (required since the 2026-08 Pyth Core upgrade) · reading on-chain price accounts as the primary source"
+        );
+    } else if hermes_keyless_public(
+        &state.config.pyth_hermes_url,
+        state.config.pyth_hermes_api_key.as_deref(),
+    ) {
+        warn!("pyth: public Hermes requires an API key and the on-chain fallback is disabled · pyth prices will be unavailable");
+    }
+
+    let mut hermes_down = onchain_only;
+    // Consecutive Hermes failures. Only the first of a run is logged at warn;
+    // repeats while the fallback carries the board are debug, so a dead key
+    // does not turn into a warn line every retry window.
+    let mut hermes_failures: u64 = 0;
     let mut backoff_ms: u64 = 500;
     loop {
         if shutdown.is_cancelled() {
@@ -401,11 +472,16 @@ pub async fn run(state: AppState, shutdown: CancellationToken) -> Result<()> {
         }
 
         // While Hermes is unhealthy, park on the on-chain accounts for the
-        // retry window, then spend one cycle re-probing Hermes.
+        // retry window, then spend one cycle re-probing Hermes. In keyless
+        // mode there is nothing to re-probe, so the window never closes.
         if fallback.enabled && hermes_down {
             let entered = Instant::now();
-            info!("pyth: hermes unhealthy · polling on-chain price accounts");
-            while poll_decision(entered.elapsed(), fallback.hermes_retry) == PollDecision::Poll {
+            if !onchain_only && hermes_failures <= 1 {
+                info!("pyth: hermes unhealthy · polling on-chain price accounts");
+            }
+            while onchain_only
+                || poll_decision(entered.elapsed(), fallback.hermes_retry) == PollDecision::Poll
+            {
                 if shutdown.is_cancelled() {
                     info!("pyth source shutdown");
                     return Ok(());
@@ -454,9 +530,23 @@ pub async fn run(state: AppState, shutdown: CancellationToken) -> Result<()> {
                 // graceful EOF — reconnect quickly
                 backoff_ms = 500;
                 hermes_down = false;
+                if hermes_failures > 0 {
+                    info!(failures = hermes_failures, "pyth: hermes stream recovered");
+                }
+                hermes_failures = 0;
             }
             Err(e) => {
-                warn!(error = %e, backoff_ms, "pyth stream error · reconnecting");
+                hermes_failures += 1;
+                metrics::counter!("pegana_pyth_hermes_errors_total").increment(1);
+                if hermes_failures == 1 || !fallback.enabled {
+                    warn!(error = %e, backoff_ms, "pyth stream error · reconnecting");
+                } else {
+                    debug!(
+                        error = %e,
+                        failures = hermes_failures,
+                        "pyth stream still failing · staying on on-chain accounts"
+                    );
+                }
                 if fallback.enabled {
                     // Skip the exponential backoff: the fallback loop above
                     // owns the cadence now and re-probes Hermes every 5 min.
@@ -791,6 +881,7 @@ async fn handle_price(
         "price": price,
         "confidence": conf,
         "publish_time": publish_time,
+        "origin": origin.as_str(),
     });
     sinks::redis_pub::publish_tracked(
         state.redis.clone(),
@@ -850,6 +941,7 @@ async fn handle_price(
                 "confidence": conf,
                 "publish_time": publish_time,
                 "source": "pyth",
+                "origin": origin.as_str(),
                 "meta": meta,
             });
             if let Err(e) = sinks::redis_pub::publish(
@@ -1130,7 +1222,7 @@ mod tests {
             });
             assert!(
                 seen.insert(account),
-                "feed {name} ({id}) derived a duplicate account {account} — \
+                "feed {name} ({id}) derived a duplicate account — \
                  the derivation must be feed-specific"
             );
         }
@@ -1316,6 +1408,51 @@ mod tests {
             "default on-chain poll must be < the {}s numeraire gate",
             crate::state::PYTH_NUMERAIRE_STALE_SECS
         );
+    }
+
+    #[test]
+    fn url_host_extracts_the_host() {
+        assert_eq!(
+            url_host("https://hermes.pyth.network"),
+            "hermes.pyth.network"
+        );
+        assert_eq!(
+            url_host("https://Hermes.Pyth.Network/"),
+            "hermes.pyth.network"
+        );
+        assert_eq!(
+            url_host("https://hermes.pyth.network:443/v2"),
+            "hermes.pyth.network"
+        );
+        assert_eq!(
+            url_host("https://u:p@my-hermes.example.com/x"),
+            "my-hermes.example.com"
+        );
+        assert_eq!(url_host("hermes.pyth.network"), "hermes.pyth.network");
+    }
+
+    /// The public host without a key can only 401, so the on-chain path must be
+    /// primary. A key, or any other Hermes deployment, keeps the stream first.
+    #[test]
+    fn keyless_public_hermes_is_detected() {
+        assert!(hermes_keyless_public("https://hermes.pyth.network", None));
+        assert!(hermes_keyless_public(
+            "https://hermes.pyth.network",
+            Some("")
+        ));
+        assert!(hermes_keyless_public(
+            "https://hermes.pyth.network/",
+            Some("  ")
+        ));
+        assert!(!hermes_keyless_public(
+            "https://hermes.pyth.network",
+            Some("k")
+        ));
+        assert!(!hermes_keyless_public("https://hermes.example.com", None));
+        assert!(!hermes_keyless_public(
+            "https://hermes-beta.pyth.network",
+            None
+        ));
     }
 
     #[test]

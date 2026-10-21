@@ -121,7 +121,7 @@ msg="$(mktemp)"
   printf 'Tree assembled from lrafasouza/pegana@%s.\n\n' "$(git rev-parse HEAD)"
   printf 'Recent private commits reflected here:\n'
   git log -n 10 --oneline -- assets.toml "${PREFIXES[@]}" | sed 's/^/    /'
-  printf '\nMirror of the closed sibling repo. Do not edit ReplayCLI directly.\n'
+  printf '\nVerifier subset mirror of PeganaHQ/Pegana. Do not edit ReplayCLI directly.\n'
 } > "$msg"
 
 export GIT_AUTHOR_NAME="PeganaHQ" GIT_COMMITTER_NAME="PeganaHQ"

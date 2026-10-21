@@ -9,7 +9,7 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::warn;
+use tracing::{debug, warn};
 
 /// Row shape returned by the `engine_state_snapshot` hydration query.
 /// (asset, ewma_discount, candidate_state, candidate_since, last_state).
@@ -207,7 +207,20 @@ pub struct PythEntry {
     /// `conf/price` ratio is the canonical "how trustworthy is this tick"
     /// signal — see https://docs.pyth.network/price-feeds/best-practices.
     pub confidence: Decimal,
+    /// `true` when the indexer read this print from the on-chain push-oracle
+    /// account rather than the Hermes stream. On-chain prints step at the
+    /// push-feed heartbeat (about 60s, or a 0.5% move) plus the indexer's poll
+    /// interval, so they get the wider [`DEFAULT_PYTH_ONCHAIN_STALENESS_SECS`]
+    /// window instead of the Hermes-sized default. Never part of a receipt.
+    pub onchain: bool,
 }
+
+/// Staleness window (seconds) for Pyth prints the indexer read on-chain.
+/// Matches the indexer's numeraire gate (`PYTH_NUMERAIRE_STALE_SECS`, 120s):
+/// a 60s push-feed heartbeat plus a 12s poll fits inside it with margin, so
+/// normal poll jitter never reads as a missing feed (the confidence label
+/// used to flip high/unknown every few seconds on the 30s Hermes window).
+pub const DEFAULT_PYTH_ONCHAIN_STALENESS_SECS: i64 = 120;
 
 pub struct EngineState {
     /// Per-asset runtime (mutex per asset).
@@ -223,6 +236,8 @@ pub struct EngineState {
     /// Default max age (seconds) accepted from a cached Pyth reading before
     /// it is treated as missing. Overridable per-feed via `staleness`.
     pyth_staleness_secs: i64,
+    /// Floor on the staleness window for on-chain-origin Pyth prints.
+    pyth_onchain_staleness_secs: i64,
     /// Per-feed staleness overrides loaded from `assets.toml`. NAV / RR
     /// feeds (USDY, sUSDe, syrupUSDC, ONyc) step at daily cadence and need
     /// a much wider window than the global default.
@@ -345,6 +360,7 @@ impl EngineState {
             hyusd_cr: RwLock::new(None),
             pyth: RwLock::new(HashMap::new()),
             pyth_staleness_secs,
+            pyth_onchain_staleness_secs: DEFAULT_PYTH_ONCHAIN_STALENESS_SECS,
             staleness: assets.pyth_staleness.clone(),
             assets_toml_canonical,
             depth_gate_floor_usd: Decimal::ZERO,
@@ -362,6 +378,13 @@ impl EngineState {
     pub fn with_depth_gate(mut self, floor_usd: Decimal, freshness_secs: i64) -> Self {
         self.depth_gate_floor_usd = floor_usd;
         self.depth_gate_freshness_secs = freshness_secs;
+        self
+    }
+
+    /// Override the staleness floor for on-chain-origin Pyth prints
+    /// (`PYTH_ONCHAIN_STALENESS_SECS`). Builder, like `with_depth_gate`.
+    pub fn with_pyth_onchain_staleness(mut self, secs: i64) -> Self {
+        self.pyth_onchain_staleness_secs = secs.max(0);
         self
     }
 
@@ -436,6 +459,8 @@ impl EngineState {
         freshest_observation(g.last_market_at, g.last_market_sol_at)
     }
 
+    /// Hermes-origin shorthand for [`Self::set_pyth_with_origin`] (tests).
+    #[cfg(test)]
     pub async fn set_pyth(
         &self,
         feed: &str,
@@ -443,12 +468,27 @@ impl EngineState {
         publish_time: DateTime<Utc>,
         confidence: Decimal,
     ) {
+        self.set_pyth_with_origin(feed, price, publish_time, confidence, false)
+            .await;
+    }
+
+    /// Same as [`Self::set_pyth`], recording whether the print came from the
+    /// on-chain fallback (`origin: "onchain"` on the Redis envelope).
+    pub async fn set_pyth_with_origin(
+        &self,
+        feed: &str,
+        price: Decimal,
+        publish_time: DateTime<Utc>,
+        confidence: Decimal,
+        onchain: bool,
+    ) {
         self.pyth.write().await.insert(
             feed.to_string(),
             PythEntry {
                 price,
                 publish_time,
                 confidence,
+                onchain,
             },
         );
     }
@@ -504,9 +544,15 @@ impl EngineState {
             cache.get(feed).copied()
         }?;
         let age_secs = (Utc::now() - entry.publish_time).num_seconds();
-        let limit = self.staleness.limit_for(feed, self.pyth_staleness_secs);
+        let mut limit = self.staleness.limit_for(feed, self.pyth_staleness_secs);
+        if entry.onchain {
+            limit = limit.max(self.pyth_onchain_staleness_secs);
+        }
         if age_secs > limit {
-            warn!(
+            // debug, not warn: this runs on every recompute for every asset
+            // that reads the feed, so a dark feed produced thousands of warn
+            // lines per hour. The counter below is the signal (alerted on).
+            debug!(
                 feed,
                 age_secs, limit, "pyth reading stale · refusing to use"
             );
@@ -1304,6 +1350,36 @@ mod integration_tests {
         e.set_pyth("ZEROC/USD", Decimal::new(100, 0), now, Decimal::ZERO)
             .await;
         assert_eq!(e.pyth_confidence_label("ZEROC/USD").await, None);
+    }
+
+    /// A 45s-old print is stale on the 30s Hermes window but fine when it came
+    /// from the on-chain fallback (60s push heartbeat + poll). Past the
+    /// on-chain window it is refused like any other stale print. Regression
+    /// for the confidence label flapping high/unknown on poll jitter.
+    #[tokio::test]
+    async fn onchain_prints_get_the_wider_staleness_window() {
+        let e = fresh_engine();
+        let now = chrono::Utc::now();
+        let p = Decimal::new(150, 0);
+        let c = Decimal::new(5, 2);
+        let t45 = now - chrono::Duration::seconds(45);
+        e.set_pyth_with_origin("SOL/USD", p, t45, c, false).await;
+        assert!(
+            e.pyth_entry("SOL/USD").await.is_none(),
+            "hermes print 45s old is stale"
+        );
+        e.set_pyth_with_origin("SOL/USD", p, t45, c, true).await;
+        assert_eq!(e.pyth_confidence_label("SOL/USD").await, Some("high"));
+        let t200 = now - chrono::Duration::seconds(200);
+        e.set_pyth_with_origin("SOL/USD", p, t200, c, true).await;
+        assert!(
+            e.pyth_entry("SOL/USD").await.is_none(),
+            "on-chain print past 120s is stale"
+        );
+        // The builder can tighten it.
+        let tight = fresh_engine().with_pyth_onchain_staleness(40);
+        tight.set_pyth_with_origin("SOL/USD", p, t45, c, true).await;
+        assert!(tight.pyth_entry("SOL/USD").await.is_none());
     }
 
     #[test]

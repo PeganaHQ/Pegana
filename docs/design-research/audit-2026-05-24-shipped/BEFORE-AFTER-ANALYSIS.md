@@ -282,5 +282,5 @@ Per AUDIT.md:
 - Master design spec: `docs/superpowers/specs/2026-05-22-design-uplift.md`
 - 4 implementation plans: `docs/superpowers/plans/2026-05-2{2,4}-*.md`
 - Brainstorm mocks (all 4 waves): `.superpowers/brainstorm/*/content/mock-0*.html`
-- Memory (decisions): `~/.claude/projects/-Users-rafazaum-Desktop-Projetos-pegana/memory/project_design_uplift.md`
-- Memory (pacing): `~/.claude/projects/-Users-rafazaum-Desktop-Projetos-pegana/memory/feedback_design_pacing.md`
+- Memory (decisions): `~/.claude/projects/<project>/memory/project_design_uplift.md`
+- Memory (pacing): `~/.claude/projects/<project>/memory/feedback_design_pacing.md`

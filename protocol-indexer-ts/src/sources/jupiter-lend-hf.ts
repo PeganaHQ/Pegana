@@ -26,7 +26,7 @@ import { trackedAssets, upsertHfBand } from "../db";
 import type { LoopHfBandRow, TrackedAsset } from "../db";
 import type { Source } from "../core/poll";
 import { computeHfBands, sleep, type HfEntry } from "../core/hf-bands";
-import { fetchJsonWithTimeout } from "../fetch-util";
+import { fetchJsonWithTimeout, redactSecrets } from "../fetch-util";
 import { incr } from "../metrics";
 import {
   isQuotaExhausted,
@@ -200,7 +200,7 @@ export async function fetchJupiterLendHfDistribution(
       headers: { accept: "application/json" },
     });
   } catch (e) {
-    console.warn("[jupiter_lend_hf] vaults REST fetch failed:", String(e));
+    console.warn("[jupiter_lend_hf] vaults REST fetch failed:", redactSecrets(String(e)));
     return [];
   }
 
@@ -236,7 +236,7 @@ export async function fetchJupiterLendHfDistribution(
       }
       console.warn(
         `[jupiter_lend_hf] ${symbol} vault ${rv.id} failed:`,
-        String(e),
+        redactSecrets(String(e)),
       );
     }
   }

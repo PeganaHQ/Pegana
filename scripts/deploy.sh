@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Push current branch and roll the Hetzner stack.
+# Push current branch and roll the prod (Hostinger) stack.
 #
 # Modes:
 #   ./scripts/deploy.sh                 # full deploy: build w/ GIT_SHA + force-recreate
@@ -256,8 +256,29 @@ fi
 # add silently failed via restart. up -d --force-recreate is the only way.
 REMOTE_SCRIPT+=$(cat <<REMOTE
 
-echo "  · docker compose up -d --force-recreate $SERVICES"
-docker compose up -d --force-recreate $SERVICES 2>&1 | tail -8
+# --wait: health-gated. Compose blocks until every recreated service reports
+# healthy (or running, for services without a healthcheck) and exits non-zero
+# if one does not within the timeout, so a container that boots and then
+# fails its healthcheck fails the deploy here instead of shipping green.
+# The brief api/mcp gap while the old container stops is absorbed by Caddy's
+# lb_try_duration plus request_buffers (see Caddyfile), which hold requests,
+# including POSTs with a body such as MCP JSON-RPC, through the swap.
+# node-exporter bind-mounts the textfile directory with create_host_path: false
+# (a missing dir must not become a root-owned one), so make sure it exists as
+# the deploy user before anything starts.
+METRICS_DIR=\$(sed -n 's/^PEGANA_METRICS_DIR=//p' .env 2>/dev/null | tail -1 | tr -d '"')
+METRICS_DIR=\${METRICS_DIR:-\$HOME/.pegana-metrics}
+mkdir -p "\$METRICS_DIR"
+echo "  · docker compose up -d --force-recreate --wait $SERVICES"
+set +o pipefail
+docker compose up -d --force-recreate --wait --wait-timeout ${PEGANA_DEPLOY_WAIT_TIMEOUT:-180} $SERVICES 2>&1 | tail -12
+up_status=\${PIPESTATUS[0]}
+set -o pipefail
+if [[ "\$up_status" -ne 0 ]]; then
+  echo "Containers were recreated but at least one did not become healthy:" >&2
+  docker compose ps --format "table {{.Service}}\t{{.State}}\t{{.Status}}" >&2
+  exit 1
+fi
 REMOTE
 )
 
@@ -311,10 +332,33 @@ REMOTE
 # 502 still exited 0". The ssh call it guards had the same bug.
 if ! ssh -o StrictHostKeyChecking=accept-new "$SERVER" bash <<<"$REMOTE_SCRIPT"; then
   echo "" >&2
-  echo "✗ Remote deploy failed or refused (see the reason above). Nothing was" >&2
-  echo "  recreated; the running containers are untouched." >&2
+  echo "✗ Remote deploy failed or refused (see the reason above). A refusal in" >&2
+  echo "  the pre-flight guards leaves the running containers untouched; a" >&2
+  echo "  failure at the health-gated recreate step means containers WERE" >&2
+  echo "  replaced and one is unhealthy (see the ps table above)." >&2
   exit 1
 fi
+
+# Every long-running compose service must have a running container. A normal
+# deploy only recreates $SERVICES, so a service that was never created (as
+# alertmanager was, from the 2026-10-16 rebuild until this check existed) or
+# that crash-looped out stays missing silently. Fail loudly instead.
+missing_services=$(ssh "$SERVER" bash -s <<<"cd $REMOTE_DIR && comm -23 <(docker compose config --services | LC_ALL=C sort) <(docker compose ps --status running --services | LC_ALL=C sort)" || echo "CHECK-FAILED")
+
+# Which channels the running alertmanager delivers to. Its entrypoint falls
+# back to the null config (no delivery) instead of crash-looping when the
+# Telegram/Discord inputs are missing or the render fails, so a "running"
+# container says nothing about delivery. Read the --config.file of PID 1 and
+# the "# Channels:" line the render script writes (stdin of each exec is
+# /dev/null so it cannot swallow the rest of the `bash -s` script). Warns, never fails: alert
+# delivery is an owner input, not a reason to call a deploy broken.
+am_check='cfg=$(docker compose exec -T alertmanager cat /proc/1/cmdline </dev/null 2>/dev/null | tr "\0" "\n" | sed -n "s/^--config.file=//p")
+if [ -z "$cfg" ]; then echo channels=unknown
+elif [ "$cfg" = /etc/alertmanager/config-null.yml ]; then echo channels=none
+else ch=$(docker compose exec -T alertmanager sed -n "s/^# Channels: //p" "$cfg" </dev/null 2>/dev/null); echo "channels=${ch:-unknown}"; fi'
+am_channels=$(ssh "$SERVER" bash -s <<<"cd $REMOTE_DIR || exit 1
+$am_check" 2>/dev/null || echo "channels=unknown")
+am_channels=${am_channels##*channels=}
 
 # Local smoke test — proves what the operator running this script sees
 # externally, not just what the box thinks internally.
@@ -352,6 +396,38 @@ for pass in 1 2; do
   fi
 done
 
+if [[ "$missing_services" == *CHECK-FAILED* ]]; then
+  echo "  · could not check for missing compose services (ssh failed)  ❌"
+  echo "    Verify by hand: ssh $SERVER 'cd $REMOTE_DIR && docker compose ps'"
+  smoke_failed=1
+elif [[ -n "$missing_services" ]]; then
+  echo "  · compose services without a running container: $(echo $missing_services)  ❌"
+  echo "    Start them on the box: docker compose up -d <service>. alertmanager runs"
+  echo "    without delivery until Telegram (ALERTMANAGER_TELEGRAM_BOT_TOKEN +"
+  echo "    ALERTMANAGER_TELEGRAM_CHAT_ID) OR Discord (ALERTMANAGER_DISCORD_WEBHOOK_URL)"
+  echo "    is set in .env; check its logs if it is the one missing."
+  smoke_failed=1
+fi
+
+case "$am_channels" in
+  none)
+    echo ""
+    echo "  ⚠️  ALERTMANAGER IS NOT DELIVERING ALERTS (null receiver)."
+    echo "     Set Telegram (ALERTMANAGER_TELEGRAM_BOT_TOKEN + ALERTMANAGER_TELEGRAM_CHAT_ID)"
+    echo "     OR Discord (ALERTMANAGER_DISCORD_WEBHOOK_URL) in the box .env, then:"
+    echo "       $0 --config-only --services alertmanager"
+    echo "     The reason is in: ssh $SERVER 'cd $REMOTE_DIR && docker compose logs alertmanager | grep WARN'"
+    echo ""
+    ;;
+  unknown|"")
+    echo "  · alertmanager delivery channels: could not be read  ⚠️"
+    echo "    Check by hand: ssh $SERVER 'cd $REMOTE_DIR && docker compose logs alertmanager | grep \"alertmanager config\"'"
+    ;;
+  *)
+    printf "  · %-40s %s\n" "alertmanager delivers to" "$am_channels"
+    ;;
+esac
+
 # mcp-ts is a separate service with no /v1 envelope, so it stays a plain check.
 mcp_code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 8 https://mcp.pegana.xyz/health || echo "TIMEOUT")
 if [ "$mcp_code" = "200" ]; then
@@ -375,7 +451,7 @@ echo "✅ deploy complete · HEAD $(git rev-parse --short HEAD)"
 echo "   API:   https://api.pegana.xyz/healthz"
 echo "   MCP:   https://mcp.pegana.xyz"
 echo "   Web:   https://pegana.xyz"
-echo "   Grafana: https://grafana.pegana.xyz"
+echo "   Grafana: ssh -L 3000:127.0.0.1:3000 $SERVER, then http://localhost:3000"
 
 if $TAIL_LOGS; then
   echo ""

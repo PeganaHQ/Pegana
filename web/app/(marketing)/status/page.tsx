@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils/cn";
@@ -12,7 +12,7 @@ import { useCalibration } from "@/lib/hooks/use-calibration";
 import { LiveProvider, useLive } from "@/lib/store/live-context";
 import type { PegState } from "@/lib/api/types";
 import { UptimeBars } from "@/components/molecules/uptime-bars";
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
 import { PageHeroV2 } from "@/components/organisms/v2/inner/page-hero-v2";
 import {
   ListRowsV2,
@@ -21,6 +21,11 @@ import {
 import { StatStripV2 } from "@/components/organisms/v2/inner/stat-strip-v2";
 import { IncidentCardV2 } from "@/components/organisms/v2/inner/incident-card-v2";
 import { PillPrimary, PillGhost } from "@/components/organisms/v2/shared";
+import {
+  assetCoverage,
+  bannerCopy,
+  overallState,
+} from "@/lib/status/health";
 import {
   RELIABILITY_LOG_DESC,
   LAUNCH_DATE,
@@ -35,7 +40,8 @@ import {
 //   1. Hero banner — color/copy follow overall measured health.
 //   2. Per-source 90-day uptime bars (real UptimeBars component; only today
 //      is measured, prior days render as explicit no-data grey).
-//   3. Alert activity — real by_state counts, rolling 24h.
+//   3. Assets by current state (real by_state counts, Unknown included),
+//      plus the rolling-24h transition count.
 //   4. Calibration — condensed prose (full per-asset table lived here
 //      before; V5 keeps the honest counts, drops the density).
 //   5. Incident log — every entry in RELIABILITY_LOG, permanently.
@@ -64,7 +70,10 @@ interface ReadyzResp {
 }
 
 async function fetchReadyz(): Promise<ReadyzResp> {
-  const r = await fetch(`${apiBase()}/readyz`, { cache: "no-store" });
+  const r = await fetch(`${apiBase()}/readyz`, {
+    headers: serverApiHeaders(),
+    cache: "no-store",
+  });
   // /readyz returns HTTP 503 with a useful JSON body when not ready.
   // Discarding that body forced every source row into "Outage" during
   // degraded-but-diagnosable periods. Parse the body regardless of status.
@@ -99,8 +108,12 @@ const SOURCES: ReadonlyArray<SourceRow> = [
   {
     key: "pyth_secs",
     name: "Pyth",
-    role: "Live price oracle",
-    cadence: "~1s",
+    // The indexer reads Pyth from the Hermes stream when it has a key, and
+    // from Pyth's on-chain price accounts otherwise (crates/indexer-rs
+    // sources/pyth.rs, keyless mode). /readyz only reports the newest
+    // oracle row, so the row names both paths instead of claiming the stream.
+    role: "Price oracle · Hermes stream or on-chain accounts",
+    cadence: "1-15s",
     expectFreshSecs: 30,
   },
   {
@@ -183,10 +196,10 @@ function SourceRowV2({
 
 function StatusBody() {
   const { data: ready, error: readyErr } = useSWR("readyz", fetchReadyz, {
-    refreshInterval: 15_000,
+    refreshInterval: 30_000,
   });
   const { data: stats } = useStats();
-  const { data: assets } = useAssets();
+  const { data: assets, error: assetsErr } = useAssets();
   const { data: calibration } = useCalibration();
   const { connected: wsConnected, lastHeartbeatAt } = useLive();
 
@@ -253,75 +266,80 @@ function StatusBody() {
         ? "DRIFT"
         : "PEGGED";
 
-  const overall: PegState =
-    readyErr || liveDown
-      ? "DEPEG"
-      : !ready
-        ? "UNKNOWN"
-        : ready.status === "ready" &&
-            !liveDegraded &&
-            snapshotAge != null &&
-            snapshotAge < 60
-          ? "PEGGED"
-          : ready.status === "ready"
-            ? "DRIFT"
-            : "DEPEG";
+  // `now` ticks every second; coverage only needs a minute-resolution clock.
+  const nowMinute = Math.floor(now / 60_000);
+  const coverage = useMemo(
+    () =>
+      assets && nowMinute > 0 ? assetCoverage(assets, nowMinute * 60_000) : null,
+    [assets, nowMinute],
+  );
+
+  const overall: PegState = overallState({
+    readyErr: Boolean(readyErr),
+    ready: ready ?? null,
+    snapshotAgeSec: snapshotAge,
+    liveDown,
+    liveDegraded,
+    coverage,
+    coverageErr: Boolean(assetsErr) && !assets,
+  });
 
   const last24h = stats?.alerts_24h;
   const totalAssets = stats?.assets_tracked ?? assets?.length;
-  const delivery = stats?.delivery_health ?? null;
-  // Green only on positive evidence, never on the absence of failure. With zero
-  // sent AND zero failed there is nothing to be healthy about — reporting that as
-  // operational greenwashed the one subsystem whose track record is unproven.
-  const deliveryState: PegState = !delivery
+  // There is no "Alert delivery" row: webhook delivery was removed, so
+  // /v1/stats delivery_health counts a channel with no subscribers and can
+  // only ever read 0 sent / 0 failed.
+
+  const banner = {
+    copy: bannerCopy(overall, coverage, Boolean(assetsErr) && !assets),
+    color:
+      overall === "PEGGED"
+        ? "var(--v2-peg)"
+        : overall === "DRIFT"
+          ? "var(--v2-drift)"
+          : overall === "UNKNOWN"
+            ? "var(--v2-dim)"
+            : "var(--v2-depeg)",
+  };
+
+  const coverageState: PegState = !coverage
     ? "UNKNOWN"
-    : delivery.failed_24h > 0
-      ? "DRIFT"
-      : delivery.sent_24h > 0
-        ? "PEGGED"
-        : "UNKNOWN";
-  const deliveryDetail = !delivery
-    ? "waiting for stats"
-    : delivery.sent_24h === 0 && delivery.failed_24h === 0
-      ? "no deliveries to report (24h)"
-      : `${delivery.sent_24h} sent · ${delivery.failed_24h} failed`;
+    : coverage.dark.length === 0
+      ? "PEGGED"
+      : "DRIFT";
+  const coverageDetail = !coverage
+    ? "-"
+    : `${coverage.total - coverage.dark.length} of ${coverage.total} live`;
 
-  const banner = (() => {
-    switch (overall) {
-      case "PEGGED":
-        return { copy: "All systems operational.", color: "var(--v2-peg)" };
-      case "DRIFT":
-        return {
-          copy: "Operating with degraded freshness.",
-          color: "var(--v2-drift)",
-        };
-      case "UNKNOWN":
-        return { copy: "Checking systems...", color: "var(--v2-dim)" };
-      default:
-        return { copy: "Investigating an outage.", color: "var(--v2-depeg)" };
-    }
-  })();
-
+  // /v1/stats omits a state with zero assets, so once stats has loaded a
+  // missing key is a real 0, not missing data.
   const statItems = [
     {
-      value: stats?.by_state?.PEGGED ?? "-",
+      value: stats ? (stats.by_state?.PEGGED ?? 0) : "-",
       label: "Pegged",
       color: "var(--v2-peg)",
     },
     {
-      value: stats?.by_state?.DRIFT ?? "-",
+      value: stats ? (stats.by_state?.DRIFT ?? 0) : "-",
       label: "Drift",
       color: "var(--v2-drift)",
     },
     {
-      value: stats?.by_state?.DEPEG ?? "-",
+      value: stats ? (stats.by_state?.DEPEG ?? 0) : "-",
       label: "Depeg",
       color: "var(--v2-depeg)",
     },
     {
-      value: stats?.by_state?.CRITICAL ?? "-",
+      value: stats ? (stats.by_state?.CRITICAL ?? 0) : "-",
       label: "Critical",
       color: "var(--v2-crit)",
+    },
+    // Unknown is shown, not hidden: these are assets Pegana cannot price
+    // right now, and they are the first thing a status page owes the reader.
+    {
+      value: stats ? (stats.by_state?.UNKNOWN ?? 0) : "-",
+      label: "Unknown",
+      color: "var(--v2-unk)",
     },
   ];
 
@@ -379,10 +397,10 @@ function StatusBody() {
             }
           />
           <SourceRowV2
-            name="Alert delivery"
-            sourceRole="webhook dispatch"
-            state={deliveryState}
-            detail={deliveryDetail}
+            name="Asset coverage"
+            sourceRole="assets with a fresh reading"
+            state={coverageState}
+            detail={coverageDetail}
           />
           {SOURCES.map((s) => {
             const sourceAge = ready?.sources?.[s.key] ?? null;
@@ -402,10 +420,22 @@ function StatusBody() {
             );
           })}
         </ListRowsV2>
+        {coverage && coverage.dark.length > 0 && (
+          <p className="v2-in-prose mt-4" data-testid="status-dark-assets">
+            No fresh reading for {coverage.dark.length}{" "}
+            {coverage.dark.length === 1 ? "asset" : "assets"}
+            {coverage.staleSource > 0
+              ? ` (${coverage.staleSource} with a stale upstream source)`
+              : ""}
+            : {coverage.dark.join(", ")}. These show as Unknown everywhere
+            until their sources recover; Pegana does not publish a peg state it
+            cannot measure.
+          </p>
+        )}
 
         <hr className="v2-in-hr" />
         <h2 className="mb-4 text-[26px] font-medium leading-[1.15] tracking-[-0.02em] text-[var(--v2-text)]">
-          Alert activity. Rolling 24h.
+          Assets by state. Right now.
         </h2>
         <StatStripV2 items={statItems} />
         {recentAlerts && (

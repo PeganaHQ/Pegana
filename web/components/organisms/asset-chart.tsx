@@ -31,7 +31,8 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { PillTabs } from "@/components/molecules/pill-tabs";
-import { useHistory } from "@/lib/hooks/use-history";
+import { useHistoryRange } from "@/lib/hooks/use-history-range";
+import { historyCoverageNote } from "@/lib/asset/history-range";
 import { formatGap, isPlausibleDiscount, spreadSignClass } from "@/lib/api/format";
 import {
   legsAvailable,
@@ -45,7 +46,6 @@ import {
 } from "@/lib/asset/chart-thresholds";
 import { collapseFlaps } from "@/lib/asset/markers";
 import {
-  BUCKET_RANGE_MS,
   CHART_BUCKET_STORAGE_KEY,
   CHART_BUCKETS,
   scrubHalfWidthSeconds,
@@ -80,7 +80,7 @@ const BUCKETS = CHART_BUCKETS;
 
 /** "Legs" plots the two raw USD price legs, which only persist on the raw
  *  table (`discount_1m` has none) — so the view is pinned to the only
- *  raw-backed bucket. Keep in sync with `bucketParams`. */
+ *  raw-backed bucket. Keep in sync with `RANGE_PLAN` (lib/asset/history-range.ts). */
 const RAW_BUCKET: Bucket = "1h";
 
 /** Transition markers within this many seconds of each other collapse into one
@@ -131,20 +131,6 @@ interface AssetChartProps {
    *  scrub, so a page-level "which timeline row is active" state can stay in
    *  sync without re-implementing the clear itself. */
   onScrubCleared?: () => void;
-}
-
-function bucketParams(b: Bucket): {
-  bucket: "raw" | "1m";
-  from: string;
-  limit: number;
-} {
-  const now = Date.now();
-  const ms = BUCKET_RANGE_MS[b];
-  return {
-    bucket: ms <= BUCKET_RANGE_MS["1h"] ? "raw" : "1m",
-    from: new Date(now - ms).toISOString(),
-    limit: 2000,
-  };
 }
 
 /** Imperative handle exposed by `AssetChart` — lets the activity timeline (a
@@ -270,8 +256,14 @@ export const AssetChart = forwardRef<AssetChartHandle, AssetChartProps>(
           ? "baseline"
           : mode;
 
-    const params = useMemo(() => bucketParams(bucket), [bucket]);
-    const { data, isLoading } = useHistory(symbol, params);
+    // 1h raw, 24h one-minute, 7D/30D paged one-minute averaged to 5m/1h
+    // (lib/asset/history-range.ts). Keyed by range, not by a timestamp, so the
+    // page's own 24h prefetch and this chart share one request.
+    const { data: range, isLoading } = useHistoryRange(symbol, bucket);
+    const data = range?.points;
+    const coverageNote = range
+      ? historyCoverageNote(range.points, range.fromMs, range.truncated)
+      : null;
 
     // The API returns rows newest-first and may have duplicate seconds; LWC
     // requires strictly ascending unique timestamps. Bucket to the second,
@@ -395,6 +387,14 @@ export const AssetChart = forwardRef<AssetChartHandle, AssetChartProps>(
             />
           )}
         </ExpandShell>
+        {coverageNote && (
+          <p
+            className="mt-3 px-5 font-mono text-[11px] text-text-muted sm:px-0"
+            data-testid="history-coverage-note"
+          >
+            {coverageNote}
+          </p>
+        )}
       </section>
     );
   },

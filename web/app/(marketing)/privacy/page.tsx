@@ -20,33 +20,64 @@ export const metadata: Metadata = pageMetadata({
   path: "/privacy",
 });
 
-const LAST_UPDATED = "August 3, 2026";
+const LAST_UPDATED = "October 21, 2026";
 
+// Every processor and retention claim below was checked against the code and
+// config on 2026-10-21: web on Vercel (Web Analytics is cookieless), backend
+// on a Hostinger VPS behind Caddy with no access log, Sentry SDK in the
+// browser and server (ingestion currently rejected), docs on Mintlify, mail on
+// Hostinger, WebSocket connects logged with the client IP (crates/api-rs
+// src/ws.rs), REST requests not logged per request. Keep it that way: change this page in the same commit that
+// changes a processor.
 const SECTIONS: Array<{ title: string; body: ReactNode }> = [
   {
-    title: "Website (pegana.xyz)",
+    title: "Website (www.pegana.xyz)",
     body: (
       <>
-        The dashboard, asset detail pages, and methodology docs are served as
-        static or server-rendered HTML. We don&apos;t set any analytics cookies
-        or embed third-party tracking pixels. The following providers process
-        visitor or service data as part of normal operation: <b>Hetzner</b>{" "}
-        (backend hosting), <b>Vercel</b> (web hosting + analytics),{" "}
-        <b>Sentry</b> (error monitoring), and <b>Cloudflare R2</b> (backup
-        storage). Standard server logs (IP, user-agent, requested path, response
-        code) are retained for 30 days for abuse investigation and discarded
-        afterwards.
+        The site needs no account and sets no analytics or advertising cookies.
+        <b> Vercel</b> hosts it and receives each request (IP address, user
+        agent, requested path) to serve and protect the site, and keeps its own
+        short-lived request logs. We use <b>Vercel Web Analytics</b>, which
+        counts page views without cookies. The news strip on the dashboard
+        loads some thumbnails straight from <b>X</b> (pbs.twimg.com), so X sees
+        the request for those images; CoinGecko article images are fetched
+        through our own image proxy instead.
       </>
     ),
   },
   {
-    title: "API + WebSocket (/v1/*)",
+    title: "API + WebSocket (api.pegana.xyz)",
     body: (
       <>
-        Every API request is logged the same way as the website. We rate-limit
-        by IP to keep the service responsive. That rate-limit bucket lives in
-        memory and resets when the process restarts. No request body inspection,
-        no per-key analytics.
+        The API runs on a <b>Hostinger</b> virtual server. The rate limiter
+        keeps a per-IP request counter in memory only; it is never written to
+        disk and resets when the process restarts. The web server in front of
+        the API keeps no access log, and REST requests are not logged one by
+        one. The API does log the IP address of each WebSocket connection when
+        it opens. No request body inspection, no per-key analytics.
+      </>
+    ),
+  },
+  {
+    title: "Error monitoring",
+    body: (
+      <>
+        The website and backend include <b>Sentry</b>&apos;s error-monitoring
+        SDK. When an error report is sent it carries the page or endpoint, the
+        error, and the browser and operating system, and Sentry may record the
+        IP address the report came from. Session replay is not enabled. As of
+        the date above, Sentry is rejecting our reports, so none are being
+        stored.
+      </>
+    ),
+  },
+  {
+    title: "Docs and email",
+    body: (
+      <>
+        The documentation at docs.pegana.xyz is hosted by <b>Mintlify</b>,
+        which processes those visits under its own policy. Email to a
+        pegana.xyz address is handled by <b>Hostinger</b>&apos;s mail service.
       </>
     ),
   },
@@ -55,30 +86,23 @@ const SECTIONS: Array<{ title: string; body: ReactNode }> = [
     body: (
       <>
         Pegana pulls public data from Pyth, Sanctum, Jupiter, DexScreener,
-        DefiLlama, and Solana RPC providers. Those calls don&apos;t carry any
-        information about you, they&apos;re server-to-server requests asking
-        for on-chain or oracle data.
+        tokens.xyz, Kamino and Solana RPC providers including Helius. Those
+        calls don&apos;t carry any information about you, they&apos;re
+        server-to-server requests asking for on-chain, oracle or market data.
       </>
     ),
   },
   {
-    title: "Storage and security",
+    title: "Storage and retention",
     body: (
       <>
-        Operational data lives in Postgres. Backups go to a private Cloudflare
-        R2 bucket. Both are encrypted at rest. Sentry receives backend error
-        telemetry only. No request bodies or PII are sent. Browser-side Sentry
-        Replay is not enabled.
-      </>
-    ),
-  },
-  {
-    title: "Data retention",
-    body: (
-      <>
-        Server logs are retained for 30 days. Backups are retained for 30 days
-        in Cloudflare R2. Sentry events are retained per Sentry&apos;s default
-        retention period of 90 days; no PII is sent to Sentry.
+        Operational data (prices, peg states, receipts) lives in Postgres on
+        the same server; none of it is about visitors. Service logs rotate by
+        size and are not archived, so they cover hours to a few days,
+        including those WebSocket connection IPs. Offsite
+        backups to a private <b>Cloudflare R2</b> bucket are planned but not
+        running yet. Sentry keeps events for its default period (90 days)
+        once ingestion works.
       </>
     ),
   },
@@ -87,8 +111,9 @@ const SECTIONS: Array<{ title: string; body: ReactNode }> = [
     body: (
       <>
         The service is not directed at children under 13. If you believe a minor
-        has submitted data to us, contact the email above and we will remove the
-        record.
+        has submitted data to us, contact{" "}
+        <a href="mailto:rafael@pegana.xyz">rafael@pegana.xyz</a> and we will
+        remove the record.
       </>
     ),
   },
@@ -98,7 +123,9 @@ const SECTIONS: Array<{ title: string; body: ReactNode }> = [
       <>
         If we ever expand what we collect, the new policy ships before the new
         collection does. The <b>Last updated</b> date at the top of this page is
-        the source of truth.
+        the source of truth. The code that does all of this is public at{" "}
+        <a href="https://github.com/PeganaHQ/Pegana">github.com/PeganaHQ/Pegana</a>
+        .
       </>
     ),
   },

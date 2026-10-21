@@ -10,7 +10,9 @@
 // Shared helpers live in `lib/og/shared.ts`.
 
 import { ImageResponse } from "next/og";
-import { apiBase } from "@/lib/api/base";
+import { lookupAsset } from "@/lib/asset/fetch-asset";
+import { publicSurfaceOf } from "@/lib/asset/public-surface";
+import { OG_CACHE_CONTROL } from "@/lib/og/cache";
 import { WAVE_DATA_URL } from "@/lib/brand/wave";
 import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
 import {
@@ -29,9 +31,6 @@ import {
 } from "@/lib/og/shared";
 import { reconcileBps, holderSignedPct, formatUsdValue } from "@/lib/api/format";
 
-const API_BASE = apiBase();
-
-const CACHE_CONTROL = "public, max-age=60";
 
 // Card dimensions: vertical 4:5 portrait (social-post aspect ratio).
 const CARD_W = 1080;
@@ -63,17 +62,21 @@ export async function GET(
     const { symbol: rawSymbol } = await params;
     const symbol = resolveAliasSymbol(decodeURIComponent(rawSymbol));
 
-    // Fetch the asset data
-    let asset: AssetData | null = null;
-    try {
-      const r = await fetch(
-        `${API_BASE}/v1/assets/${encodeURIComponent(symbol)}`,
-        { cache: "no-store" },
-      );
-      if (r.ok) asset = (await r.json()) as AssetData;
-    } catch {
-      /* fall through to generic card */
+    // Same lookup (and 60s data cache) as the page. A leveraged synth (xSOL,
+    // no peg) or an unknown symbol has no card: the page 404s it, and a
+    // downloadable PNG must not publish a peg verdict for it either.
+    const lookup = await lookupAsset(symbol);
+    if (publicSurfaceOf(lookup) === "not_tracked") {
+      return new Response(`${displaySymbol(symbol)} is not tracked by Pegana`, {
+        status: 404,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": OG_CACHE_CONTROL,
+        },
+      });
     }
+    const asset: AssetData | null =
+      lookup.kind === "found" ? lookup.asset : null;
 
     const state = asset?.state ?? "UNKNOWN";
     const { color: stateColor, label: stateLabel } = satoriStateMeta(state);
@@ -369,7 +372,7 @@ export async function GET(
         width: CARD_W,
         height: CARD_H,
         ...(fonts ? { fonts } : {}),
-        headers: { "cache-control": CACHE_CONTROL },
+        headers: { "cache-control": OG_CACHE_CONTROL },
       },
     );
   } catch {

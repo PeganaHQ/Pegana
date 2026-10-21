@@ -75,6 +75,12 @@ describe("matchTerms — what counts as peg-relevant", () => {
 });
 
 describe("decodeXmlText", () => {
+  it("never leaves a tag behind (nested or entity-encoded)", () => {
+    expect(decodeXmlText("<scr<b>ipt>alert(1)")).not.toContain("<script");
+    expect(decodeXmlText("&lt;script&gt;x&lt;/script&gt;")).not.toContain("<script");
+    expect(decodeXmlText("1 &lt; 2 and 3 &gt; 2")).toBe("1 < 2 and 3 > 2");
+  });
+
   it("unwraps CDATA, strips tags and decodes entities", () => {
     expect(decodeXmlText("<![CDATA[<b>USDC</b> &amp; USDT]]>")).toBe("USDC & USDT");
   });

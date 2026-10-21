@@ -1,9 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo } from "react";
+import Link from "@/components/atoms/intent-link";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { useAssets } from "@/lib/hooks/use-assets";
+import { isRateLimited } from "@/lib/api/client";
+import { RATE_LIMITED_BODY } from "@/lib/api/rate-limit-copy";
 import { useAppReducedMotion } from "@/lib/motion/use-reduced-motion";
 import { useRevealV2 } from "@/lib/motion/use-reveal-v2";
 import { displaySymbol } from "@/lib/asset/display-symbol";
@@ -12,12 +14,12 @@ import { HeroRevealCanvas } from "@/components/organisms/v2/hero-reveal-canvas";
 import { DistanceFieldCanvas } from "@/components/organisms/v2/distance-field-canvas";
 import { SpreadSparkCanvas } from "@/components/organisms/v2/spread-spark-canvas";
 import {
+  BOARD_FILTERS,
+  type BoardFilter,
   type BoardRow,
   PillGhost,
   PillPrimary,
-  SAMPLE_BOARD_ROWS,
   StatePillV2,
-  sampleSparkSeries,
   selectBoardRows,
   sparkColorHex,
   v2SpreadSignClass,
@@ -36,24 +38,69 @@ const HIDE_M_FLEX = "hidden min-[860px]:flex";
 // columns — artifact's own `.sparkcell{display:none}@media(max-width:900px)`
 // carves out a wider breakpoint just for this cell.
 const HIDE_SPARK = "hidden scene:flex";
+const BOARD_ROW_COUNT = 8;
+
+/** What the board can honestly claim right now. `loading` is also the SSR
+ *  state: the server never has the asset list, so the first HTML paints a
+ *  neutral skeleton, never numbers. */
+export type BoardStatus =
+  | "live"
+  | "reconnecting"
+  | "loading"
+  | "unavailable"
+  | "rate_limited";
+
+/** A 429 is this network's per-IP budget, not an outage: it gets its own
+ *  status and the app-wide rate-limit wording (lib/api/rate-limit-copy.ts),
+ *  never "offline". */
+export function boardStatus(opts: {
+  hasData: boolean;
+  hasError: boolean;
+  rateLimited?: boolean;
+}): BoardStatus {
+  if (opts.hasError && opts.rateLimited) return "rate_limited";
+  if (opts.hasData) return opts.hasError ? "reconnecting" : "live";
+  return opts.hasError ? "unavailable" : "loading";
+}
+
+const STATUS_PILL: Record<BoardStatus, { label: string; dot: string }> = {
+  live: { label: "live · 60s", dot: "bg-[var(--v2-peg)]" },
+  reconnecting: { label: "reconnecting", dot: "bg-[var(--v2-unk)]" },
+  loading: { label: "loading", dot: "bg-[var(--v2-unk)]" },
+  unavailable: { label: "offline", dot: "bg-[var(--v2-unk)]" },
+  rate_limited: { label: "rate limited", dot: "bg-[var(--v2-drift)]" },
+};
 
 export function HeroV2() {
   const reduced = useAppReducedMotion();
-  const { data: assets } = useAssets();
+  const { data: assets, error, mutate } = useAssets();
+  const [filter, setFilter] = useState<BoardFilter>("all");
 
   // Date.now() is intentionally read inside the memo (not a dep): rows only
-  // need recomputing when the asset payload changes, and the "updated" stamps
-  // refresh naturally with each SWR revalidation-triggered render.
-  const liveRows = useMemo(() => selectBoardRows(assets, Date.now()), [assets]);
-  const usingSample = liveRows.length === 0;
-  const rows = usingSample ? SAMPLE_BOARD_ROWS : liveRows;
+  // need recomputing when the asset payload or the filter changes, and the
+  // "updated" stamps refresh naturally with each SWR revalidation render.
+  const rows = useMemo(
+    () => selectBoardRows(assets, Date.now(), BOARD_ROW_COUNT, filter),
+    [assets, filter],
+  );
+  // Never a sample board: no real rows means a skeleton (loading, and the SSR
+  // HTML) or an explicit unavailable state, and the "live" pill only shows
+  // over real data.
+  const status = boardStatus({
+    hasData: !!assets && assets.length > 0,
+    hasError: error != null || (!!assets && assets.length === 0),
+    rateLimited: isRateLimited(error),
+  });
+  const pill = STATUS_PILL[status];
   // null until the live list actually loads — never paint a hardcoded count on
   // the most-viewed page. The pill drops the "· N" suffix rather than asserting a
   // stale number (the previous `?? 69` was wrong against a live 68).
   const totalCount = assets?.length ?? null;
 
-  const h1 = useRevealV2<HTMLHeadingElement>({ mode: "load", index: 0 });
-  const sub = useRevealV2<HTMLParagraphElement>({ mode: "load", index: 1 });
+  // The h1 and sub are the LCP candidates, so they are NOT JS reveals (those
+  // SSR at opacity 0 and only show after hydration plus a timer, which pushed
+  // mobile LCP past 5s). They paint visible from the first byte and get a
+  // CSS-only rise (`.v2-hero-rise`, v2.css) that never touches opacity.
   const cta = useRevealV2<HTMLDivElement>({ mode: "load", index: 2 });
   const trust = useRevealV2<HTMLParagraphElement>({ mode: "load", index: 3 });
   const stage = useRevealV2<HTMLDivElement>({ mode: "load", index: 4 });
@@ -77,26 +124,24 @@ export function HeroV2() {
       <HeroRevealCanvas />
       <div className="relative z-[2] mx-auto max-w-[1180px] px-6 sm:px-10">
         <h1
-          ref={h1.ref}
-          style={h1.style}
-          className="mx-auto max-w-[16ch] text-balance text-[clamp(42px,6.6vw,80px)] font-medium leading-[1.02] tracking-[-0.025em] text-[var(--v2-text)]"
+          style={{ animationDelay: "100ms" }}
+          className="v2-hero-rise mx-auto max-w-[16ch] text-balance text-[clamp(42px,6.6vw,80px)] font-medium leading-[1.02] tracking-[-0.025em] text-[var(--v2-text)]"
         >
           Prove the peg of{" "}
           <span className="v2-iri-text">every asset you hold.</span>
         </h1>
 
         <p
-          ref={sub.ref}
-          style={sub.style}
-          className="mx-auto mt-[26px] max-w-[60ch] text-[clamp(16px,1.9vw,18px)] leading-[1.62] text-[var(--v2-muted)]"
+          style={{ animationDelay: "210ms" }}
+          className="v2-hero-rise mx-auto mt-[26px] max-w-[60ch] text-[clamp(16px,1.9vw,18px)] leading-[1.62] text-[var(--v2-muted)]"
         >
-          Every Solana stablecoin, LST and synthetic,{" "}
+          Solana stablecoins, LSTs and synthetics,{" "}
           <b className="font-medium text-[var(--v2-text)]">watched live</b>.
-          Each verdict ships as a{" "}
+          Every state change ships a{" "}
           <b className="font-medium text-[var(--v2-text)]">
-            signed, replayable receipt
-          </b>{" "}
-          . The moment it changes.
+            hashed, replayable receipt
+          </b>
+          , the moment it happens.
         </p>
 
         <div
@@ -175,34 +220,48 @@ export function HeroV2() {
               <span className="text-sm font-medium whitespace-nowrap">
                 Live peg board
               </span>
-              <span className="v2-board-tabs mr-auto flex items-center gap-1 overflow-x-auto rounded-full border border-[var(--v2-line)] bg-white/[0.04] p-[3px] font-mono">
-                <button
-                  type="button"
-                  className="cursor-default rounded-full bg-white/10 px-3 py-[5px] text-[12px] whitespace-nowrap text-[var(--v2-text)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px]"
-                >
-                  all{totalCount != null ? ` · ${totalCount}` : ""}
-                </button>
-                <span className="cursor-default px-3 py-[5px] text-[12px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px]">
-                  stables
-                </span>
-                <span className="cursor-default px-3 py-[5px] text-[12px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px]">
-                  LSTs
-                </span>
-                <span className="cursor-default px-3 py-[5px] text-[12px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px]">
-                  yield
-                </span>
+              <span
+                role="group"
+                aria-label="Filter the board by asset group"
+                className="v2-board-tabs mr-auto flex items-center gap-1 overflow-x-auto rounded-full border border-[var(--v2-line)] bg-white/[0.04] p-[3px] font-mono"
+              >
+                {BOARD_FILTERS.map((f) => {
+                  const active = filter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setFilter(f.id)}
+                      className={cn(
+                        "rounded-full px-3 py-[5px] text-[12px] whitespace-nowrap transition-colors duration-200 max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px] focus-visible:outline-2 focus-visible:outline-[var(--v2-text)]",
+                        active
+                          ? "bg-white/10 text-[var(--v2-text)]"
+                          : "text-[var(--v2-dim)] hover:text-[var(--v2-text)]",
+                      )}
+                    >
+                      {f.label}
+                      {f.id === "all" && totalCount != null
+                        ? ` · ${totalCount}`
+                        : ""}
+                    </button>
+                  );
+                })}
               </span>
-              <span className="inline-flex items-center gap-[7px] rounded-full border border-[var(--v2-line)] px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.06em] text-[var(--v2-muted)] max-[760px]:ml-auto">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--v2-peg)]" />
-                live · 60s
+              <span
+                data-testid="board-status"
+                data-status={status}
+                className="inline-flex items-center gap-[7px] rounded-full border border-[var(--v2-line)] px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.06em] text-[var(--v2-muted)] max-[760px]:ml-auto"
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", pill.dot)} />
+                {pill.label}
               </span>
             </div>
 
             <table
               className="v2-hero-btable"
-              aria-label={
-                usingSample ? "Live peg board (sample)" : "Live peg board"
-              }
+              aria-label="Live peg board"
+              aria-busy={status === "loading" ? true : undefined}
             >
               <thead>
                 <tr
@@ -231,6 +290,7 @@ export function HeroV2() {
                   </th>
                   <th
                     scope="col"
+                    title="How far the spread is from peg toward this asset's own depeg line"
                     className={cn("min-w-0 text-left text-[12px] whitespace-nowrap max-[1023px]:tracking-[0.04em]", HIDE_M)}
                   >
                     Band proximity
@@ -247,15 +307,49 @@ export function HeroV2() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
-                  <BoardRowView
-                    key={row.symbol}
-                    row={row}
-                    usingSample={usingSample}
-                    rowIndex={i}
-                    boardInView={stage.inView}
-                  />
-                ))}
+                {rows.length > 0 ? (
+                  rows.map((row, i) => (
+                    <BoardRowView
+                      key={row.symbol}
+                      row={row}
+                      rowIndex={i}
+                      boardInView={stage.inView}
+                    />
+                  ))
+                ) : status === "rate_limited" ? (
+                  <tr role="row" className="flex min-h-[200px] items-center justify-center px-5 py-10">
+                    <td className="flex max-w-[52ch] flex-col items-center gap-3 text-center font-mono text-[12.5px] text-[var(--v2-muted)]">
+                      <span data-testid="board-rate-limited">
+                        {RATE_LIMITED_BODY}
+                      </span>
+                    </td>
+                  </tr>
+                ) : status === "unavailable" ? (
+                  <tr role="row" className="flex min-h-[200px] items-center justify-center px-5 py-10">
+                    <td className="flex flex-col items-center gap-3 text-center font-mono text-[12.5px] text-[var(--v2-muted)]">
+                      <span data-testid="board-unavailable">
+                        Live data is unavailable right now.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void mutate?.()}
+                        className="rounded-full border border-[var(--v2-line2)] px-3.5 py-1.5 text-[12px] uppercase tracking-[0.06em] text-[var(--v2-text)] transition-colors hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-[var(--v2-text)]"
+                      >
+                        retry
+                      </button>
+                    </td>
+                  </tr>
+                ) : status === "loading" ? (
+                  Array.from({ length: BOARD_ROW_COUNT }, (_, i) => (
+                    <SkeletonRowView key={i} />
+                  ))
+                ) : (
+                  <tr role="row" className="flex justify-center px-5 py-10">
+                    <td className="font-mono text-[12.5px] text-[var(--v2-muted)]">
+                      No tracked assets in this group.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
 
@@ -268,29 +362,64 @@ export function HeroV2() {
               </Link>
             </div>
           </div>
-          {usingSample && (
-            <p className="mt-[13px] text-center font-mono text-[12px] tracking-[0.02em] text-[var(--v2-muted)]">
-              sample rows: production binds to /v1/assets
-            </p>
-          )}
         </div>
       </div>
     </header>
   );
 }
 
-// One board row, its own component so the sample-series `useMemo` is called
-// unconditionally per row instance — calling a hook inside the `.map()`
-// callback above would change hook-call count whenever the row list's
-// length changes across renders (rules of hooks).
+// Neutral placeholder row: same grid as a real row, bars instead of numbers.
+// Rendered while /v1/assets has not answered yet, which includes the SSR HTML.
+function SkeletonRowView() {
+  const bar = "block h-2.5 rounded-full bg-white/[0.06]";
+  return (
+    <tr
+      role="row"
+      aria-hidden
+      data-testid="board-skeleton-row"
+      className={cn(
+        "grid items-center gap-3 border-b border-[var(--v2-line)] px-5 py-[11px] last:border-b-0",
+        GRID_MOBILE,
+        GRID_DESKTOP,
+      )}
+    >
+      <td className="flex min-h-[34px] items-center gap-2.5">
+        <span className="h-5 w-5 shrink-0 rounded-full bg-white/[0.06]" />
+        <span className={cn(bar, "w-16")} />
+      </td>
+      <td>
+        <span className={cn(bar, "h-5 w-16")} />
+      </td>
+      <td className={HIDE_M}>
+        <span className={cn(bar, "ml-auto w-12")} />
+      </td>
+      <td className={HIDE_M}>
+        <span className={cn(bar, "ml-auto w-12")} />
+      </td>
+      <td>
+        <span className={cn(bar, "ml-auto w-10")} />
+      </td>
+      <td className={HIDE_M}>
+        <span className={cn(bar, "w-full")} />
+      </td>
+      <td className={HIDE_SPARK}>
+        <span className={cn(bar, "w-full")} />
+      </td>
+      <td className={HIDE_M}>
+        <span className={cn(bar, "ml-auto w-6")} />
+      </td>
+    </tr>
+  );
+}
+
+// One board row, its own component so per-row rendering stays isolated from
+// the board's list logic.
 function BoardRowView({
   row,
-  usingSample,
   rowIndex,
   boardInView,
 }: {
   row: BoardRow;
-  usingSample: boolean;
   rowIndex: number;
   boardInView: boolean;
 }) {
@@ -305,15 +434,11 @@ function BoardRowView({
   // (globals.css `transition: none !important`) neutralizes it exactly like
   // every other reveal in this file.
   const rowStaggerMs = rowIndex < 5 ? rowIndex * 35 : 0;
-  // Stable reference across re-renders (useAssets polls every 60s) — without
-  // this, SpreadSparkCanvas's draw-in effect would restart on every poll.
-  const sample = useMemo(() => sampleSparkSeries(row.symbol), [row.symbol]);
-  // No band data (sHYUSD's sample row, or any live UNKNOWN row) means no
-  // spread history either — matches the artifact's `.nospark` "-" cell
-  // rather than drawing a fabricated line for an asset with no verified
-  // source.
-  const noData = row.gaugePct == null;
-  const sparkData = noData ? undefined : usingSample ? sample : row.spark;
+  // No band reading (an UNKNOWN or stale row) means no trustworthy spread
+  // history either — matches the artifact's `.nospark` "-" cell rather than
+  // drawing a line for an asset with no verified source.
+  const noData = row.gaugePct == null && !row.crBand;
+  const sparkData = noData ? undefined : row.spark;
   const hasSpark = !!sparkData && sparkData.length >= 2;
 
   return (
@@ -385,7 +510,14 @@ function BoardRowView({
         {row.spreadLabel}
       </td>
       <td className={cn("items-center gap-2", HIDE_M_FLEX)}>
-        {row.gaugePct == null ? (
+        {row.crBand ? (
+          <abbr
+            title="Banded on collateral ratio, not on this spread"
+            className="font-mono text-[12px] text-[var(--v2-muted)] no-underline"
+          >
+            CR band
+          </abbr>
+        ) : row.gaugePct == null ? (
           <span className="font-mono text-[12px] text-[var(--v2-muted)]">
             -
           </span>

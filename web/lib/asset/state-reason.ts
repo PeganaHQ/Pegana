@@ -8,6 +8,8 @@ export function stateReasonLabel(reason?: string): string | null {
       return "price below NAV looks unreliable; check the feed";
     case "stale_source":
       return "source stale";
+    case "market_unavailable":
+      return "no market price right now";
     case "pyth_confidence_gate":
       return "oracle confidence too wide; reading not trusted";
     case "intrinsic_liveness":

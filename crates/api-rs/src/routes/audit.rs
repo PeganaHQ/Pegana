@@ -59,7 +59,7 @@ fn db_error<E: std::fmt::Debug>(e: E) -> (StatusCode, Json<serde_json::Value>) {
     tracing::error!(?e, "audit endpoint db error");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({"error": "internal"})),
+        Json(json!({"error": "internal", "message": "internal error"})),
     )
 }
 
@@ -238,7 +238,10 @@ pub async fn detail(
     let id = Uuid::parse_str(&alert_id).map_err(|_| {
         (
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "invalid_uuid"})),
+            Json(json!({
+                "error": "invalid_uuid",
+                "message": "alert_id must be a UUID",
+            })),
         )
     })?;
 
@@ -362,6 +365,7 @@ pub async fn detail(
             StatusCode::NOT_FOUND,
             Json(json!({
                 "error": "evidence_missing",
+                "message": "the alert exists but its receipt was never persisted",
                 "alert_id": alert_id,
                 "hint": "alert row exists but neither alert_evidence nor alert_evidence_pending has a matching row (push_alert audit + fallback both failed); check Sentry"
             })),
@@ -369,7 +373,11 @@ pub async fn detail(
     }
     Err((
         StatusCode::NOT_FOUND,
-        Json(json!({"error": "alert_not_found", "alert_id": alert_id})),
+        Json(json!({
+            "error": "alert_not_found",
+            "message": "no alert with this id",
+            "alert_id": alert_id,
+        })),
     ))
 }
 
@@ -386,7 +394,7 @@ pub async fn detail(
     responses(
         (status = 200, description = "Replay bundle JSON (Content-Disposition: attachment)"),
         (status = 400, description = "Invalid UUID format"),
-        (status = 404, description = "No replay artifact (DRIFT alerts) or unknown alert_id"),
+        (status = 404, description = "alert_not_found (unknown alert_id) or no_replay_artifact (the alert exists but no bundle was stored)", body = crate::error::ApiError),
     )
 )]
 pub async fn replay_bundle(
@@ -396,7 +404,10 @@ pub async fn replay_bundle(
     let id = Uuid::parse_str(&alert_id).map_err(|_| {
         (
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "invalid_uuid"})),
+            Json(json!({
+                "error": "invalid_uuid",
+                "message": "alert_id must be a UUID",
+            })),
         )
     })?;
     let bundle: Option<serde_json::Value> =
@@ -407,16 +418,40 @@ pub async fn replay_bundle(
             .map_err(db_error)?
             .flatten();
 
-    let bundle = bundle.ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "error": "no_replay_artifact",
-                "alert_id": alert_id,
-                "hint": "DRIFT alerts have no artifact; receipt available at /v1/audit/<id>"
-            })),
-        )
-    })?;
+    let bundle = match bundle {
+        Some(b) => b,
+        None => {
+            // Split "never heard of this id" from "receipt exists, no bundle".
+            // The old single hint blamed DRIFT, but DRIFT receipts do carry a
+            // bundle; a missing one is a pre-bundle receipt or a persistence gap.
+            let alert_exists: Option<(Uuid,)> =
+                sqlx::query_as("SELECT id FROM alerts WHERE id = $1")
+                    .bind(id)
+                    .fetch_optional(&state.pg)
+                    .await
+                    .map_err(db_error)?;
+            return Err(if alert_exists.is_none() {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "error": "alert_not_found",
+                        "message": "no alert with this id",
+                        "alert_id": alert_id,
+                    })),
+                )
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "error": "no_replay_artifact",
+                        "message": "this alert has no stored replay bundle",
+                        "alert_id": alert_id,
+                        "hint": format!("the receipt is still available at /v1/audit/{alert_id}"),
+                    })),
+                )
+            });
+        }
+    };
 
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
@@ -458,7 +493,10 @@ pub async fn onchain(
     let id = Uuid::parse_str(&alert_id).map_err(|_| {
         (
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "invalid_uuid"})),
+            Json(json!({
+                "error": "invalid_uuid",
+                "message": "alert_id must be a UUID",
+            })),
         )
     })?;
     // Read commit_status alongside the signature so a NULL tx_sig can be
@@ -529,6 +567,7 @@ pub async fn onchain(
                 StatusCode::NOT_FOUND,
                 Json(json!({
                     "error": error,
+                    "message": detail,
                     "commit_status": commit_status,
                     "detail": detail,
                     "alert_id": alert_id,
@@ -588,6 +627,7 @@ pub async fn onchain(
         StatusCode::NOT_FOUND,
         Json(json!({
             "error": error,
+            "message": detail,
             "commit_status": status,
             "detail": detail,
             "alert_id": alert_id,
@@ -609,11 +649,11 @@ pub struct IndexParams {
     /// previous client-side filter on the web/audit page was correct in
     /// shape but constrained to whatever batch the index returned (default
     /// 50 rows). With server filtering the full limit applies to matching
-    /// rows. Valid values: PEGGED, DRIFT, DEPEG, CRITICAL, BLACK_SWAN.
+    /// rows. Valid values: PEGGED, DRIFT, DEPEG, CRITICAL, BLACK_SWAN, UNKNOWN.
     /// Any other value yields HTTP 400 with `error: invalid_state`.
     pub state: Option<String>,
     /// Exact asset symbol (case-sensitive), e.g. `USDe`. 1-32 chars of
-    /// `[A-Za-z0-9._-]`; anything else yields HTTP 400 `invalid_asset`.
+    /// `[A-Za-z0-9._+*-]`; anything else yields HTTP 400 `invalid_asset`.
     pub asset: Option<String>,
     /// Lower bound on `detected_at`, INCLUSIVE. RFC 3339.
     pub since: Option<DateTime<Utc>>,
@@ -652,18 +692,15 @@ fn validate_index_filters(
 ) -> Result<IndexFilters<'_>, (StatusCode, Json<serde_json::Value>)> {
     let asset = match q.asset.as_deref() {
         None => None,
-        Some(a)
-            if (1..=32).contains(&a.len())
-                && a.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) =>
-        {
-            Some(a)
-        }
+        // Shared with the {symbol} path routes. Includes `+` and `*`: the old
+        // [A-Za-z0-9._-] set 400'd the real symbols `hyloSOL+` and `USD*`.
+        Some(a) if crate::params::is_valid_symbol(a) => Some(a),
         Some(other) => {
             return Err(bad_request(json!({
                 "error": "invalid_asset",
+                "message": crate::params::SYMBOL_HINT,
                 "got": other,
-                "hint": "1-32 chars of [A-Za-z0-9._-]",
+                "hint": "1-32 chars of [A-Za-z0-9._+*-]",
             })));
         }
     };
@@ -671,6 +708,7 @@ fn validate_index_filters(
         if until <= since {
             return Err(bad_request(json!({
                 "error": "invalid_range",
+                "message": "`until` must be strictly after `since`",
                 "hint": "`until` must be strictly after `since`",
             })));
         }
@@ -678,6 +716,7 @@ fn validate_index_filters(
     if q.before_id.is_some() && q.before.is_none() {
         return Err(bad_request(json!({
             "error": "invalid_cursor",
+            "message": "`before_id` requires `before`",
             "hint": "`before_id` requires `before`",
         })));
     }
@@ -690,10 +729,28 @@ fn validate_index_filters(
     })
 }
 
+/// Strip trailing zeros from a Postgres NUMERIC rendered as text
+/// (`0.002400` -> `0.0024`), matching the JSON convention (`dec_norm`).
+/// Value-identical; anything that does not parse is passed through unchanged.
+fn trim_decimal_text(raw: String) -> String {
+    match rust_decimal::Decimal::from_str_exact(raw.trim()) {
+        Ok(d) => d.normalize().to_string(),
+        Err(_) => raw,
+    }
+}
+
 /// Accepted values for the optional `?state=` filter on `GET /v1/audit`.
-/// Matches the `peg_state` Postgres ENUM. UNKNOWN is excluded — it's a
-/// startup sentinel, not a queryable end state.
-const VALID_AUDIT_STATES: &[&str] = &["PEGGED", "DRIFT", "DEPEG", "CRITICAL", "BLACK_SWAN"];
+/// Every `peg_state` ENUM value, including UNKNOWN: receipts can end in
+/// UNKNOWN (an asset going dark is a published transition), so a filter that
+/// rejected it disagreed with what the index returns.
+const VALID_AUDIT_STATES: &[&str] = &[
+    "PEGGED",
+    "DRIFT",
+    "DEPEG",
+    "CRITICAL",
+    "BLACK_SWAN",
+    "UNKNOWN",
+];
 
 #[utoipa::path(
     get,
@@ -703,7 +760,7 @@ const VALID_AUDIT_STATES: &[&str] = &["PEGGED", "DRIFT", "DEPEG", "CRITICAL", "B
     params(IndexParams),
     responses(
         (status = 200, description = "Index of recent audits, newest first", body = Vec<AuditIndexRow>),
-        (status = 400, description = "Invalid ?state= value (PEGGED|DRIFT|DEPEG|CRITICAL|BLACK_SWAN), malformed RFC 3339 timestamp or UUID (invalid_query), invalid_asset, invalid_range (until <= since) or invalid_cursor (before_id without before)"),
+        (status = 400, description = "Invalid ?state= value (PEGGED|DRIFT|DEPEG|CRITICAL|BLACK_SWAN|UNKNOWN), malformed RFC 3339 timestamp or UUID (invalid_query), invalid_asset, invalid_range (until <= since) or invalid_cursor (before_id without before)"),
     )
 )]
 pub async fn index(
@@ -711,7 +768,7 @@ pub async fn index(
     ValQuery(q): ValQuery<IndexParams>,
 ) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, Json<serde_json::Value>)> {
     // ADR-0014: cap at 100 (was 200 in the original spec) to keep this
-    // endpoint a cheap "small page" the global 300/min rate limit suffices for.
+    // endpoint a cheap "small page" the global per-IP rate limit (60/min by default) suffices for.
     let limit = q.limit.unwrap_or(50).min(100);
     let exclude_pegged = q.exclude_pegged.unwrap_or(true);
 
@@ -729,6 +786,10 @@ pub async fn index(
                 StatusCode::BAD_REQUEST,
                 Json(json!({
                     "error": "invalid_state",
+                    "message": format!(
+                        "invalid state '{other}'; valid values: {}",
+                        VALID_AUDIT_STATES.join(", ")
+                    ),
                     "got": other,
                     "valid": VALID_AUDIT_STATES,
                 })),
@@ -848,7 +909,7 @@ const CSV_PAGE: i64 = 1_000;
     responses(
         (status = 200, description = "Streaming CSV export (chunked transfer encoding); max 50k rows per ADR-0014"),
         (status = 400, description = "Invalid date range (> 90 days per ADR-0014) or missing parameters"),
-        (status = 429, description = "Rate limit exceeded — 10/min on this endpoint (ADR-0014), 300/min global; Retry-After header set"),
+        (status = 429, description = "Rate limit exceeded — 10/min on this endpoint (ADR-0014), 60/min global by default (see RateLimit-Limit); Retry-After header set"),
     )
 )]
 pub async fn csv(
@@ -863,6 +924,7 @@ pub async fn csv(
             StatusCode::BAD_REQUEST,
             Json(json!({
                 "error": "date_range_too_large",
+                "message": "the from..to window may span at most 90 days",
                 "max_days": 90,
                 "hint": "use ?from older + paginate via subsequent calls"
             })),
@@ -873,6 +935,7 @@ pub async fn csv(
             StatusCode::BAD_REQUEST,
             Json(json!({
                 "error": "invalid_date_range",
+                "message": "`to` must be strictly greater than `from`",
                 "hint": "`to` must be strictly greater than `from`"
             })),
         ));
@@ -1068,9 +1131,9 @@ pub async fn csv(
                     class: row.get::<String, _>("class"),
                     from_state: row.get::<String, _>("from_state"),
                     to_state: row.get::<String, _>("to_state"),
-                    discount: row.get::<String, _>("discount"),
-                    intrinsic_usd: row.get::<String, _>("intrinsic_usd"),
-                    market_usd: row.get::<String, _>("market_usd"),
+                    discount: trim_decimal_text(row.get::<String, _>("discount")),
+                    intrinsic_usd: trim_decimal_text(row.get::<String, _>("intrinsic_usd")),
+                    market_usd: trim_decimal_text(row.get::<String, _>("market_usd")),
                     confidence: row.get::<String, _>("confidence"),
                     detected_at: crate::serde_fmt::rfc3339_millis_z(&ts),
                     methodology_version: row.get::<String, _>("methodology_version"),
@@ -1163,21 +1226,44 @@ mod index_filter_tests {
     }
 
     #[test]
+    fn csv_decimals_are_trimmed_like_json() {
+        assert_eq!(trim_decimal_text("0.002400".into()), "0.0024");
+        assert_eq!(trim_decimal_text("-0.010000".into()), "-0.01");
+        assert_eq!(trim_decimal_text("1.000000000000000000".into()), "1");
+        assert_eq!(trim_decimal_text("150.17".into()), "150.17");
+        assert_eq!(trim_decimal_text("not-a-number".into()), "not-a-number");
+    }
+
+    #[test]
     fn empty_params_are_valid() {
         assert!(validate_index_filters(&params()).is_ok());
     }
 
     #[test]
     fn asset_accepts_real_symbols_and_rejects_junk() {
-        for ok in ["USDe", "JupUSD", "sHYUSD", "wBTC.e", "a-b_c"] {
+        for ok in [
+            "USDe", "JupUSD", "sHYUSD", "wBTC.e", "a-b_c", "hyloSOL+", "USD*",
+        ] {
             let mut q = params();
             q.asset = Some(ok.into());
             assert_eq!(validate_index_filters(&q).unwrap().asset, Some(ok));
         }
-        for bad in ["", "a b", "x'; DROP TABLE alerts;--", &"A".repeat(33), "é"] {
+        for bad in [
+            "",
+            "a b",
+            "x'; DROP TABLE alerts;--",
+            &"A".repeat(33),
+            "é",
+            "\0",
+        ] {
             let mut q = params();
             q.asset = Some(bad.into());
             assert_eq!(err_code(&q), "invalid_asset", "{bad:?}");
+            let err = validate_index_filters(&q).unwrap_err();
+            assert!(
+                err.1 .0.get("message").is_some(),
+                "envelope carries message"
+            );
         }
     }
 

@@ -71,8 +71,25 @@ When the Rust API changes:
 2. Confirm `https://api.pegana.xyz/openapi.json` includes the changed path
    after deploy.
 3. Commit + push to `main`.
-4. Mintlify rebuilds against the live `openapi.json` URL configured in
-   `docs-site/docs.json`.
+4. Mintlify reads the live `openapi.json` URL configured in `docs-site/docs.json`
+   **at build time only**. A push triggers a build, but the backend deploy
+   (`scripts/deploy.sh`) usually lands after it, so that build still renders the
+   old spec. After every API deploy that changes the spec, trigger a manual
+   rebuild of the latest commit from the Mintlify dashboard and confirm the API Reference tab shows the new text. The 2026-10-21
+   audit found the tab still describing `GET /v1/alerts` weeks after the route
+   was removed.
+
+### 6. Check pages before pushing
+
+Mintlify keeps serving the last good build of a page whose MDX does not parse,
+with no visible error. CI (`docs-site` job in `.github/workflows/ci.yml`) runs
+the same check; to run it locally:
+
+```sh
+mkdir -p /tmp/docs-check && cp scripts/check-docs-site.mjs /tmp/docs-check/
+npm install --prefix /tmp/docs-check --no-audit --no-fund @mdx-js/mdx@3.1.1 remark-gfm@4.0.1
+node /tmp/docs-check/check-docs-site.mjs docs-site   # from the repo root
+```
 
 ## Failure modes to watch for after deploy
 

@@ -4,7 +4,7 @@ import {
   coverageFloorDay,
   type AuditIndexRow,
 } from "@/lib/api/audit-alerts";
-import { api } from "@/lib/api/client";
+import { __resetAssetUniverseForTests, api } from "@/lib/api/client";
 
 const row = (over: Partial<AuditIndexRow>): AuditIndexRow => ({
   id: "a1",
@@ -87,7 +87,10 @@ function stubApi(auditPages: AuditIndexRow[][], assetsOk = true) {
 }
 
 describe("api.alerts", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __resetAssetUniverseForTests();
+  });
 
   it("calls /v1/audit server-side with asset/since/until, never /v1/alerts", async () => {
     const urls = stubApi([[row({})]]);
@@ -120,7 +123,10 @@ describe("api.alerts", () => {
 });
 
 describe("api.alertsWindow", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __resetAssetUniverseForTests();
+  });
 
   const full = (n: number, startMin: number) =>
     Array.from({ length: n }, (_, i) =>
@@ -160,5 +166,33 @@ describe("api.alertsWindow", () => {
     stubApi([[]]);
     const w = await api.alertsWindow({ since: "2026-01-01T00:00:00.000Z" });
     expect(w).toMatchObject({ rows: [], complete: true, coverageFloorDay: null });
+  });
+});
+
+describe("shared asset universe", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __resetAssetUniverseForTests();
+  });
+
+  it("api.alerts reuses a recent /v1/assets list instead of refetching it", async () => {
+    const urls = stubApi([[row({})], [row({})]]);
+    await api.assets();
+    await api.alerts();
+    await api.alerts();
+    expect(urls.filter((u) => /\/v1\/assets$/.test(u))).toHaveLength(1);
+  });
+
+  it("concurrent callers share one in-flight /v1/assets request", async () => {
+    const urls = stubApi([[row({})]]);
+    await Promise.all([api.assets(), api.assets(), api.alerts()]);
+    expect(urls.filter((u) => /\/v1\/assets$/.test(u))).toHaveLength(1);
+  });
+
+  it("a filtered list is never served from the shared universe", async () => {
+    const urls = stubApi([]);
+    await api.assets();
+    await api.assets({ class: "lst" });
+    expect(urls.some((u) => u.includes("/v1/assets?class=lst"))).toBe(true);
   });
 });

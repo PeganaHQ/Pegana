@@ -165,7 +165,7 @@ describe("ProductTabsV2 - live verdict playground", () => {
   it("the token chip carries a real icon and a chevron, no modal text line", () => {
     renderIt();
     expect(chip().querySelector("img")?.getAttribute("src")).toBe(
-      "/tokens/J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn.webp",
+      "https://api.pegana.xyz/static/tokens/J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn.webp",
     );
     expect(chip().textContent).toBe("jitoSOL");
   });
@@ -328,7 +328,7 @@ describe("ProductTabsV2 - WebSocket", () => {
     expect(clients[0].disconnect).not.toHaveBeenCalled();
     act(() => clients[0].opts.onClose?.());
     expect(clients[0].disconnect).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(/polling every 10s/)).toBeInTheDocument();
+    expect(screen.getByText(/polling every 30s/)).toBeInTheDocument();
     expect(screen.getByTestId("verdict-state")).toHaveTextContent("PEGGED");
   });
 
@@ -366,7 +366,7 @@ describe("ProductTabsV2 - polish", () => {
       expect(i.getAttribute("alt")).toBe("");
     }
     expect(imgs[0].getAttribute("src")).toBe(
-      "/tokens/J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn.webp",
+      "https://api.pegana.xyz/static/tokens/J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn.webp",
     );
   });
 

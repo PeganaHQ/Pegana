@@ -92,7 +92,7 @@ pub async fn current(
         tracing::error!(?e, "methodology current query failed");
         (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "internal"})),
+            Json(json!({"error": "internal", "message": "internal error"})),
         )
     })?;
 

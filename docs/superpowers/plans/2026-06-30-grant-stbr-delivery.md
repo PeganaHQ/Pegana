@@ -33,7 +33,7 @@
 
 Run:
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana
+cd <repo>
 grep -rn "pegana-replay-cli" . | grep -vE "target/|node_modules/|\.git/|Cargo.lock"
 ```
 The rename touches the PACKAGE NAME only. Confirmed hits that MUST change (Steps 2–3):

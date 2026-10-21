@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { usePathname } from "next/navigation";
 import { Activity, House, ListFilter, Scale } from "lucide-react";
 import { m } from "framer-motion";

@@ -13,10 +13,7 @@
 // abuse is still visible in `mcp_call_log` even when `withCallLog`
 // never sees the call.
 
-import {
-  extractFingerprint,
-  fingerprintFromMeta,
-} from "@/middleware/fingerprint";
+import { extractFingerprint } from "@/middleware/fingerprint";
 import { checkRateLimit, RATE_LIMIT_PER_MIN } from "@/middleware/rate-limit";
 import { logCall } from "@/middleware/call-log";
 import { pool } from "@/db";
@@ -26,20 +23,13 @@ type AnyHandler<Args, R> = (args: Args, extra?: unknown) => Promise<R>;
 
 interface ExtraLike {
   requestInfo?: { headers?: Record<string, string | string[] | undefined> };
-  // x402's createPaymentWrapper replaces the SDK's RequestHandlerExtra
-  // with an internal context whose only identifying field is `_meta`
-  // (the JSON-RPC `_meta` carrying the `x402/payment` payload). We read
-  // both paths so the middleware works for free tools (headers) and
-  // paid tools (meta) without caller-side knowledge.
-  meta?: Record<string, unknown>;
-  _meta?: Record<string, unknown>;
   _fingerprint?: string;
 }
 
 /**
- * Outer middleware: extracts the agent fingerprint from the incoming
- * HTTP headers (via the MCP SDK's RequestHandlerExtra.requestInfo) and
- * enforces the 100 calls/min cap from ADR-0011.
+ * Outer middleware: extracts the caller fingerprint (hashed client IP) from
+ * the incoming HTTP headers (via the MCP SDK's RequestHandlerExtra.requestInfo)
+ * and enforces the 100 calls/min cap from ADR-0011.
  *
  * Side-effects:
  *   * Decorates `extra._fingerprint` so downstream wrappers (notably
@@ -54,9 +44,9 @@ export function withRateLimit<Args extends Record<string, unknown>, R>(
 ): AnyHandler<Args, R> {
   return async (args, extra) => {
     const e = (extra ?? {}) as ExtraLike;
-    const fingerprint =
-      extractFingerprint(e.requestInfo?.headers) ??
-      fingerprintFromMeta(e._meta ?? e.meta);
+    // Keyed on the proxy-reported client IP only: no client-supplied value
+    // (e.g. an unverified X-PAYMENT header) may choose the bucket.
+    const fingerprint = extractFingerprint(e.requestInfo?.headers);
     e._fingerprint = fingerprint;
 
     if (!checkRateLimit(fingerprint)) {

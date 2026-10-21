@@ -1,11 +1,12 @@
 import type { NextRequest } from "next/server";
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
+import { siteOrigin } from "@/lib/seo/site-origin";
 
 // Lazy-imported so build doesn't fail when the API base isn't reachable; the
 // route fetches at request time and degrades to an empty (still well-formed)
 // feed when upstream is down.
 const API_BASE = apiBase();
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
+const SITE_URL = siteOrigin();
 
 // `GET /v1/audit` index row (bare array). It has no class or discount.
 interface AlertRow {
@@ -62,7 +63,7 @@ export async function GET(_req: NextRequest) {
     // transitions INTO a non-PEGGED state only, unlike the in-app views
     // (api.alerts), which also include recoveries to PEGGED.
     const res = await fetch(`${API_BASE}/v1/audit?limit=100`, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...serverApiHeaders() },
       // Cache for 5 minutes — the feed is consumed by readers polling on
       // their own schedule (RSS clients typically poll 15–60 min).
       next: { revalidate: 300 },

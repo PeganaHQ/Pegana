@@ -1,11 +1,11 @@
 """Pegana Python SDK — receipt-verification + full /v1 API client.
 
-v0.3.0 ships the stable v0.1 receipt-verification surface (verify_alert,
+v0.4.0 ships the stable v0.1 receipt-verification surface (verify_alert,
 get_onchain, peg_feed) plus the OpenAPI-generated `pegana_api_client`
 package covering every /v1 endpoint with typed models + sync/async httpx.
 The spec lives at https://api.pegana.xyz/openapi.json.
 
-Not yet on PyPI — install from source until published.
+Published on PyPI as ``pegana-sdk`` (``pip install pegana-sdk``).
 """
 
 from __future__ import annotations
@@ -197,4 +197,4 @@ __all__ = [
     "DEFAULT_WS_URL",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

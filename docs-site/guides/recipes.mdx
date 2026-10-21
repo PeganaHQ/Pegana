@@ -14,7 +14,7 @@ Read the class-aware verdict — don't re-threshold `discount` yourself.
 
 ```bash
 curl -s https://api.pegana.xyz/v1/assets/USDC/state
-# { "asset":"USDC","state":"PEGGED","discount":"-0.0001","updated_at":"…Z","stale":false }
+# { "asset":"USDC","state":"PEGGED","discount":"0.0001","updated_at":"…Z","stale":false }
 ```
 
 <Warning>
@@ -36,8 +36,13 @@ join by Solana mint, use `GET /v1/peg/feed` (also a `data` array; each signal ca
 
 ```bash
 curl -s https://api.pegana.xyz/v1/assets \
-  | jq '[ .data[] | select(.state != "PEGGED" and .state != "UNKNOWN") ]'
+  | jq '[ .data[] | select(.state != null and .state != "PEGGED" and .state != "UNKNOWN") ]'
 ```
+
+Assets that are tracked but have no fresh snapshot come back with `"state": "UNKNOWN"` and
+`"state_reason": "stale_source"`; the `.state != "UNKNOWN"` clause keeps them out of the
+off-peg list. To see them separately, select `.state == "UNKNOWN"`. The `.state != null`
+clause is only a defensive guard; the API does not return a `null` state today.
 
 ## Chart the discount history
 
@@ -51,12 +56,14 @@ curl -s "https://api.pegana.xyz/v1/assets/jitoSOL/history?from=2026-07-23T00:00:
 
 ## Verify a state transition on your own machine
 
-Every alert emits a public receipt with frozen inputs and an on-chain commit.
+Every state transition emits a public receipt with frozen inputs. Transitions into `DEPEG`,
+`CRITICAL` or `BLACK_SWAN` are also anchored on-chain when on-chain commits are enabled;
+`DRIFT` and recoveries never are (see [Audit receipts](/guides/rest-api#audit-receipts)).
 
 ```bash
 curl -s https://api.pegana.xyz/v1/audit/<alert_id>
 # re-derive it byte-exact with the CLI (add --json for a CI-friendly verdict line).
-# Older receipts exit 3 VERSION_MISMATCH and print the install command for the matching release (receipts older than 0.4.0 verify by hash only):
+# Older receipts exit 3 VERSION_MISMATCH and print the install command for the matching release (receipts older than methodology 0.4.0 have no published verifier; check their hash at https://www.pegana.xyz/audit/<alert_id>):
 cargo install pegana-replay && pegana-replay --alert-id <alert_id>
 ```
 
@@ -71,7 +78,7 @@ Advisory, anonymous-by-construction — see the [Systemic impact](/guides/rest-a
 section for the full model.
 
 <CardGroup cols={2}>
-  <Card title="WebSocket" href="/guides/websocket">Sub-second push instead of polling.</Card>
+  <Card title="WebSocket" href="/guides/websocket">Live push instead of polling.</Card>
   <Card title="REST API" href="/guides/rest-api">Poll state, history and audit receipts.</Card>
   <Card title="MCP for agents" href="/guides/mcp">Point an LLM agent straight at the oracle.</Card>
   <Card title="Errors" href="/guides/errors">Codes + the `x-request-id` header.</Card>

@@ -12,6 +12,9 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Keep the runner disk in check: no debuginfo, no incremental artifacts.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_INCREMENTAL: 0
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -51,6 +54,13 @@ jobs:
       PEGANA_INTEGRATION_REDIS: redis://default:ci-redis-pw@localhost:6379
 
     steps:
+      - name: Free disk space
+        # The workspace build overflowed the runner disk ("No space left on
+        # device" compiling api-rs). Drop preinstalled toolchains we never use.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
@@ -196,6 +206,39 @@ jobs:
       - name: Lint
         run: bun run lint
       - run: bun run test
+
+  # Mintlify serves the last good build of a page whose MDX fails to parse,
+  # silently. A stray `<1s` froze the live changelog for months (2026-07-26 to
+  # 2026-10-21). Compile every page, validate docs.json and resolve internal
+  # links so a broken page fails here instead.
+  docs-site:
+    name: docs-site (MDX compile · docs.json · internal links)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+      - name: Install the MDX compiler (pinned, outside the repo)
+        run: |
+          mkdir -p "$RUNNER_TEMP/docs-check"
+          cp scripts/check-docs-site.mjs "$RUNNER_TEMP/docs-check/"
+          npm install --prefix "$RUNNER_TEMP/docs-check" --no-audit --no-fund \
+            @mdx-js/mdx@3.1.1 remark-gfm@4.0.1
+      - name: Check docs-site
+        run: node "$RUNNER_TEMP/docs-check/check-docs-site.mjs" docs-site
+
+  # docs/ is mirrored to the public repo. Fail if a mirrored doc names the
+  # production SSH host, a user@IP login or the deploy key path. The private
+  # dated runbooks under docs/ops/ are withheld from the mirror and excluded.
+  public-docs-redaction:
+    name: public docs redaction (no prod host in mirrored docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Scan mirrored docs
+        if: hashFiles('scripts/tests/public-docs-redaction.test.sh') != ''
+        run: bash scripts/tests/public-docs-redaction.test.sh
 
   audit-rust:
     name: cargo-audit

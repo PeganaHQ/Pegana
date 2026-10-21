@@ -32,8 +32,13 @@ means the asset is live but its thresholds are still being validated on mainnet 
 </ResponseField>
 
 <ResponseField name="risk_side" type="RiskSide">
-Which direction of `discount` is the risk: `below` (USD/FX anchors — a discount from peg)
-or `either` (NAV anchors — premium and discount both matter).
+Which direction of `discount` can move `state`. `below` means only a discount is a risk
+signal. Every tracked asset is `below` today: for USD and FX anchors a discount from the peg
+is the risk, and for LSTs, yield-bearing stables and synthetic leverage a premium (market
+above NAV) is informational and classifies `PEGGED` (ADR-0021). On LSTs and yield-bearing
+stables only, an implausibly large premium reads `UNKNOWN` with `state_reason:
+premium_sanity`, not a depeg; synthetic leverage has no premium sanity bound. `either` (both
+directions escalate) is reserved and not used by any tracked class.
 </ResponseField>
 
 ## Key fields
@@ -43,8 +48,9 @@ Canonical Solana mint — the **stable join key**. Resolve assets by mint, not s
 </ResponseField>
 
 <ResponseField name="discount" type="string (decimal)">
-Signed spread vs. fair value, as a fraction (`"0.0123"` = 123 bps). ×10000 → bps. Negative =
-below peg / discount, positive = premium. See [Response format](/guides/rest-api#response-format).
+Signed spread vs. fair value, as a fraction (`"0.0123"` = 123 bps). ×10000 → bps. Computed as
+`1 − market / intrinsic`: positive = market below fair value (a discount), negative = market
+above fair value (a premium). See [Response format](/guides/rest-api#response-format).
 </ResponseField>
 
 <ResponseField name="intrinsic_usd / market_usd" type="string (decimal)">
@@ -63,8 +69,10 @@ Size/context signals (USD market cap, circulating supply). **Never** an input to
 </ResponseField>
 
 <ResponseField name="worst_abs_24h / jitter_bps_24h" type="string (decimal)">
-Trailing-24h stability: worst absolute discount, and peak-to-trough dispersion (jitter).
-Same signed-fraction units as `discount`.
+Trailing-24h stability: worst absolute discount, and peak-to-trough dispersion (jitter,
+always ≥ 0). Both use the same fraction units as `discount` (`"0.0012"` = 12 bps).
+**Despite its name, `jitter_bps_24h` is a fraction, not basis points**: multiply by 10000 to
+get bps. The name is frozen within `v1`.
 </ResponseField>
 
 <ResponseField name="monitoring_only" type="boolean">

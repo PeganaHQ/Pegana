@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useSWRConfig } from "swr";
 import { IconArrowRight } from "@/components/atoms/icon-arrow-right";
 import { STALE_AFTER_MS } from "@/lib/asset/freshness";

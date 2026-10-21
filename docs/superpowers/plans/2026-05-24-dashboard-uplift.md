@@ -84,7 +84,7 @@ describe("flip loader", () => {
 - [ ] **Step 1.2: Run — must fail**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run tests/unit/motion/flip-loader.test.ts
+cd <repo>/web && pnpm vitest run tests/unit/motion/flip-loader.test.ts
 ```
 
 Expected: FAIL — module not found.
@@ -120,7 +120,7 @@ export async function getFlip() {
 - [ ] **Step 1.4: Run — must pass**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run tests/unit/motion/flip-loader.test.ts
+cd <repo>/web && pnpm vitest run tests/unit/motion/flip-loader.test.ts
 ```
 
 Expected: PASS, 2/2.
@@ -128,7 +128,7 @@ Expected: PASS, 2/2.
 - [ ] **Step 1.5: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/lib/motion/get-flip.ts web/tests/unit/motion/flip-loader.test.ts
+cd <repo> && git add web/lib/motion/get-flip.ts web/tests/unit/motion/flip-loader.test.ts
 git commit -m "feat(motion): Flip plugin loader (mirrors get-scroll-trigger singleton)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -183,7 +183,7 @@ describe("PegHealthStrip", () => {
 - [ ] **Step 2.2: Run — must fail**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run tests/unit/organisms/peg-health-strip.test.tsx
+cd <repo>/web && pnpm vitest run tests/unit/organisms/peg-health-strip.test.tsx
 ```
 
 Expected: FAIL — module not found.
@@ -257,7 +257,7 @@ export function PegHealthStrip({ assets, liveOverrides = {}, onPipClick }: PegHe
 - [ ] **Step 2.4: Run — must pass**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run tests/unit/organisms/peg-health-strip.test.tsx
+cd <repo>/web && pnpm vitest run tests/unit/organisms/peg-health-strip.test.tsx
 ```
 
 Expected: PASS, 3/3.
@@ -265,7 +265,7 @@ Expected: PASS, 3/3.
 - [ ] **Step 2.5: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/peg-health-strip.tsx web/tests/unit/organisms/peg-health-strip.test.tsx
+cd <repo> && git add web/components/organisms/peg-health-strip.tsx web/tests/unit/organisms/peg-health-strip.test.tsx
 git commit -m "feat(dashboard): peg-health-strip organism
 
 Full-bleed 23-pip strip across the top. State drives bar color + height.
@@ -329,7 +329,7 @@ describe("ActiveMiniChart", () => {
 - [ ] **Step 3.2: Run — must fail**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run tests/unit/molecules/active-mini-chart.test.tsx
+cd <repo>/web && pnpm vitest run tests/unit/molecules/active-mini-chart.test.tsx
 ```
 
 Expected: FAIL — module not found.
@@ -495,7 +495,7 @@ export function ActiveStrip({ assets, liveOverrides = {} }: ActiveStripProps) {
 - [ ] **Step 3.5: Run — must pass**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run tests/unit/molecules/active-mini-chart.test.tsx
+cd <repo>/web && pnpm vitest run tests/unit/molecules/active-mini-chart.test.tsx
 ```
 
 Expected: PASS, 2/2.
@@ -503,7 +503,7 @@ Expected: PASS, 2/2.
 - [ ] **Step 3.6: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/molecules/active-mini-chart.tsx web/components/organisms/active-strip.tsx web/tests/unit/molecules/active-mini-chart.test.tsx
+cd <repo> && git add web/components/molecules/active-mini-chart.tsx web/components/organisms/active-strip.tsx web/tests/unit/molecules/active-mini-chart.test.tsx
 git commit -m "feat(dashboard): active-mini-chart molecule + active-strip organism
 
 Replaces the text-only ACTIVE row inside DashboardOverview. Each active asset
@@ -523,7 +523,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 4.1: Read current implementation**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && wc -l components/organisms/dashboard-overview.tsx && cat components/organisms/dashboard-overview.tsx | head -60
+cd <repo>/web && wc -l components/organisms/dashboard-overview.tsx && cat components/organisms/dashboard-overview.tsx | head -60
 ```
 
 Identify how the current `<Counter>` is wired and how anomaly count is computed. Preserve the data derivation logic.
@@ -595,7 +595,7 @@ return { anomalies, widestSymbol, medianBps /* and existing fields */ };
 - [ ] **Step 4.3: Typecheck**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
+cd <repo>/web && pnpm typecheck
 ```
 
 Expected: PASS.
@@ -603,7 +603,7 @@ Expected: PASS.
 - [ ] **Step 4.4: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/dashboard-overview.tsx
+cd <repo> && git add web/components/organisms/dashboard-overview.tsx
 git commit -m "feat(dashboard): hero replaced with AnchorNumber + editorial sentence + 4-stat strip
 
 Drops the previous Counter-based hero. AnchorNumber inherits from landing
@@ -625,7 +625,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 5.1: Read existing CompareCta**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && cat components/molecules/compare-cta.tsx
+cd <repo>/web && cat components/molecules/compare-cta.tsx
 ```
 
 Understand current model. CompareShelf is a richer version (sticky position, chips with remove, add button, CTA).
@@ -690,8 +690,8 @@ export function CompareShelf({ symbols, onRemove, onAdd }: CompareShelfProps) {
 - [ ] **Step 5.3: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/molecules/compare-shelf.tsx
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/components/molecules/compare-shelf.tsx
 git commit -m "feat(dashboard): compare-shelf molecule (sticky watchlist with chips + CTA)
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -731,7 +731,7 @@ describe("AssetPreviewPane", () => {
 - [ ] **Step 6.2: Run — must fail**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run tests/unit/organisms/asset-preview-pane.test.tsx
+cd <repo>/web && pnpm vitest run tests/unit/organisms/asset-preview-pane.test.tsx
 ```
 
 Expected: FAIL — module not found.
@@ -823,7 +823,7 @@ export function AssetPreviewPane({ symbol, name, spread, state, intrinsic, marke
 - [ ] **Step 6.4: Run — must pass**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run tests/unit/organisms/asset-preview-pane.test.tsx
+cd <repo>/web && pnpm vitest run tests/unit/organisms/asset-preview-pane.test.tsx
 ```
 
 Expected: PASS, 2/2.
@@ -831,7 +831,7 @@ Expected: PASS, 2/2.
 - [ ] **Step 6.5: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/asset-preview-pane.tsx web/tests/unit/organisms/asset-preview-pane.test.tsx
+cd <repo> && git add web/components/organisms/asset-preview-pane.tsx web/tests/unit/organisms/asset-preview-pane.test.tsx
 git commit -m "feat(dashboard): asset-preview-pane (cross-component hover linking)
 
 Slides in on the right (>=1280px). Hidden on smaller viewports. Receives
@@ -937,7 +937,7 @@ function TableRow({ a, liveOverrides, onHover }: { a: AssetCardData; liveOverrid
 - [ ] **Step 7.4: Typecheck**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
+cd <repo>/web && pnpm typecheck
 ```
 
 Expected: PASS.
@@ -945,7 +945,7 @@ Expected: PASS.
 - [ ] **Step 7.5: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/asset-table.tsx
+cd <repo> && git add web/components/organisms/asset-table.tsx
 git commit -m "feat(dashboard): asset-table hover linking + Flip on sort + tick-flash on spread
 
 - onRowHover callback wires cross-component preview.
@@ -1060,13 +1060,13 @@ In the same file:
 - [ ] **Step 8.3: Typecheck + smoke**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
+cd <repo>/web && pnpm typecheck
 ```
 
 Then visually with dev:
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm dev > /tmp/web-dev-t8.log 2>&1 &
+cd <repo>/web && pnpm dev > /tmp/web-dev-t8.log 2>&1 &
 sleep 5
 curl -sI http://localhost:3000/dashboard | head -1
 kill %1 2>/dev/null
@@ -1075,7 +1075,7 @@ kill %1 2>/dev/null
 - [ ] **Step 8.4: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/app/dashboard/page.tsx
+cd <repo> && git add web/app/dashboard/page.tsx
 git commit -m "feat(dashboard): mount peg-strip + active-strip + compare-shelf + preview-pane
 
 Cross-component hover linking wired via useState<hoveredSymbol> — table
@@ -1095,7 +1095,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 9.1: Inspect current implementation**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && cat components/organisms/alerts-sidebar.tsx | head -60
+cd <repo>/web && cat components/organisms/alerts-sidebar.tsx | head -60
 ```
 
 Find the alert-row render. Each alert has a timestamp; sort by recency (already done? confirm).
@@ -1133,8 +1133,8 @@ If the alert row is currently a sub-component, modify it; otherwise inline these
 - [ ] **Step 9.3: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/alerts-sidebar.tsx
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/components/organisms/alerts-sidebar.tsx
 git commit -m "feat(dashboard): alerts sidebar recency-intensity fade + fresh-alert highlight
 
 Alerts <5 min: opacity 1. <60 min: 0.8. Older: 0.55. <1 min:
@@ -1153,7 +1153,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 10.1: Read current implementation**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && cat components/organisms/dashboard-filters.tsx | head -80
+cd <repo>/web && cat components/organisms/dashboard-filters.tsx | head -80
 ```
 
 Confirm current filter structure (search + class/peg select).
@@ -1218,8 +1218,8 @@ If client-side: derive the filtered list with `useMemo` and pass to AssetTable.
 - [ ] **Step 10.4: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/dashboard-filters.tsx web/app/dashboard/page.tsx
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/components/organisms/dashboard-filters.tsx web/app/dashboard/page.tsx
 git commit -m "feat(dashboard): faceted filter chips with live counts (class + state)
 
 Replaces select dropdowns with chip rows. Counts derived from unfiltered
@@ -1268,8 +1268,8 @@ In `dashboard/page.tsx`:
 - [ ] **Step 11.4: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/app/dashboard/page.tsx web/components/organisms/asset-table.tsx
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/app/dashboard/page.tsx web/components/organisms/asset-table.tsx
 git commit -m "feat(dashboard): mobile defaults to mosaic + stacked panels below table
 
 Detects viewport on mount, picks mosaic at <=767px. Preview pane stays
@@ -1365,7 +1365,7 @@ test.describe("Dashboard — mobile 390", () => {
 - [ ] **Step 12.2: Run against dev**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm dev > /tmp/web-dev-t12.log 2>&1 &
+cd <repo>/web && pnpm dev > /tmp/web-dev-t12.log 2>&1 &
 sleep 5
 PLAYWRIGHT_BASE_URL=http://localhost:3000 pnpm exec playwright test tests/e2e/dashboard.spec.ts --reporter=line 2>&1 | tail -15
 kill %1 2>/dev/null
@@ -1376,7 +1376,7 @@ Expected: ALL PASS. If failures: read the trace, identify root cause, fix in a s
 - [ ] **Step 12.3: Run the FULL e2e suite to verify zero regressions**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm dev > /tmp/web-dev-final.log 2>&1 &
+cd <repo>/web && pnpm dev > /tmp/web-dev-final.log 2>&1 &
 sleep 5
 PLAYWRIGHT_BASE_URL=http://localhost:3000 pnpm exec playwright test --reporter=line 2>&1 | tail -8
 kill %1 2>/dev/null
@@ -1387,8 +1387,8 @@ Expected: ALL pre-existing tests still PASS. Landing tests + reduced-motion + in
 - [ ] **Step 12.4: Run unit tests + typecheck**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm vitest run 2>&1 | tail -5
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
+cd <repo>/web && pnpm vitest run 2>&1 | tail -5
+cd <repo>/web && pnpm typecheck
 ```
 
 Expected: ALL PASS.
@@ -1396,7 +1396,7 @@ Expected: ALL PASS.
 - [ ] **Step 12.5: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/tests/e2e/dashboard.spec.ts
+cd <repo> && git add web/tests/e2e/dashboard.spec.ts
 git commit -m "test(e2e): dashboard regression — desktop + mobile + hover linking
 
 Asserts: peg-health strip pips, anchor number visible + counts up, filter

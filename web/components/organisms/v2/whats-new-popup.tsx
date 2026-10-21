@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { useAppReducedMotion } from "@/lib/motion/use-reduced-motion";
@@ -97,7 +97,10 @@ export function WhatsNewPopup() {
         </div>
 
         <p className="mt-2.5 text-[13.5px] leading-[1.45] text-[var(--v2-text)]">
-          68 assets watched live. Every verdict on-chain and replayable.
+          {/* No hardcoded asset count (it drifts), and only severe
+              transitions are anchored on Solana, not every verdict. */}
+          Live peg states, and a receipt you can check for every state
+          change.
         </p>
 
         <Link

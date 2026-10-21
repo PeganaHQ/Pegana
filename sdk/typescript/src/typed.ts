@@ -1,4 +1,4 @@
-// Full typed Pegana API client — v0.2.0.
+// Full typed Pegana API client (introduced in v0.2.0).
 //
 // Covers every `/v1` endpoint with per-operation typed `data`/`error`, driven by
 // `src/schema.d.ts` (auto-generated from the live OpenAPI 3.1 spec at
@@ -7,7 +7,7 @@
 // (`PeganaClient`, `getAudit`/`getAuditIndex`/`getOnchain`/`verifyAlert`) remain
 // exported from `./index` unchanged for backward compatibility.
 //
-// Kept `private: true` in package.json (publish is a founder decision, v0.3.0).
+// Published to npm as `@peganahq/sdk-ts`; see CHANGELOG.md for each release.
 
 import createClient, { type Client, type Middleware } from "openapi-fetch";
 import type { paths } from "./schema.js";
@@ -28,6 +28,17 @@ export interface PeganaApiOptions {
 }
 
 const DEFAULT_BASE = "https://api.pegana.xyz";
+
+/**
+ * Drop every trailing "/". A linear scan instead of `/\/+$/`, which a regex
+ * engine can backtrack on quadratically for a long run of slashes followed by
+ * another character (CodeQL js/polynomial-redos).
+ */
+function trimTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url.charCodeAt(end - 1) === 47) end--;
+  return url.slice(0, end);
+}
 
 /**
  * Create a fully-typed Pegana API client covering all `/v1` endpoints.
@@ -51,7 +62,7 @@ const DEFAULT_BASE = "https://api.pegana.xyz";
  */
 export function createPeganaApi(opts: PeganaApiOptions = {}): Client<paths> {
   const client = createClient<paths>({
-    baseUrl: (opts.baseUrl ?? DEFAULT_BASE).replace(/\/+$/, ""),
+    baseUrl: trimTrailingSlashes(opts.baseUrl ?? DEFAULT_BASE),
     fetch: opts.fetch,
   });
   if (opts.token) {

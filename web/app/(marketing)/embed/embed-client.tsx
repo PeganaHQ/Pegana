@@ -74,10 +74,10 @@ export function EmbedClient() {
     };
   }, []);
 
-  const src = `https://pegana.xyz/embed/badge/${encodeURIComponent(symbol)}?theme=${theme}${sparkline ? "" : "&sparkline=off"}`;
+  const src = `https://www.pegana.xyz/embed/badge/${encodeURIComponent(symbol)}?theme=${theme}${sparkline ? "" : "&sparkline=off"}`;
   const iframeSnippet = `<iframe src="${src}" width="320" height="${sparkline ? 86 : 56}" frameborder="0" loading="lazy" title="Pegana ${displaySymbol(symbol)} peg status"></iframe>`;
   const previewSrc = `/embed/badge/${encodeURIComponent(symbol)}?theme=${theme}${sparkline ? "" : "&sparkline=off"}`;
-  const markdownSnippet = `[![${displaySymbol(symbol)} peg status](${src}&format=svg)](https://pegana.xyz/audit?asset=${encodeURIComponent(symbol)})`;
+  const markdownSnippet = `[![${displaySymbol(symbol)} peg status](${src}&format=svg)](https://www.pegana.xyz/audit?asset=${encodeURIComponent(symbol)})`;
   const reactSnippet = `<iframe
   src="${src}"
   width={320}

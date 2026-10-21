@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useEffect, useMemo, useState } from "react";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { useLive } from "@/lib/store/live-context";

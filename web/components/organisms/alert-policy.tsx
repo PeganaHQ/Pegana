@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { cn } from "@/lib/utils/cn";
 import { IconArrowRight } from "@/components/atoms/icon-arrow-right";
 import { displaySymbol } from "@/lib/asset/display-symbol";

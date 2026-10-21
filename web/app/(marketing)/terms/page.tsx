@@ -19,7 +19,7 @@ export const metadata: Metadata = pageMetadata({
   path: "/terms",
 });
 
-const LAST_UPDATED = "August 3, 2026";
+const LAST_UPDATED = "October 21, 2026";
 
 const SECTIONS: Array<{ title: string; body: ReactNode }> = [
   {
@@ -56,9 +56,10 @@ const SECTIONS: Array<{ title: string; body: ReactNode }> = [
     body: (
       <>
         The public API at <b>api.pegana.xyz</b> is open and unauthenticated. We
-        rate-limit by IP to keep it healthy. If you want a higher quota, email
+        rate-limit by IP to keep it healthy: 60 REST requests a minute and 20
+        open WebSocket connections per IP. If you want a higher quota, email
         the address at the bottom. We&apos;ll probably say yes if your use case
-        is benign.
+        is benign. Or run your own instance from the source (see below).
       </>
     ),
   },
@@ -77,9 +78,11 @@ const SECTIONS: Array<{ title: string; body: ReactNode }> = [
     body: (
       <>
         Don&apos;t scrape the API in a way that degrades it for others.
-        Don&apos;t attempt to bypass rate limits. Don&apos;t mirror the service
-        under a different brand without attribution. If you build something on
-        top of the API, a credit link is appreciated but not required.
+        Don&apos;t attempt to bypass rate limits. Don&apos;t re-serve the hosted
+        API under a different brand without attribution. If you build something
+        on top of the API, a credit link is appreciated but not required. These
+        rules are about the service we host; running your own copy of the code
+        is covered by its license below.
       </>
     ),
   },
@@ -105,12 +108,18 @@ const SECTIONS: Array<{ title: string; body: ReactNode }> = [
     title: "Source code + license",
     body: (
       <>
-        Pegana&apos;s deterministic methodology, verification types, and the Replay
-        CLI are open source under{" "}
-        <a href="https://opensource.org/license/mit">MIT</a>. The rest of the
-        platform (indexer, engine, API, web console, and MCP server) is not
-        open source and is not available for self-hosting. The brand and logo
-        (the Pegana wordmark) are not licensed under MIT.
+        All of Pegana is open source under the{" "}
+        <a href="https://opensource.org/license/mit">MIT license</a>: the
+        indexer, engine, API, web app, MCP server, methodology and verification
+        types at{" "}
+        <a href="https://github.com/PeganaHQ/Pegana">github.com/PeganaHQ/Pegana</a>
+        , and the Replay CLI at{" "}
+        <a href="https://github.com/PeganaHQ/ReplayCLI">
+          github.com/PeganaHQ/ReplayCLI
+        </a>
+        . You can read, run, modify and self-host it under that license. The
+        license covers the code; it does not let you present another service
+        as Pegana or use the Pegana name and wordmark as your own brand.
       </>
     ),
   },

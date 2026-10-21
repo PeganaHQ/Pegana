@@ -15,23 +15,23 @@
 //   • position_bucket is a k-floored RANGE; no raw counts, no pubkeys persisted.
 
 import { createSolanaRpc, address, type Address } from "@solana/kit";
-import { KaminoMarket } from "@kamino-finance/klend-sdk";
+import { KaminoMarket, KaminoObligation, Obligation } from "@kamino-finance/klend-sdk";
+import type Decimal from "decimal.js";
 import { trackedAssets, upsertHfBand } from "../db";
 import type { LoopHfBandRow, TrackedAsset } from "../db";
 import type { Source } from "../core/poll";
 import { computeHfBands, sleep, type HfEntry } from "../core/hf-bands";
 import { incr } from "../metrics";
-import {
-  isQuotaExhausted,
-  isRetryableRpcFailure,
-  QuotaExhaustedError,
-} from "../rpc-quota";
+import { redactSecrets } from "../fetch-util";
+import { isQuotaExhausted, QuotaExhaustedError } from "../rpc-quota";
+import { pagedProgramAccounts, type GpaFilter } from "../rpc-paged";
 
 const KLEND_MAIN = "7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF";
 const KLEND_PROGRAM = "KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD";
 const SLOT_MS = 450;
 
 function heliusRpcUrl(): string | null {
+  if (process.env.HELIUS_RPC_URL) return process.env.HELIUS_RPC_URL; // test/one-off override
   const key = process.env.HELIUS_API_KEY;
   return key ? `https://mainnet.helius-rpc.com/?api-key=${key}` : null;
 }
@@ -40,24 +40,84 @@ function heliusRpcUrl(): string | null {
 // Pace between reserves + retry a rate-limited call with backoff.
 const RESERVE_DELAY_MS = Number(process.env.KAMINO_HF_RESERVE_DELAY_MS ?? 1500);
 
-async function enumerateWithRetry(
+const DEPOSITS_LIMIT = 8; // klend ObligationCollateral slots per obligation.
+const OBLIGATION_SPAN = Obligation.layout.span + 8; // + 8-byte discriminator.
+const OBLIGATION_RESERVE_BUDGET_MS = Number(
+  process.env.KAMINO_HF_RESERVE_BUDGET_MS ?? 15 * 60_000,
+);
+const GPA_PAGE_SIZE = Number(process.env.KAMINO_HF_GPA_PAGE_SIZE ?? 1000);
+
+type PageFn = typeof pagedProgramAccounts;
+
+/**
+ * Fold every obligation that deposited `reserve` into anonymous HfEntry rows,
+ * STREAMING: at most one bounded gPA page (~GPA_PAGE_SIZE x 4.6 KB) is in memory
+ * at a time and each obligation is folded then dropped. This replaces the SDK's
+ * getAllObligationsByDepositedReserve, whose unpaginated getProgramAccounts
+ * buffered hundreds of MB per call and OOM-looped the container (2026-10-21).
+ * Throws PagingBudgetExceededError rather than returning a partial (misleading)
+ * distribution.
+ */
+export async function streamReserveEntries(
   market: KaminoMarket,
+  url: string,
   reserve: Address,
   slot: bigint,
-  retries = 4,
-): Promise<Awaited<ReturnType<KaminoMarket["getAllObligationsByDepositedReserve"]>>> {
-  for (let attempt = 0; ; attempt++) {
+  pager: PageFn = pagedProgramAccounts,
+): Promise<HfEntry[]> {
+  const deadlineMs = Date.now() + OBLIGATION_RESERVE_BUDGET_MS;
+  const collateralExchangeRates = new Map<Address, Decimal>();
+  const cumulativeBorrowRates = new Map<Address, Decimal>();
+  const entries: HfEntry[] = [];
+  for (let i = 0; i < DEPOSITS_LIMIT; i++) {
+    const filters: GpaFilter[] = [
+      { dataSize: OBLIGATION_SPAN },
+      { memcmp: { offset: 96 + 136 * i, bytes: reserve.toString(), encoding: "base58" } },
+      { memcmp: { offset: 32, bytes: market.address.toString(), encoding: "base58" } },
+    ];
     try {
-      return await market.getAllObligationsByDepositedReserve(reserve, slot);
+      for await (const page of pager(url, KLEND_PROGRAM, filters, {
+        pageSize: GPA_PAGE_SIZE,
+        deadlineMs,
+      })) {
+        for (const acct of page) {
+          const state = Obligation.decode(Buffer.from(acct.data, "base64"));
+          if (!state) continue;
+          KaminoObligation.addRatesForObligation(
+            market,
+            state.deposits,
+            state.borrows,
+            collateralExchangeRates,
+            cumulativeBorrowRates,
+            slot,
+          );
+          const o = new KaminoObligation(
+            market,
+            acct.pubkey as Address,
+            state,
+            collateralExchangeRates,
+            cumulativeBorrowRates,
+          );
+          const s = o.refreshedStats;
+          const ltv = Number(s.loanToValue);
+          const liq = Number(s.liquidationLtv);
+          if (ltv <= 0) continue; // no borrow -> not part of the liquidation cascade
+          const dep = o.deposits.get(reserve);
+          entries.push({
+            hf: liq / ltv,
+            collateralUsd: dep ? Number(dep.marketValueRefreshed) : 0,
+            debtUsd: Number(s.userTotalBorrow),
+            liquidationLtv: liq,
+          });
+          // `o` (incl. its owner pubkey) goes out of scope here — never persisted.
+        }
+      }
     } catch (e) {
-      // Quota exhaustion is also a 429, but no backoff brings the allowance
-      // back — retrying only spends more of what is already gone. See
-      // src/rpc-quota.ts for the 8-day incident this encodes.
       if (isQuotaExhausted(e)) throw new QuotaExhaustedError("kamino_hf", e);
-      if (!isRetryableRpcFailure(e) || attempt >= retries) throw e;
-      await sleep(2000 * (attempt + 1)); // 2s, 4s, 6s, 8s backoff
+      throw e;
     }
   }
+  return entries;
 }
 
 export async function fetchKaminoHfDistribution(
@@ -94,9 +154,9 @@ export async function fetchKaminoHfDistribution(
     if (!res) continue;
     if (paced) await sleep(RESERVE_DELAY_MS); // stay under the Helius rate limit
     paced = true;
-    let obligations;
+    let entries: HfEntry[];
     try {
-      obligations = await enumerateWithRetry(market, res.addr, slot);
+      entries = await streamReserveEntries(market, url, res.addr, slot);
     } catch (e) {
       // Quota exhaustion ends the CYCLE: walking the remaining reserves would
       // hit the same wall and burn more of an allowance that is already spent.
@@ -108,21 +168,8 @@ export async function fetchKaminoHfDistribution(
         );
         break;
       }
-      console.warn(`[kamino_hf] ${a.symbol} enumeration failed:`, String(e));
+      console.warn(`[kamino_hf] ${a.symbol} enumeration failed (skipping reserve):`, redactSecrets(String(e)));
       continue;
-    }
-    const entries: HfEntry[] = [];
-    for (const o of obligations) {
-      const s = o.refreshedStats;
-      const ltv = Number(s.loanToValue);
-      const liq = Number(s.liquidationLtv);
-      if (ltv <= 0) continue; // no borrow → not part of the liquidation cascade
-      const hf = liq / ltv;
-      // Per-reserve collateral USD for THIS asset (never total identity).
-      const dep = o.deposits.get(res.addr);
-      const collateralUsd = dep ? Number(dep.marketValueRefreshed) : 0;
-      entries.push({ hf, collateralUsd, debtUsd: Number(s.userTotalBorrow), liquidationLtv: liq });
-      // `o` (incl. its owner pubkey) goes out of scope here — never persisted.
     }
     out.push(...computeHfBands(a.symbol, "kamino", entries, ts, Number(slot)));
   }

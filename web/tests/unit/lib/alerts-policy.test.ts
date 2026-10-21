@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   thresholdsFor,
+  isCollateralRatioThresholds,
   dedupSecondsFor,
   formatDedupWindow,
   formatThreshold,
@@ -96,5 +97,18 @@ describe("formatThreshold", () => {
   it("uses whole percent for large thresholds", () => {
     expect(formatThreshold(1500)).toBe("15%");
     expect(formatThreshold(6000)).toBe("60%");
+  });
+});
+
+describe("isCollateralRatioThresholds", () => {
+  it("detects cr_* bands and nothing else", () => {
+    expect(
+      isCollateralRatioThresholds({ cr_drift: 130, cr_depeg: 115 }),
+    ).toBe(true);
+    expect(
+      isCollateralRatioThresholds({ drift_bps: 15, depeg_bps: 50, critical_bps: 200 }),
+    ).toBe(false);
+    expect(isCollateralRatioThresholds(null)).toBe(false);
+    expect(isCollateralRatioThresholds({ cr_drift: "x" })).toBe(false);
   });
 });

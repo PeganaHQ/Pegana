@@ -1,9 +1,11 @@
 "use client";
 
+import { isRateLimited } from "@/lib/api/client";
+import { RATE_LIMITED_BODY, RATE_LIMITED_LABEL } from "@/lib/api/rate-limit-copy";
 import { useCallback, useMemo, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { StatePip } from "@/components/atoms/state-pip";
 import { TokenIcon } from "@/components/atoms/token-icon";
 import {
@@ -66,7 +68,8 @@ const PRESETS: ReadonlyArray<{
     pick: (assets) =>
       assets
         .filter((a) =>
-          ["hyUSD", "sHYUSD", "xSOL", "hyloSOL"].includes(a.symbol),
+          // xSOL is a leveraged synth with no peg, off the public surface.
+          ["hyUSD", "sHYUSD", "hyloSOL"].includes(a.symbol),
         )
         .map((a) => a.symbol),
   },
@@ -291,7 +294,7 @@ function ComparePageBody() {
             Overlay the spread history of up to four assets. Pick between
             equivalents (jitoSOL vs mSOL), watch correlated pairs under stress
             (USDC vs USDT), or stack a whole protocol (Hylo&apos;s hyUSD /
-            eHYUSD / xSOL).
+            eHYUSD / hyloSOL).
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[11px] text-text-caption">
             <span>
@@ -320,7 +323,12 @@ function ComparePageBody() {
             a silently blank compare, or drop a populated `?s=` URL selection
             down to "No assets selected". Mirrors /assets, /dashboard and
             /events' `!!error && !data` gate. */}
-        {backendDown && <CompareBackendDown onRetry={() => mutate()} />}
+        {backendDown && (
+          <CompareBackendDown
+            onRetry={() => mutate()}
+            rateLimited={isRateLimited(error)}
+          />
+        )}
 
         {!backendDown && (
           <>
@@ -688,16 +696,28 @@ export default function ComparePage() {
 // Backend-unreachable state — same copy/shape as /assets, /dashboard and
 // /events: this means the Pegana API itself failed, not that nothing is
 // selected yet (see the `backendDown` gate above).
-function CompareBackendDown({ onRetry }: { onRetry: () => void }) {
+function CompareBackendDown({
+  onRetry,
+  rateLimited = false,
+}: {
+  onRetry: () => void;
+  rateLimited?: boolean;
+}) {
   return (
     <section className="border-t border-hairline py-16 text-center">
       <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-st-drift">
-        ● Live feed unreachable
+        ● {rateLimited ? RATE_LIMITED_LABEL : "Live feed unreachable"}
       </p>
       <p className="mx-auto mt-3 max-w-[360px] text-[13px] leading-[1.6] text-text-muted">
-        The Pegana API isn&apos;t responding right now, so assets can&apos;t be
-        loaded for comparison. Your selection is preserved in the URL and will
-        resolve automatically once the feed is healthy.
+        {rateLimited ? (
+          RATE_LIMITED_BODY
+        ) : (
+          <>
+            The Pegana API isn&apos;t responding right now, so assets can&apos;t
+            be loaded for comparison. Your selection is preserved in the URL and
+            will resolve automatically once the feed is healthy.
+          </>
+        )}
       </p>
       <div className="mt-5 flex items-center justify-center gap-3">
         <button

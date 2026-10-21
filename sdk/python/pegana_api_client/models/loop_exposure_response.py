@@ -24,23 +24,50 @@ class LoopExposureResponse:
         advisory_note (str): ADR-0036 inv.9 — this is a model estimate, not a verifiable receipt.
         asset (str):
         by_protocol (list[LoopByProtocol]):
-        coverage (str): `full` | `partial` | `unknown` — worst across covered protocols.
+        cascade_coverage (str): Coverage of the `cascade` alone, the same value `simulate-depeg` reports
+            as its `coverage` for this asset: `partial` when fresh health-factor bands
+            exist, `unknown` when none do (enumerator not run, or bands older than 3
+            hours). With `unknown` the cascade is omitted: the liquidatable amount is
+            NOT known, which is different from "nothing liquidates".
+        coverage (str): `full` | `partial` | `unknown` for the whole response (exposure rollup AND
+            cascade). `unknown` when there is no exposure data. Never `full` once a
+            cascade is involved: a cascade built from k-floored bands is `partial`,
+            and a missing cascade (no fresh bands) also makes the response `partial`.
         debt_usd (str):
-        loop_exposure_usd (str): Σ leveraged collateral (USD) across covered protocols.
+        loop_exposure_usd (str): Σ leveraged collateral (USD) across covered protocols: the deposits of
+            leverage loops only (Kamino leverage/multiply pairs, Jupiter Lend vaults
+            with this asset as collateral). Narrower than `cascade[].liquidatable_usd`,
+            which counts every borrowing position holding the asset.
         cascade (list[CascadeRung] | Unset): Depeg-cascade across the preset shock grid ($0 → $Nm as the depeg deepens),
-            so a client renders the whole stress ladder from one call. Empty when no HF
-            distribution has been enumerated for this asset.
-        collateral_usd (None | str | Unset):
+            so a client renders the whole stress ladder from one call. Omitted when no
+            fresh HF distribution exists for this asset (`cascade_coverage: unknown`).
+
+            Basis: each rung's `liquidatable_usd` is the TOTAL collateral (USD) of the
+            positions whose health factor crosses 1 at that shock, counting every
+            position that holds this asset as collateral, looped or not. It is
+            therefore NOT a subset of `loop_exposure_usd` (leveraged collateral only)
+            and can exceed it; compare it with `collateral_usd` instead.
+        cascade_updated_at (None | str | Unset): RFC3339 of the OLDEST health-factor band the `cascade` was built from,
+            i.e. how old the cascade can be. Bands older than 3 hours are never
+            used. Absent when there is no cascade.
+        collateral_usd (None | str | Unset): Σ collateral base (USD) across covered protocols. On Kamino it is the
+            reserve's total supply of the asset, of which `loop_exposure_usd` is the
+            leveraged part. On Jupiter Lend it is the vault collateral itself, so
+            there it equals that protocol's share of `loop_exposure_usd`. This, not
+            `loop_exposure_usd`, is the comparable basis for the cascade's
+            `liquidatable_usd`.
         updated_at (None | str | Unset): RFC3339 of the freshest protocol snapshot (absent when no data).
     """
 
     advisory_note: str
     asset: str
     by_protocol: list[LoopByProtocol]
+    cascade_coverage: str
     coverage: str
     debt_usd: str
     loop_exposure_usd: str
     cascade: list[CascadeRung] | Unset = UNSET
+    cascade_updated_at: None | str | Unset = UNSET
     collateral_usd: None | str | Unset = UNSET
     updated_at: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -55,6 +82,8 @@ class LoopExposureResponse:
             by_protocol_item = by_protocol_item_data.to_dict()
             by_protocol.append(by_protocol_item)
 
+        cascade_coverage = self.cascade_coverage
+
         coverage = self.coverage
 
         debt_usd = self.debt_usd
@@ -67,6 +96,12 @@ class LoopExposureResponse:
             for cascade_item_data in self.cascade:
                 cascade_item = cascade_item_data.to_dict()
                 cascade.append(cascade_item)
+
+        cascade_updated_at: None | str | Unset
+        if isinstance(self.cascade_updated_at, Unset):
+            cascade_updated_at = UNSET
+        else:
+            cascade_updated_at = self.cascade_updated_at
 
         collateral_usd: None | str | Unset
         if isinstance(self.collateral_usd, Unset):
@@ -87,6 +122,7 @@ class LoopExposureResponse:
                 "advisory_note": advisory_note,
                 "asset": asset,
                 "by_protocol": by_protocol,
+                "cascade_coverage": cascade_coverage,
                 "coverage": coverage,
                 "debt_usd": debt_usd,
                 "loop_exposure_usd": loop_exposure_usd,
@@ -94,6 +130,8 @@ class LoopExposureResponse:
         )
         if cascade is not UNSET:
             field_dict["cascade"] = cascade
+        if cascade_updated_at is not UNSET:
+            field_dict["cascade_updated_at"] = cascade_updated_at
         if collateral_usd is not UNSET:
             field_dict["collateral_usd"] = collateral_usd
         if updated_at is not UNSET:
@@ -118,6 +156,8 @@ class LoopExposureResponse:
 
             by_protocol.append(by_protocol_item)
 
+        cascade_coverage = d.pop("cascade_coverage")
+
         coverage = d.pop("coverage")
 
         debt_usd = d.pop("debt_usd")
@@ -132,6 +172,17 @@ class LoopExposureResponse:
                 cascade_item = CascadeRung.from_dict(cascade_item_data)
 
                 cascade.append(cascade_item)
+
+        def _parse_cascade_updated_at(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        cascade_updated_at = _parse_cascade_updated_at(
+            d.pop("cascade_updated_at", UNSET)
+        )
 
         def _parse_collateral_usd(data: object) -> None | str | Unset:
             if data is None:
@@ -155,10 +206,12 @@ class LoopExposureResponse:
             advisory_note=advisory_note,
             asset=asset,
             by_protocol=by_protocol,
+            cascade_coverage=cascade_coverage,
             coverage=coverage,
             debt_usd=debt_usd,
             loop_exposure_usd=loop_exposure_usd,
             cascade=cascade,
+            cascade_updated_at=cascade_updated_at,
             collateral_usd=collateral_usd,
             updated_at=updated_at,
         )

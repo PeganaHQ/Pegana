@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { OG_CACHE_CONTROL } from "@/lib/og/cache";
 import { WAVE_DATA_URL } from "@/lib/brand/wave";
 import { displaySymbol } from "@/lib/asset/display-symbol";
 import {
@@ -10,6 +11,7 @@ import {
   SATORI_MONO,
   loadGeistFonts,
 } from "@/lib/og/shared";
+import { serverApiHeaders } from "@/lib/api/base";
 
 export const alt = "Pegana audit receipt";
 export const size = { width: 1200, height: 630 };
@@ -48,7 +50,11 @@ export default async function Image({
 
   let data: AuditSummary | null = null;
   try {
-    const r = await fetch(`${API_BASE}/v1/audit/${id}`, { cache: "no-store" });
+    // A receipt is immutable once written, so its card can be cached hard.
+    const r = await fetch(`${API_BASE}/v1/audit/${encodeURIComponent(id)}`, {
+      headers: serverApiHeaders(),
+      next: { revalidate: 3600 },
+    });
     if (r.ok) data = (await r.json()) as AuditSummary;
   } catch {
     // Unreachable upstream → render the generic shell below.
@@ -192,6 +198,17 @@ export default async function Image({
         </div>
       </div>
     </div>,
-    { ...size, ...(fonts ? { fonts } : {}) },
+    {
+      ...size,
+      ...(fonts ? { fonts } : {}),
+      // Receipts never change, so a found receipt caches for a day at the CDN.
+      // The generic fallback (receipt not found or API unreachable) gets the
+      // short social-card TTL so a transient error does not stick.
+      headers: {
+        "Cache-Control": data
+          ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
+          : OG_CACHE_CONTROL,
+      },
+    },
   );
 }

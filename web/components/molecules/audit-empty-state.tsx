@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 
 // Trust-Layer v0.1.0. AuditEmptyState.
 //

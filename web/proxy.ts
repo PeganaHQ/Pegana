@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildCspForEnv } from "@/lib/security/csp";
-import { routeRequest } from "@/lib/routing/host-routing";
+import { CONSOLE_HOST, routeRequest } from "@/lib/routing/host-routing";
 
 // Vercel multi-domain routing — Next.js 16 Proxy convention.
 //
@@ -96,7 +96,11 @@ export function proxy(request: NextRequest) {
   //
   // Redirecting here, before any CSP is attached, keeps the whole session on
   // one origin so `'self'` means what the rest of this file assumes it means.
-  if (host === APEX_HOST) {
+  // app.pegana.xyz used to be the console host. Every surface is public on
+  // www now, so the app host served a full duplicate of the site (noindex, but
+  // still a second copy of every page and a second CSP origin). Send it to the
+  // same path on www, exactly like the apex.
+  if (host === APEX_HOST || host === CONSOLE_HOST) {
     const url = request.nextUrl.clone();
     url.protocol = "https:";
     url.host = PRIMARY_HOST;
@@ -184,6 +188,19 @@ export const config = {
   // return no HTML, so generating a per-request nonce + CSP there is pure
   // overhead on a hot path.
   //
+  // Static images, fonts and the manifest (`/tokens/*`, `/logos/*`,
+  // `/brand/*`, and any path ending in an image/font/manifest extension) are
+  // excluded too. They are plain files from `public/`, never HTML, and the
+  // proxy ran once for each of them: about 20 middleware invocations per
+  // landing-page view, measured 2026-10-21, all billed as function
+  // invocations on Vercel. The releases host is unaffected: what it serves
+  // (the installer script, binaries, SHA256SUMS) has none of these extensions.
+  //
+  // Generated images (`*/opengraph-image*`, `*/twitter-image*`,
+  // `/asset/*/share-card`, `/compare/share`) are PNG route handlers, not HTML,
+  // and set their own CDN Cache-Control. Running the proxy on them added an
+  // invocation and a pointless CSP header to every unfurl.
+  //
   // `llms.txt`/`llms-full.txt` are excluded like robots/sitemap: they are
   // static text Route Handlers (app/llms.txt/route.ts, app/llms-full.txt/route.ts)
   // that return `text/plain`, not HTML, so a per-request nonce + CSP is wasted
@@ -191,7 +208,7 @@ export const config = {
   matcher: [
     {
       source:
-        "/((?!_next/|api/|embed/|monitoring|favicon|robots.txt|sitemap|llms.txt|llms-full.txt).*)",
+        "/((?!_next/|api/|embed/|monitoring|favicon|robots.txt|sitemap|llms.txt|llms-full.txt|tokens/|logos/|brand/|compare/share|.*/(?:opengraph-image|twitter-image|share-card)|.*\\.(?:png|svg|webp|jpg|jpeg|gif|ico|woff2?|webmanifest)$).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

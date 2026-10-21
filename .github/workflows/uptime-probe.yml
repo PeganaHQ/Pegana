@@ -1,0 +1,157 @@
+# External uptime probe.
+#
+# Alertmanager and Prometheus run on the same box as the API, so nothing on
+# the box can report that the box itself is gone. This workflow probes the
+# public endpoints from GitHub's runners every 10 minutes and, on a confirmed
+# failure, opens (or updates) a GitHub issue labelled `uptime` and assigned to
+# the operator. GitHub then emails/pushes that notification, so it works with
+# no secret and independently of Discord and Sentry. When every endpoint is
+# healthy again the issue gets a recovery comment and is closed.
+#
+# It only runs on the public PeganaHQ/Pegana repository (free Actions minutes
+# for public repos); in the private repo every run is skipped before a runner
+# starts, so it costs nothing there.
+#
+# Limits, stated honestly (docs/runbooks/oncall.md, "External uptime probe"):
+#   - GitHub's cron is best effort: runs can start 5-30 min late under load,
+#     so detection takes 10 min at best and can take longer.
+#   - GitHub disables scheduled workflows in a public repo after 60 days with
+#     no repository activity; the regular mirror sync PRs keep it alive.
+#   - It detects "unreachable / not ready", not wrong data.
+#
+# Only GitHub-owned actions are used (allowed by the public repo's selected
+# actions policy), pinned to a full SHA (sha_pinning_required=true).
+
+name: uptime-probe
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.repository == 'PeganaHQ/Pegana'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Probe public endpoints
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          # api /readyz fails when db, redis or the engine's snapshots are
+          # stale, so it also catches a box that is up but not producing data.
+          targets=(
+            "https://api.pegana.xyz/healthz"
+            "https://api.pegana.xyz/readyz"
+            "https://mcp.pegana.xyz/health"
+            "https://www.pegana.xyz/"
+          )
+          failing=()
+          report=""
+          for url in "${targets[@]}"; do
+            ok=0; last=""
+            # Three attempts about 30s apart: one slow request or a deploy's
+            # container swap is not an outage.
+            for attempt in 1 2 3; do
+              last=$(curl -sS -o /dev/null -w '%{http_code} in %{time_total}s' \
+                       --max-time 10 -A 'pegana-uptime-probe (github actions)' "$url" 2>&1 | tr '\n' ' ')
+              if [[ "$last" == 200\ * ]]; then ok=1; break; fi
+              [[ $attempt -lt 3 ]] && sleep 30
+            done
+            if (( ok )); then
+              report+="- OK   ${url} (${last})"$'\n'
+            else
+              failing+=("$url")
+              report+="- FAIL ${url} (last attempt: ${last:-no response})"$'\n'
+            fi
+          done
+          printf '%s' "$report"
+          {
+            echo "failing=${#failing[@]}"
+            echo "report<<PROBE_EOF"
+            printf '%s' "$report"
+            echo "PROBE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open, update or close the uptime issue
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          FAILING: ${{ steps.probe.outputs.failing }}
+          REPORT: ${{ steps.probe.outputs.report }}
+          ASSIGNEE: ${{ vars.UPTIME_PROBE_ASSIGNEE || 'lrafasouza' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const failing = Number(process.env.FAILING || '0');
+            const report = process.env.REPORT || '';
+            const assignee = process.env.ASSIGNEE;
+            const label = 'uptime';
+            const now = new Date().toISOString();
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: label, per_page: 100,
+            });
+            const issue = open.find((i) => !i.pull_request);
+
+            if (failing === 0) {
+              if (issue) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: issue.number,
+                  body: `Recovered at ${now}: every endpoint answers 200.\n\n${report}\n[probe run](${runUrl})` });
+                await github.rest.issues.update({ owner, repo, issue_number: issue.number, state: 'closed' });
+                core.notice(`Closed #${issue.number}: recovered`);
+              }
+              return;
+            }
+
+            const body = `Probe at ${now} found ${failing} endpoint(s) failing after 3 attempts:\n\n${report}\n` +
+              `[probe run](${runUrl}). Playbook: docs/runbooks/oncall.md, "Box is down".`;
+            if (issue) {
+              // Comment at most once an hour so a long outage does not
+              // produce a notification every 10 minutes. Count only this
+              // workflow's own comments: on a public repo anyone can comment,
+              // and a stranger's comment must not suppress the updates.
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: issue.number, per_page: 100,
+              });
+              const ours = comments.filter((c) => c.user && c.user.login === 'github-actions[bot]');
+              const last = ours.length ? ours[ours.length - 1].created_at : issue.created_at;
+              if (Date.now() - new Date(last).getTime() >= 60 * 60 * 1000) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: issue.number,
+                  body: `Still failing. ${body}` });
+              }
+              core.setFailed(`Outage ongoing (#${issue.number})`);
+              return;
+            }
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch {
+              await github.rest.issues.createLabel({ owner, repo, name: label, color: 'b60205',
+                description: 'Opened by the external uptime probe' });
+            }
+            const params = { owner, repo, labels: [label],
+              title: `Uptime probe: ${failing} public endpoint(s) down`,
+              body: `@${assignee} ${body}` };
+            let created;
+            try {
+              created = await github.rest.issues.create({ ...params, assignees: [assignee] });
+            } catch (e) {
+              // An assignee without access to the repo is rejected; the
+              // @mention in the body still notifies.
+              core.warning(`Could not assign ${assignee}: ${e.message}`);
+              created = await github.rest.issues.create(params);
+            }
+            core.setFailed(`Opened #${created.data.number}: ${failing} endpoint(s) down`);

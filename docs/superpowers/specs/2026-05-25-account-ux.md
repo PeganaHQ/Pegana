@@ -57,7 +57,7 @@ opens a dropdown menu.
 ```
 ┌──────────────────────────┐
 │ @raffxsolana             │  ← user header (mono, text-muted)
-│ ID 6647651772            │
+│ ID 0000000000            │
 ├──────────────────────────┤
 │ → My account             │
 │ → Subscriptions          │

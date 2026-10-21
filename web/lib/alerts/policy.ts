@@ -94,6 +94,21 @@ export const DEDUP_SECONDS_BY_CLASS: Record<AssetClass, number> = {
 export const CONFIRM_UP_SECS = 30;
 export const DECAY_DOWN_SECS = 120;
 
+/**
+ * True when the API's per-asset `thresholds` are collateral-ratio bands
+ * (`cr_drift`, `cr_depeg`, ...), e.g. hyUSD `{cr_drift:130, cr_depeg:115,
+ * cr_critical:105, cr_black_swan:100}`. Such an asset's state machine runs on
+ * its collateral ratio, so "how close is this SPREAD to the depeg line" has no
+ * meaning for it: any spread-based proximity would come from a class fallback
+ * table, not from the asset's own bands. Callers show that instead of a %.
+ */
+export function isCollateralRatioThresholds(t: unknown): boolean {
+  if (!t || typeof t !== "object") return false;
+  return Object.entries(t as Record<string, unknown>).some(
+    ([k, v]) => k.startsWith("cr_") && typeof v === "number" && Number.isFinite(v),
+  );
+}
+
 /** True only when the API's per-asset `thresholds` is a well-formed bps triple.
  *  hyUSD's CR thresholds (different keys) and any malformed/absent value fail
  *  this and fall back to the local table — so wiring the API field can never

@@ -96,4 +96,47 @@ describe("apex host", () => {
     expect(res.status).not.toBe(308);
     expect(res.headers.get("content-security-policy")).toBeTruthy();
   });
+
+  it("lets the served document load token and partner logos from the API box", () => {
+    const res = proxy(
+      new NextRequest("https://www.pegana.xyz/", {
+        headers: { host: "www.pegana.xyz" },
+      }),
+    );
+    const csp = res.headers.get("content-security-policy") ?? "";
+    const imgSrc = csp.match(/img-src ([^;]+)/)?.[1]?.split(" ") ?? [];
+    expect(imgSrc).toContain("https://api.pegana.xyz");
+  });
+});
+
+describe("proxy matcher skips static files", () => {
+  it.each([
+    "/tokens/J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn.webp",
+    "/logos/sanctum.svg",
+    "/brand/pegana-wave-chroma.svg",
+    "/apple-touch-icon.png",
+    "/android-chrome-192x192.png",
+    "/manifest.webmanifest",
+    "/asset/xSOL/opengraph-image-94vvyq",
+    "/asset/USDC/twitter-image-94vvyq",
+    "/audit/abc/opengraph-image-1x2y3z",
+    "/asset/USDC/share-card",
+    "/compare/share",
+  ])("does not run the proxy for %s", (path) => {
+    expect(matcher.test(path)).toBe(false);
+  });
+
+  it.each([
+    "/asset/jitoSOL",
+    "/lst",
+    "/releases",
+    "/pegana-replay-installer.sh",
+    "/compare",
+    "/audit/abc",
+  ])(
+    "still runs for %s",
+    (path) => {
+      expect(matcher.test(path)).toBe(true);
+    },
+  );
 });

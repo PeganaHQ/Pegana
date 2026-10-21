@@ -56,6 +56,29 @@ export default tseslint.config(
     },
   },
 
+  // Every internal link goes through IntentLink, which prefetches on intent
+  // only. A plain `next/link` prefetches the moment it scrolls into view, and
+  // on this all-dynamic app each of those is a billed function invocation
+  // (see components/atoms/intent-link.tsx for the measurement).
+  {
+    files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}"],
+    ignores: ["components/atoms/intent-link.tsx", "**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "next/link",
+              message:
+                'Import Link from "@/components/atoms/intent-link" (intent-only prefetch).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // The service worker runs in a ServiceWorkerGlobalScope, not a window: no
   // `document`, no `localStorage`, but `caches`, `clients`, `skipWaiting` and a
   // `self` that is the registration. Without this block every one of those is a

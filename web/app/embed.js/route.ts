@@ -7,7 +7,7 @@
 //   <script src="https://pegana.xyz/embed.js" data-asset="USDe" data-pegana-theme="light"></script>
 //
 // The script reads its own data-asset attribute, fetches the asset's current
-// peg state from /v1/assets/{asset}/state, and renders a compact badge:
+// peg state from /v1/assets/{asset}, and renders a compact badge:
 //
 //   ● USDe — Pegged   Pegana ↗
 //
@@ -32,11 +32,26 @@
 
 import { NextResponse } from "next/server";
 import { apiBase } from "@/lib/api/base";
+import { STALE_AFTER_MS } from "@/lib/asset/freshness";
+import { siteOrigin } from "@/lib/seo/site-origin";
+import { SYMBOL_DISPLAY_ALIASES } from "@/lib/asset/display-symbol";
 
 export const dynamic = "force-static";
 
 const API_BASE = apiBase();
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
+const SITE_URL = siteOrigin();
+
+// Display alias (lowercased) -> canonical DB symbol, inlined into the script
+// so data-asset="eHYUSD" queries sHYUSD instead of a 404 "Not tracked".
+const REVERSE_ALIASES_JSON = JSON.stringify(
+  Object.fromEntries(
+    Object.entries(SYMBOL_DISPLAY_ALIASES).map(([db, shown]) => [
+      shown.toLowerCase(),
+      db,
+    ]),
+  ),
+);
+const DISPLAY_ALIASES_JSON = JSON.stringify(SYMBOL_DISPLAY_ALIASES);
 
 const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCLI */
 (function () {
@@ -49,6 +64,15 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
     console.warn("[pegana] <script src=embed.js> requires data-asset=\\"<symbol>\\"");
     return;
   }
+  // Resolve a display alias (eHYUSD) to the canonical API symbol (sHYUSD)
+  // for every fetch and link; SHOWN is what the badge prints.
+  var REVERSE_ALIASES = ${REVERSE_ALIASES_JSON};
+  var DISPLAY_ALIASES = ${DISPLAY_ALIASES_JSON};
+  var HAS = Object.prototype.hasOwnProperty;
+  if (HAS.call(REVERSE_ALIASES, ASSET.toLowerCase())) {
+    ASSET = REVERSE_ALIASES[ASSET.toLowerCase()];
+  }
+  var SHOWN = HAS.call(DISPLAY_ALIASES, ASSET) ? DISPLAY_ALIASES[ASSET] : ASSET;
   // Theme resolution order: explicit data attribute → ?theme= on src → "dark".
   // The data attribute is namespaced (data-pegana-theme) to avoid colliding
   // with Tailwind's data-theme and other framework attributes (AC55).
@@ -68,7 +92,8 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
     DEPEG:     "#e87089",
     CRITICAL:  "#e0574e",
     BLACK_SWAN:"#e0574e",
-    UNKNOWN:   "#8f8aa3"
+    UNKNOWN:   "#8f8aa3",
+    NOT_TRACKED:"#8f8aa3"
   };
 
   var LABEL = {
@@ -77,7 +102,8 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
     DEPEG:     "Depeg",
     CRITICAL:  "Critical",
     BLACK_SWAN:"Black swan",
-    UNKNOWN:   "Unknown"
+    UNKNOWN:   "Unknown",
+    NOT_TRACKED:"Not tracked"
   };
 
   // Mount point: an empty span injected right after the script tag so the
@@ -118,7 +144,7 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
       'vertical-align:middle;">' +
         '<span aria-hidden="true" style="display:inline-block;width:8px;' +
         'height:8px;border-radius:50%;background:' + color + ';"></span>' +
-        '<span>' + escapeHtml(ASSET) + '</span>' +
+        '<span>' + escapeHtml(SHOWN) + '</span>' +
         '<span style="color:' + muted + ';font:500 11px/1 ui-monospace,' +
         'SFMono-Regular,Menlo,Consolas,monospace;">' + escapeHtml(label) + bpsStr + '</span>' +
         '<span style="color:' + muted + ';margin-left:auto;padding-left:8px;' +
@@ -131,7 +157,14 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
     // (works when the script is included directly on the page). Both calls
     // are no-throw guarded.
     try {
-      var msg = { type: "pegana:state", asset: ASSET, state: state };
+      // NOT_TRACKED is posted as UNKNOWN plus tracked:false, so hosts that
+      // switch on the six peg states keep working.
+      var msg = {
+        type: "pegana:state",
+        asset: ASSET,
+        state: state === "NOT_TRACKED" ? "UNKNOWN" : state,
+        tracked: state !== "NOT_TRACKED"
+      };
       if (window.parent && window.parent !== window) {
         window.parent.postMessage(msg, "*");
       }
@@ -177,22 +210,36 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
     return declared;
   }
 
-  // App-level 2-minute freshness gate (STALE_AFTER_MS) — a frozen /state
-  // snapshot must collapse to UNKNOWN, matching the iframe embeds + dashboard.
+  // App-level freshness gate (STALE_AFTER_MS, 15 minutes): a frozen snapshot
+  // must collapse to UNKNOWN, matching the iframe embeds and the dashboard.
   // A missing/unparseable timestamp is NOT stale (null-state path handles it).
   function isStaleTs(ts) {
     if (ts == null) { return false; }
     var t = Date.parse(ts);
     if (isNaN(t)) { return false; }
-    return (Date.now() - t) > 120000;
+    return (Date.now() - t) > ${STALE_AFTER_MS};
   }
 
+  // Reads the asset detail (not /state) because it carries the asset class.
+  // An unknown symbol (404) or a leveraged synth (synth_lev, e.g. xSOL, which
+  // has no peg) renders "Not tracked" and stops polling: Pegana publishes no
+  // peg verdict for either.
+  var timer = null;
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
   function poll() {
-    var url = API + "/v1/assets/" + encodeURIComponent(ASSET) + "/state";
+    var url = API + "/v1/assets/" + encodeURIComponent(ASSET);
     fetch(url, { headers: { Accept: "application/json" }, credentials: "omit" })
-      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) {
+        if (r.status === 404) { return { notTracked: true }; }
+        return r.ok ? r.json() : null;
+      })
       .then(function (data) {
         if (!data) { render("UNKNOWN", null); return; }
+        if (data.notTracked || data["class"] === "synth_lev") {
+          stop();
+          render("NOT_TRACKED", null);
+          return;
+        }
         if (isStaleTs(data.updated_at)) { render("UNKNOWN", null); return; }
         var state = data.state || data.peg_state || "UNKNOWN";
         var bps = reconcileBps(data.discount, data.intrinsic_usd, data.market_usd);
@@ -204,7 +251,7 @@ const SCRIPT = `/*! Pegana embed widget — MIT — github.com/PeganaHQ/ReplayCL
   // Initial render (loading state) + first poll + 30s cadence (AC54).
   render("UNKNOWN", null);
   poll();
-  setInterval(poll, 30000);
+  timer = setInterval(poll, 30000);
 })();
 `;
 

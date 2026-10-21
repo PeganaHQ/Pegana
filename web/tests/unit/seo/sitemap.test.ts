@@ -94,7 +94,7 @@ describe("www sitemap", () => {
 
   it("every entry is on the www origin", async () => {
     for (const u of await urls()) {
-      expect(u.startsWith("https://www.pegana.xyz")).toBe(true);
+      expect(new URL(u).origin).toBe("https://www.pegana.xyz");
     }
   });
 });

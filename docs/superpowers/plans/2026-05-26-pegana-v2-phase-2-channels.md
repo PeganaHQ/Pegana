@@ -123,8 +123,8 @@ Replaces the MCP + Webhook placeholder content shipped in Plan 1 with real worki
 - [ ] **Step 1: Initialize package**
 
 ```bash
-mkdir -p /Users/rafazaum/Desktop/Projetos/pegana/mcp-ts/src
-cd /Users/rafazaum/Desktop/Projetos/pegana/mcp-ts
+mkdir -p <repo>/mcp-ts/src
+cd <repo>/mcp-ts
 bun init -y
 ```
 

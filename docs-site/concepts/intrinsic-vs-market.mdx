@@ -43,25 +43,26 @@ every asset and a USDC depeg doesn't contaminate other assets' spreads. See
 
 ## The two-numbers payload
 
-Every Pegana API response includes both numbers explicitly:
+Every Pegana peg reading carries both numbers explicitly. An illustrative
+`GET /v1/assets/jitoSOL/state` response (values are examples, not a live reading):
 
 ```json
 {
   "asset": "jitoSOL",
   "state": "PEGGED",
-  "discount": -0.0034,
-  "intrinsic_usd": 213.42,
-  "market_usd": 212.69,
-  "intrinsic_sol": 1.180,
-  "market_sol": 1.176,
-  "since": "2026-05-26T14:32:11Z",
+  "since": "2026-05-26T14:32:11.000Z",
+  "discount": "0.0034",
+  "intrinsic_usd": "213.42",
+  "market_usd": "212.69",
+  "updated_at": "2026-05-26T14:40:02.000Z",
+  "stale": false,
   "confidence": "high"
 }
 ```
 
 You receive the spread (`discount`) for fast checks and the underlying numbers for
-your own logic. For LSTs we also expose the SOL-denominated values — many integrators
-care about the SOL spread, not the USD spread.
+your own logic. For LSTs the asset card (`GET /v1/assets/{symbol}`) also carries
+`sol_per_lst`, the intrinsic SOL-per-token ratio behind `intrinsic_usd`.
 
 ## Sign convention
 
@@ -74,10 +75,11 @@ discount = 1 − market_usd / intrinsic_usd
   case where MEV-driven yield outpaces the published `sol_value`)
 - `|discount| < threshold` → `PEGGED`
 
-A common confusion: the dashboard shows `+1.20%` as "1.20% discount below intrinsic,"
-*not* "market is 1.20% above intrinsic." Our positive sign convention matches the
-trading-floor convention where "discount" means "the market is offering this asset
-at a discount to its book value."
+A common confusion: the API and the dashboard sign the same spread differently. The API
+`discount` field keeps the raw sign above, so `"0.0120"` means the market is offering the
+asset 1.20% below its book value (the trading-floor sense of "discount"). The dashboard shows
+the holder's view of that same number, `−1.20%`: a holder marked to market is down 1.20% versus
+fair value. A premium is the reverse: a negative API `discount`, shown as `+` on the dashboard.
 
 ## When intrinsic and market converge by construction
 

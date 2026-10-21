@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { buildCsp, buildCspForEnv } from "./csp";
 
 const FAKE_NONCE = "dGVzdC1ub25jZS0xMjM0NTY="; // base64("test-nonce-123456")
@@ -75,6 +75,18 @@ describe("buildCsp", () => {
     expect(buildCsp(FAKE_NONCE)).toContain("report-uri /api/csp-report");
   });
 
+  it("allows the static asset origin (API box) in img-src", () => {
+    const imgSrc = buildCsp(FAKE_NONCE).match(/img-src ([^;]+)/)?.[1] ?? "";
+    expect(imgSrc.split(" ")).toContain("https://api.pegana.xyz");
+    expect(imgSrc.split(" ")).toContain("'self'");
+  });
+
+  it("does not widen img-src to a scheme or wildcard", () => {
+    const imgSrc = buildCsp(FAKE_NONCE).match(/img-src ([^;]+)/)?.[1] ?? "";
+    expect(imgSrc.split(" ")).not.toContain("https:");
+    expect(imgSrc.split(" ")).not.toContain("*");
+  });
+
   it("produces a single-line string (no embedded newlines)", () => {
     expect(buildCsp(FAKE_NONCE)).not.toMatch(/\n/);
   });
@@ -133,5 +145,26 @@ describe("proxy CSP matcher: embed exclusion regression", () => {
     expect(matcher.test("/audit")).toBe(true);
     expect(matcher.test("/asset/USDC")).toBe(true);
     expect(matcher.test("/dashboard")).toBe(true);
+  });
+});
+
+describe("buildCsp img-src follows NEXT_PUBLIC_STATIC_BASE", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("moves the allowlist to an overridden static origin", () => {
+    vi.stubEnv("NEXT_PUBLIC_STATIC_BASE", "https://cdn.example.com/static");
+    const imgSrc = buildCsp(FAKE_NONCE).match(/img-src ([^;]+)/)?.[1] ?? "";
+    expect(imgSrc.split(" ")).toContain("https://cdn.example.com");
+    expect(imgSrc).not.toContain("api.pegana.xyz");
+  });
+
+  it("adds no extra origin when the files are same-origin", () => {
+    vi.stubEnv("NEXT_PUBLIC_STATIC_BASE", "/");
+    const imgSrc = buildCsp(FAKE_NONCE).match(/img-src ([^;]+)/)?.[1] ?? "";
+    expect(imgSrc).toBe(
+      "'self' data: blob: https://*.coingecko.com https://*.twimg.com",
+    );
   });
 });

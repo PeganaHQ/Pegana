@@ -42,16 +42,21 @@ use utoipa::OpenApi;
                        `monitoring_only` (beta): their alerts are live but the \
                        calibration is provisional. Public read \
                        endpoints require no key and ARE rate-limited per IP \
-                       (300/min global, 10/min on /v1/audit.csv); exceeding the \
+                       (60/min global by default, 10/min on /v1/audit.csv; the \
+                       live budget is the RateLimit-Limit header); exceeding the \
                        limit returns 429 with a Retry-After header. \
                        Every state transition emits a public receipt at \
-                       /v1/audit/{id} with the methodology version, frozen \
-                       inputs, and an on-chain SPL Memo commit (SAS deferred \
-                       per ADR-0004 — SPL Memo gives 90% of the value). EVERY \
+                       /v1/audit/{id} with the methodology version and frozen \
+                       inputs. Transitions into DEPEG, CRITICAL or BLACK_SWAN are \
+                       also anchored on Solana with an SPL Memo commit when \
+                       on-chain commits are enabled (ADR-0004); DRIFT and \
+                       recovery transitions are never anchored, and some \
+                       historical severe receipts carry no anchor. Check \
+                       `onchain_tx_sig` or GET /v1/audit/{id}/onchain. EVERY \
                        error response across the API is JSON — the envelope is \
                        `{error, message, asset?}` (the `ApiError` schema); branch \
-                       on the stable `error` code, never on `message`. Malformed \
-                       request bodies surface as `{error:\"invalid_body\"}`. Any \
+                       on the stable `error` code, never on `message`; some codes \
+                       add extra keys (e.g. `got`, `hint`, `alert_id`). Any \
                        endpoint may also return 500 `{error:\"internal\"}` on an \
                        unexpected server error. Value conventions: monetary and \
                        ratio amounts are exact decimal STRINGS (parse with a decimal \
@@ -178,6 +183,30 @@ pub async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
 mod tests {
     use super::*;
 
+    /// The info block is the first thing an integrator (and every generated
+    /// SDK) reads. It once hardcoded "300/min" while production served 60, and
+    /// claimed every transition carried an on-chain commit. Pin it to the
+    /// config default and to the real anchor policy.
+    #[test]
+    fn info_description_matches_rate_limit_default_and_anchor_policy() {
+        let doc = ApiDoc::openapi();
+        let desc = doc.info.description.clone().unwrap_or_default();
+        let expected = format!("{}/min global by default", crate::default_rate_limit());
+        assert!(
+            desc.contains(&expected),
+            "info.description must state the default limit `{expected}`: {desc}"
+        );
+        assert!(!desc.contains("300/min"), "stale 300/min in: {desc}");
+        assert!(
+            desc.contains("DRIFT and recovery transitions are never anchored"),
+            "info.description must not imply every receipt is anchored: {desc}"
+        );
+        assert!(
+            !desc.contains("invalid_body"),
+            "no route takes a request body, so invalid_body is never emitted: {desc}"
+        );
+    }
+
     /// (method, path, operation_id, summary) for every operation in the spec.
     /// Avoids naming utoipa's `Operation` type so the helper is robust across
     /// minor utoipa re-export shuffles.
@@ -250,6 +279,27 @@ mod tests {
             "{} operation(s) missing a summary: {missing:?}",
             missing.len()
         );
+    }
+
+    /// Every operation with a `{symbol}` or `{mint}` path parameter runs
+    /// params.rs validation and can answer 400 `invalid_asset`, so the spec
+    /// must list a 400 for it (round-2 finding: only 200/404 were listed).
+    #[test]
+    fn asset_path_operations_document_400() {
+        let doc = ApiDoc::openapi();
+        let mut checked = 0;
+        for (path, item) in &doc.paths.paths {
+            if !(path.contains("{symbol}") || path.contains("{mint}")) {
+                continue;
+            }
+            let op = item.get.as_ref().expect("asset routes are GET");
+            assert!(
+                op.responses.responses.contains_key("400"),
+                "GET {path} must document 400 invalid_asset"
+            );
+            checked += 1;
+        }
+        assert!(checked >= 8, "expected the asset routes, saw {checked}");
     }
 
     /// Enum guard (Gecko API report 2026-06-10): the class-aware `state` and

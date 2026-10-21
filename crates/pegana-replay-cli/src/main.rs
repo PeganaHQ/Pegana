@@ -152,7 +152,7 @@ fn parse_semver(v: &str) -> Option<(u64, u64, u64)> {
 /// than this build means the user is behind and should update; anything else
 /// predates the first publish and is honestly reported as unverifiable from
 /// published artifacts.
-fn version_mismatch_hint(receipt_ver: &str, embedded_ver: &str) -> String {
+fn version_mismatch_hint(receipt_ver: &str, embedded_ver: &str, alert_id: Option<&Uuid>) -> String {
     if let Some(cli) = cli_build_for_methodology(receipt_ver) {
         return format!(
             "Install the build that embeds methodology v{receipt_ver}:\n  \
@@ -166,12 +166,28 @@ fn version_mismatch_hint(receipt_ver: &str, embedded_ver: &str) -> String {
             "This receipt is NEWER than your CLI (methodology v{receipt_ver} vs v{embedded_ver}).\n  \
              cargo install pegana-replay --locked          # update to the latest release"
         ),
-        _ => format!(
-            "No published build embeds methodology v{receipt_ver}. The verifier crates were first \
-             published on 2026-07-01 at methodology 0.4.0, so this receipt predates every published \
-             artifact and cannot be verified from crates.io. Its hash and on-chain anchor are still \
-             intact — see https://pegana.xyz/methodology for the version history."
-        ),
+        _ => {
+            // This branch knows nothing about the receipt's anchor (and most
+            // pre-0.4.0 receipts are DRIFT transitions, which are never
+            // anchored), so it must not claim one. Point at the page that can
+            // actually check the hash for this receipt instead.
+            let check = match alert_id {
+                Some(id) => format!(
+                    "Check its hash in the browser at https://www.pegana.xyz/audit/{id} (that page \
+                     also shows whether the receipt has an on-chain anchor)."
+                ),
+                None => "Check its hash in the browser from the receipt's page on \
+                         https://www.pegana.xyz/audit (that page also shows whether the receipt \
+                         has an on-chain anchor)."
+                    .to_string(),
+            };
+            format!(
+                "No published build embeds methodology v{receipt_ver}. The verifier crates were first \
+                 published on 2026-07-01 at methodology 0.4.0, so this receipt predates every published \
+                 artifact and cannot be re-derived from crates.io. {check} Version history: \
+                 https://www.pegana.xyz/methodology"
+            )
+        }
     }
 }
 
@@ -416,7 +432,7 @@ async fn run() -> Result<()> {
     // Hash + re-derivation check. Exits 1 (tamper) / 3 (version) internally
     // (json-aware). An Err here is ERROR-class (unsupported schema, hash-compute
     // or re-derive error) → exit 2.
-    if let Err(e) = verify(&receipt, cli.quiet, cli.json) {
+    if let Err(e) = verify(&receipt, cli.alert_id.as_ref(), cli.quiet, cli.json) {
         if cli.json {
             emit_json_and_exit(
                 "error",
@@ -535,7 +551,7 @@ async fn fetch_bundle(api_url: &str, alert_id: Uuid) -> Result<Receipt> {
     Ok(receipt)
 }
 
-fn verify(receipt: &Receipt, quiet: bool, json: bool) -> Result<()> {
+fn verify(receipt: &Receipt, alert_id: Option<&Uuid>, quiet: bool, json: bool) -> Result<()> {
     // 1) Schema version — accept v1 (re-hash only) and v2 (re-hash + re-derive).
     // (Unsupported schema / hash-compute / re-derive-error bail out as Err →
     //  run() reports them as ERROR exit 2, in json or human form.)
@@ -576,7 +592,7 @@ fn verify(receipt: &Receipt, quiet: bool, json: bool) -> Result<()> {
         // this hint is the common path, not the edge case.
         eprintln!(
             "{}",
-            version_mismatch_hint(&receipt.methodology_version, cli_version)
+            version_mismatch_hint(&receipt.methodology_version, cli_version, alert_id)
         );
         std::process::exit(3);
     }
@@ -972,6 +988,7 @@ mod tests {
     use rust_decimal::Decimal;
     use std::collections::HashMap;
     use std::str::FromStr;
+    use uuid::Uuid;
 
     // ── helper: build a syntactically-valid receipt with a correct hash ──────
 
@@ -1047,21 +1064,21 @@ mod tests {
         let receipt = make_receipt("v2", stub_inputs(PegState::Pegged), stub_computed());
         // verify() calls std::process::exit on failure, so this returning Ok is
         // proof the path succeeded.
-        assert!(verify(&receipt, true, false).is_ok());
+        assert!(verify(&receipt, None, true, false).is_ok());
     }
 
     /// A v1 receipt passes verify (re-hash only, no re-derive).
     #[test]
     fn v1_receipt_verify_pass_no_rederive() {
         let receipt = make_receipt("v1", stub_inputs(PegState::Pegged), stub_computed());
-        assert!(verify(&receipt, true, false).is_ok());
+        assert!(verify(&receipt, None, true, false).is_ok());
     }
 
     /// An unknown schema_version returns an error (not process::exit).
     #[test]
     fn unknown_schema_version_returns_err() {
         let receipt = make_receipt("v3", stub_inputs(PegState::Pegged), stub_computed());
-        let result = verify(&receipt, true, false);
+        let result = verify(&receipt, None, true, false);
         assert!(result.is_err(), "unknown schema_version must error");
         let msg = format!("{:?}", result.unwrap_err());
         assert!(
@@ -1349,7 +1366,7 @@ mod tests {
     #[test]
     fn hint_gives_an_exact_pin_for_every_known_historical_receipt() {
         for (methodology, cli) in CLI_BUILD_FOR_METHODOLOGY {
-            let hint = version_mismatch_hint(methodology, methodology_version());
+            let hint = version_mismatch_hint(methodology, methodology_version(), None);
             let expected = format!("cargo install pegana-replay@{cli} --locked");
             assert!(
                 hint.contains(&expected),
@@ -1366,7 +1383,7 @@ mod tests {
     #[test]
     fn hint_tells_a_stale_cli_to_update() {
         // Receipt newer than the build => the user is behind, not the receipt.
-        let hint = version_mismatch_hint("9.9.9", methodology_version());
+        let hint = version_mismatch_hint("9.9.9", methodology_version(), None);
         assert!(
             hint.contains("NEWER"),
             "must say the receipt is newer: {hint}"
@@ -1388,7 +1405,7 @@ mod tests {
         // verify-it-yourself path.
         let samples = ["0.4.0", "0.5.0", "0.6.0", "0.6.1", "9.9.9"];
         for receipt_ver in samples {
-            let hint = version_mismatch_hint(receipt_ver, methodology_version());
+            let hint = version_mismatch_hint(receipt_ver, methodology_version(), None);
             for line in hint.lines() {
                 let cmd = line.trim();
                 if cmd.starts_with("cargo install") {
@@ -1405,7 +1422,7 @@ mod tests {
     fn hint_is_honest_when_no_published_build_can_verify() {
         // methodology 0.3.0 predates the 2026-07-01 first publish: no artifact
         // exists. Claiming otherwise would send the user on a dead hunt.
-        let hint = version_mismatch_hint("0.3.0", methodology_version());
+        let hint = version_mismatch_hint("0.3.0", methodology_version(), None);
         assert!(
             hint.contains("No published build"),
             "must say plainly that nothing can verify it: {hint}"
@@ -1414,6 +1431,29 @@ mod tests {
             !hint.contains("cargo install"),
             "must not suggest an install that cannot work: {hint}"
         );
+    }
+
+    #[test]
+    fn pre_publish_hint_never_claims_an_anchor_and_links_the_receipt() {
+        // The fallback branch has no receipt data, so it cannot know whether an
+        // on-chain anchor exists (DRIFT receipts never have one). It must not
+        // assert one, and it must send the user to the page that can check the
+        // hash for THIS receipt.
+        let id = Uuid::parse_str("ac2f167f-daf8-46cc-ad5a-052c20a7eafb").unwrap();
+        let hint = version_mismatch_hint("0.3.0", methodology_version(), Some(&id));
+        assert!(
+            !hint.contains("anchor are still intact") && !hint.contains("anchor is intact"),
+            "must not claim an anchor it never checked: {hint}"
+        );
+        assert!(
+            hint.contains("https://www.pegana.xyz/audit/ac2f167f-daf8-46cc-ad5a-052c20a7eafb"),
+            "must link the receipt's own audit page: {hint}"
+        );
+
+        // --bundle mode has no alert id: fall back to the ledger, still no claim.
+        let hint = version_mismatch_hint("0.3.0", methodology_version(), None);
+        assert!(hint.contains("https://www.pegana.xyz/audit"), "{hint}");
+        assert!(!hint.contains("anchor are still intact"), "{hint}");
     }
 
     #[test]

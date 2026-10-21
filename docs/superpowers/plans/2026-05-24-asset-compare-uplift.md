@@ -51,7 +51,7 @@
 - [ ] **Step 1.1: Read the current asset-hero.tsx**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && cat components/organisms/asset-hero.tsx
+cd <repo>/web && cat components/organisms/asset-hero.tsx
 ```
 
 Identify:
@@ -157,7 +157,7 @@ If the identity row is in a different component (`asset-spec.tsx`), edit that fi
 - [ ] **Step 1.6: Typecheck**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
+cd <repo>/web && pnpm typecheck
 ```
 
 Expected: PASS.
@@ -165,7 +165,7 @@ Expected: PASS.
 - [ ] **Step 1.7: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/asset-hero.tsx
+cd <repo> && git add web/components/organisms/asset-hero.tsx
 git commit -m "feat(asset): hero — tick-flash + iridescent underline + pip-ring pulse on transition
 
 - useTickFlash on spread number triggers 120ms iridescent flash when discount updates
@@ -188,7 +188,7 @@ If asset-spec.tsx was also modified, include it in the git add and the commit me
 - [ ] **Step 2.1: Read current implementation**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && cat components/molecules/threshold-ladder.tsx
+cd <repo>/web && cat components/molecules/threshold-ladder.tsx
 ```
 
 Identify the marker element (likely a `<span>` or `<div>` positioned via `left:` percentage based on the current bps).
@@ -231,8 +231,8 @@ Attach `ref={markerRef}` to the marker element. Remove the inline `style={{ left
 - [ ] **Step 2.3: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/molecules/threshold-ladder.tsx
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/components/molecules/threshold-ladder.tsx
 git commit -m "feat(asset): threshold-ladder animated marker slide
 
 Marker animates from 10% left edge to its final bps position over 1.4s
@@ -251,7 +251,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 3.1: Read current implementation**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && cat components/organisms/activity-timeline.tsx
+cd <repo>/web && cat components/organisms/activity-timeline.tsx
 ```
 
 Each row likely has: time, transition (from→to state), held duration.
@@ -311,8 +311,8 @@ Identify the first row in the timeline (the freshest event). Apply a left border
 - [ ] **Step 3.4: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/activity-timeline.tsx
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/components/organisms/activity-timeline.tsx
 git commit -m "feat(asset): activity timeline — per-row sparkline + iridescent fresh-row border
 
 Each row now ships a 4-pt inline sparkline encoding transition direction
@@ -332,7 +332,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 4.1: Read current implementation**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && cat components/molecules/safety-grade.tsx
+cd <repo>/web && cat components/molecules/safety-grade.tsx
 ```
 
 - [ ] **Step 4.2: Refactor**
@@ -396,8 +396,8 @@ Add underline below the letter:
 - [ ] **Step 4.3: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/molecules/safety-grade.tsx
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/components/molecules/safety-grade.tsx
 git commit -m "feat(asset): safety grade — 30% larger letter + iridescent underline + scale-in
 
 Letter at 200px. 3px iridescent underline at 70% opacity. Scale-in via
@@ -472,8 +472,8 @@ To:
 - [ ] **Step 5.3: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/components/organisms/asset-chart.tsx "web/app/asset/[symbol]/page.tsx"
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/components/organisms/asset-chart.tsx "web/app/asset/[symbol]/page.tsx"
 git commit -m "feat(asset): chart sparkline draw-in + compact footer
 
 Spread chart paths draw-in via stroke-dasharray over 1.8s on viewport
@@ -496,7 +496,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - [ ] **Step 6.1: Read current implementations**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && cat app/compare/page.tsx
+cd <repo>/web && cat app/compare/page.tsx
 echo "---compare-chart---"
 cat components/organisms/compare-chart.tsx
 ```
@@ -583,8 +583,8 @@ When `selected.length > 0`, render a "Save as watchlist" button in the side pane
 - [ ] **Step 6.5: Typecheck + commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/app/compare/page.tsx web/components/organisms/compare-chart.tsx
+cd <repo>/web && pnpm typecheck
+cd <repo> && git add web/app/compare/page.tsx web/components/organisms/compare-chart.tsx
 git commit -m "feat(compare): faint preview overlay on empty state + save-as-watchlist
 
 Empty state now renders the Major LSTs preset chart at 30% opacity behind
@@ -670,7 +670,7 @@ test.describe("Compare", () => {
 - [ ] **Step 7.3: Run specs**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm dev > /tmp/web-dev-t7.log 2>&1 &
+cd <repo>/web && pnpm dev > /tmp/web-dev-t7.log 2>&1 &
 sleep 5
 PLAYWRIGHT_BASE_URL=http://localhost:3000 pnpm exec playwright test tests/e2e/asset-detail.spec.ts tests/e2e/compare.spec.ts --reporter=line 2>&1 | tail -10
 ```
@@ -689,7 +689,7 @@ Expected: ALL PASS (≥ 33 tests).
 - [ ] **Step 7.5: Run typecheck + unit tests**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana/web && pnpm typecheck
+cd <repo>/web && pnpm typecheck
 pnpm vitest run 2>&1 | tail -4
 ```
 
@@ -698,7 +698,7 @@ Expected: zero type errors, all unit tests pass.
 - [ ] **Step 7.6: Commit**
 
 ```bash
-cd /Users/rafazaum/Desktop/Projetos/pegana && git add web/tests/e2e/asset-detail.spec.ts web/tests/e2e/compare.spec.ts
+cd <repo> && git add web/tests/e2e/asset-detail.spec.ts web/tests/e2e/compare.spec.ts
 git commit -m "test(e2e): asset-detail + compare regression specs
 
 - asset-detail: hero h1 + ladder + timeline visible at 1440, no overflow at 390

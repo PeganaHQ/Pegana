@@ -6,6 +6,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer, initSharedState } from "@/server";
 import { renderProm } from "@/metrics";
@@ -21,7 +22,7 @@ const LANDING_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pegana MCP — Peg-risk oracle for Solana agents</title>
+<title>Pegana MCP: peg-risk oracle for Solana agents</title>
 <meta name="robots" content="index, follow" />
 <style>
   :root { color-scheme: dark; }
@@ -61,12 +62,12 @@ const LANDING_HTML = `<!DOCTYPE html>
 <main>
   <span class="badge">MCP endpoint</span>
   <h1>Pegana MCP server</h1>
-  <p><small>The peg-risk oracle for Solana DeFi — over MCP, for agents.</small></p>
+  <p><small>The peg-risk oracle for Solana DeFi, over MCP, for agents.</small></p>
 
   <h2>What this URL is</h2>
   <p>This is a <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a>
      endpoint. It speaks JSON-RPC over HTTP <code>POST</code>, not a website.
-     If you reached it via a browser, you're in the wrong place — visit
+     If you reached it via a browser, you're in the wrong place: visit
      <a href="https://pegana.xyz/agents">pegana.xyz/agents</a> for the integration guide.</p>
 
   <h2>Tools available</h2>
@@ -93,21 +94,47 @@ ${TOOL_CATALOG.map(
   }
 }</pre>
 
-  <h2>Health + metrics</h2>
+  <h2>Health</h2>
   <ul>
     <li><code>GET /health</code> &rarr; liveness</li>
-    <li><code>GET /metrics</code> &rarr; Prometheus exposition</li>
+    <li><code>GET /.well-known/mcp.json</code> &rarr; machine-readable tool manifest</li>
   </ul>
 
   <footer>
     <a href="https://pegana.xyz/agents">Integration guide</a> &middot;
+    <a href="https://docs.pegana.xyz/guides/mcp">Docs</a> &middot;
     <a href="https://pegana.xyz/methodology">Methodology</a> &middot;
-    <a href="https://github.com/PeganaHQ/ReplayCLI">Source (verifier CLI)</a> &middot;
-    <a href="https://t.me/PeganaWatchBot">Telegram</a>
+    <a href="https://github.com/PeganaHQ/Pegana/tree/main/mcp-ts">Source</a>
   </footer>
 </main>
 </body>
 </html>`;
+
+/**
+ * Largest accepted JSON-RPC request body. The biggest legitimate call
+ * (subscribe_peg_events with 20 symbols) is well under 2 KB; without a cap,
+ * Bun's 128 MB default was the only limit (R1 audit idx 67). Enforced by the
+ * Hono bodyLimit on POST /, which answers with a JSON-RPC 413.
+ */
+export const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * Transport-level ceiling passed to Bun.serve as maxRequestBodySize. It MUST
+ * stay well above MAX_BODY_BYTES: when Bun's own limit trips it answers an
+ * empty 413 and resets the connection, and Caddy (still uploading) turns the
+ * reset into an empty 502 (R2 audit idx 18/56). With this headroom the Hono
+ * bodyLimit always answers first: for a Content-Length body it rejects from
+ * the header without reading the body, and for a chunked body it stops
+ * reading at MAX_BODY_BYTES, so nothing near this ceiling is ever buffered.
+ */
+export const TRANSPORT_MAX_BODY_BYTES = 16 * 1024 * 1024;
+
+/** True when the client asked for an SSE stream and not for HTML. */
+function wantsEventStream(accept: string | undefined): boolean {
+  if (!accept) return false;
+  const a = accept.toLowerCase();
+  return a.includes("text/event-stream") && !a.includes("text/html");
+}
 
 export async function buildApp(): Promise<Hono> {
   const app = new Hono();
@@ -123,7 +150,24 @@ export async function buildApp(): Promise<Hono> {
   // at boot — the per-request factory is then cheap.
   await initSharedState();
 
-  app.post("/", async (c) => {
+  app.post(
+    "/",
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: (c) =>
+        c.json(
+          {
+            jsonrpc: "2.0",
+            error: {
+              code: -32600,
+              message: `Request body exceeds ${MAX_BODY_BYTES} bytes`,
+            },
+            id: null,
+          },
+          413,
+        ),
+    }),
+    async (c) => {
     // Build fresh per request — McpServer cannot be connected to two
     // transports concurrently, and the streamable-HTTP transport is
     // request-scoped. The shared state inside createMcpServer() is
@@ -134,13 +178,50 @@ export async function buildApp(): Promise<Hono> {
     });
     await mcp.connect(transport);
     return transport.handleRequest(c.req.raw);
-  });
+    },
+  );
+
+  // The server is stateless: there is no session to DELETE (and nothing to
+  // PUT/PATCH), so answer 405 with Allow: POST like the SSE GET below, rather
+  // than Hono's plain-text 404.
+  app.on(["DELETE", "PUT", "PATCH"], "/", (c) =>
+    c.json(
+      {
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Method not allowed: this server is stateless and has no sessions; POST JSON-RPC to /",
+        },
+        id: null,
+      },
+      405,
+      { allow: "POST" },
+    ),
+  );
 
   // GET on / — friendly landing for humans who paste the URL in a browser.
   // The MCP protocol is POST-only JSON-RPC; without this, browser visitors
   // see Hono's default 404 and assume the server is broken (caught during
   // surface audit 2026-05-29).
+  //
+  // This server is stateless and offers no standalone SSE stream, so a GET
+  // that asks for text/event-stream (an MCP client probing for one) gets the
+  // spec's 405 instead of an HTML page it cannot parse.
   app.get("/", (c) => {
+    if (wantsEventStream(c.req.header("accept"))) {
+      return c.json(
+        {
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message: "Method not allowed: this server is stateless and has no SSE stream; POST JSON-RPC to /",
+          },
+          id: null,
+        },
+        405,
+        { allow: "POST" },
+      );
+    }
     return c.html(LANDING_HTML, 200, {
       "content-security-policy":
         "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",

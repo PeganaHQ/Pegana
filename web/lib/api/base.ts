@@ -67,3 +67,24 @@ export function wsUrl(): string {
   if (env && env.length > 0) return env;
   return onProdHost() ? "wss://api.pegana.xyz/v1/ws" : "ws://localhost:8080/v1/ws";
 }
+
+/** Request header carrying the web server's rate-limit bypass token. */
+export const SSR_TOKEN_HEADER = "x-pegana-ssr-token";
+
+/**
+ * Headers for a fetch to the Pegana API made by the web SERVER (RSC, route
+ * handlers, OG images, sitemap).
+ *
+ * Server-side fetches all leave Vercel from a small shared egress pool, so they
+ * share one 60/min per-IP API budget; a crawler walking the sitemap exhausted it
+ * and the API's 429 surfaced as a 500 page. When `PEGANA_WEB_SSR_TOKEN` is set
+ * (server-only: no `NEXT_PUBLIC_` prefix, so Next never inlines it into a
+ * browser bundle) it is sent in `x-pegana-ssr-token` and the API applies its
+ * separate server budget instead. In the browser, or when the token is unset,
+ * this returns no header and the request is an ordinary public one.
+ */
+export function serverApiHeaders(): Record<string, string> {
+  if (typeof window !== "undefined") return {};
+  const token = process.env.PEGANA_WEB_SSR_TOKEN;
+  return token && token.length > 0 ? { [SSR_TOKEN_HEADER]: token } : {};
+}

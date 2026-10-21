@@ -28,6 +28,14 @@ pub const STATE_REASON_PYTH_CONFIDENCE_GATE: &str = "pyth_confidence_gate";
 /// absent, so a stale row implies the engine saw a dead feed, not a decision.
 pub const STATE_REASON_STALE_SOURCE: &str = "stale_source";
 
+/// Synthesized by the API layer (not the engine) instead of
+/// [`STATE_REASON_STALE_SOURCE`] when there is no fresh discount snapshot but
+/// the intrinsic leg IS fresh and no market snapshot exists in the same 15-min
+/// window: the asset is dark on the market side only (thin market, no
+/// reliable quote). The API SQL uses the literal `'market_unavailable'`.
+/// Not present in engine receipts.
+pub const STATE_REASON_MARKET_UNAVAILABLE: &str = "market_unavailable";
+
 /// Emitted by the engine when the intrinsic-liveness gate (ADR-0038) forces the
 /// verdict to UNKNOWN — the receipt froze `intrinsic_stale = true` (a sanctum_lst
 /// the directory flags `stale`, or a stalled SPL stake-pool crank). Only present

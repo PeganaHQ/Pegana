@@ -5,6 +5,7 @@
 // leave it lying "up". Freshness is stamped after each successful poll.
 
 import { incr, setGauge } from "../metrics";
+import { redactSecrets } from "../fetch-util";
 
 const UP = "pegana_protocol_source_task_up";
 const LAST = "pegana_protocol_source_last_publish_timestamp";
@@ -35,7 +36,7 @@ export async function runSource(src: Source): Promise<void> {
         console.log(`[${src.name}] wrote ${n} rows in ${Date.now() - start}ms`);
       } catch (e) {
         incr(POLLS, { source: src.name, status: "error" });
-        console.error(`[${src.name}] poll failed:`, String(e));
+        console.error(`[${src.name}] poll failed:`, redactSecrets(String(e)));
       }
       await sleep(src.intervalMs);
     }

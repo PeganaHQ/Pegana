@@ -168,7 +168,7 @@ fn client_ip(req: &Request, conn: SocketAddr) -> IpAddr {
 }
 
 /// Per-route rate limit bundle. ADR-0014 mandates `/v1/audit.csv` at
-/// 10/min per IP, distinct from the global limit (typically 300/min). Both
+/// 10/min per IP, distinct from the global limit (60/min by default). Both
 /// share the same per-IP bucket model; the CSV request must satisfy BOTH
 /// the stricter csv limit AND the global limit to pass.
 #[derive(Clone)]
@@ -178,6 +178,65 @@ pub struct RateLimits {
     /// Stricter cap exclusive to `/v1/audit.csv` per ADR-0014. Independent
     /// per-IP bucket — does not consume the main budget when it rejects.
     pub csv: RateLimiter,
+    /// Authenticated budget for the web app's server-side fetches. `None`
+    /// (no `PEGANA_WEB_SSR_TOKEN`) disables it.
+    pub ssr: Option<SsrBypass>,
+}
+
+/// Request header carrying the web server's shared secret.
+pub const SSR_TOKEN_HEADER: &str = "x-pegana-ssr-token";
+
+/// Shortest token accepted. A short secret is guessable; refusing it keeps a
+/// typo'd env value from opening an easy bypass.
+pub const SSR_TOKEN_MIN_LEN: usize = 32;
+
+/// The web app's server-side rendering (RSC, route handlers, OG images, the
+/// sitemap) leaves Vercel from a small shared egress pool, so all of it shared
+/// one public 60/min per-IP bucket: a crawler walking the sitemap exhausted it
+/// and the 429 surfaced as 500 pages. A request carrying the shared secret in
+/// [`SSR_TOKEN_HEADER`] is metered against this separate, larger budget (one
+/// bucket for the whole web tier) instead of the public per-IP one. A wrong or
+/// absent token is an ordinary public request; nothing tells the caller why.
+#[derive(Clone)]
+pub struct SsrBypass {
+    token: Arc<[u8]>,
+    limiter: RateLimiter,
+}
+
+impl SsrBypass {
+    /// `None` when the token is unset, blank or shorter than
+    /// [`SSR_TOKEN_MIN_LEN`] (logged at warn, so a bad deploy is visible).
+    pub fn from_config(token: Option<&str>, per_minute: u32) -> Option<Self> {
+        let token = token.map(str::trim).filter(|t| !t.is_empty())?;
+        if token.len() < SSR_TOKEN_MIN_LEN {
+            tracing::warn!(
+                min_len = SSR_TOKEN_MIN_LEN,
+                "PEGANA_WEB_SSR_TOKEN is too short; the web SSR budget is disabled"
+            );
+            return None;
+        }
+        Some(Self {
+            token: Arc::from(token.as_bytes()),
+            limiter: RateLimiter::new(per_minute),
+        })
+    }
+
+    /// Constant-time comparison (length aside), so the token cannot be
+    /// recovered byte by byte from response timing.
+    fn matches(&self, presented: &[u8]) -> bool {
+        if presented.len() != self.token.len() {
+            return false;
+        }
+        presented
+            .iter()
+            .zip(self.token.iter())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            == 0
+    }
+
+    /// The single bucket key for the web tier (the budget is per secret, not
+    /// per egress IP).
+    const KEY: IpAddr = IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
 }
 
 /// 429 response carrying the JSON error envelope (same `{error, message}` shape
@@ -212,6 +271,30 @@ pub async fn middleware(
     if path == "/healthz" || path == "/readyz" {
         return next.run(req).await;
     }
+    // Web SSR budget: an authenticated web-server request never touches the
+    // public per-IP buckets (see `SsrBypass`).
+    if let Some(ssr) = limits.ssr.as_ref() {
+        let presented = req
+            .headers()
+            .get(SSR_TOKEN_HEADER)
+            .map(|v| v.as_bytes())
+            .filter(|v| ssr.matches(v));
+        if presented.is_some() {
+            let outcome = ssr.limiter.check_metered(SsrBypass::KEY);
+            if !outcome.allowed {
+                metrics::counter!("pegana_api_rate_limited_total", "route" => "web_ssr")
+                    .increment(1);
+                let mut resp = too_many_requests();
+                apply_rate_headers(&mut resp, &outcome);
+                return resp;
+            }
+            metrics::counter!("pegana_api_web_ssr_requests_total").increment(1);
+            let mut resp = next.run(req).await;
+            apply_rate_headers(&mut resp, &outcome);
+            return resp;
+        }
+    }
+
     let ip = client_ip(&req, addr);
 
     // ADR-0014: per-route 10/min on CSV export.
@@ -365,6 +448,76 @@ mod tests {
         assert!(
             l.check(ip),
             "after two idle windows the previous count fully ages out"
+        );
+    }
+
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn ssr_bypass_requires_a_long_enough_token() {
+        assert!(SsrBypass::from_config(None, 10).is_none());
+        assert!(SsrBypass::from_config(Some("   "), 10).is_none());
+        assert!(SsrBypass::from_config(Some("short-secret"), 10).is_none());
+        let b = SsrBypass::from_config(Some(TOKEN), 10).expect("32-char token enables it");
+        assert!(b.matches(TOKEN.as_bytes()));
+        assert!(!b.matches(b"0123456789abcdef0123456789abcdeX"));
+        assert!(!b.matches(b"0123456789abcdef"));
+        assert!(!b.matches(b""));
+    }
+
+    /// With the token, the web tier is metered on its own budget: the public
+    /// per-IP bucket of the shared egress IP is not consumed, and requests keep
+    /// passing after that bucket would be exhausted. A wrong token is a normal
+    /// public request.
+    #[tokio::test]
+    async fn ssr_token_uses_its_own_budget() {
+        use axum::extract::connect_info::ConnectInfo;
+        use axum::routing::get;
+        use axum::Router;
+        use tower::ServiceExt;
+
+        let limits = RateLimits {
+            main: RateLimiter::new(2),
+            csv: RateLimiter::new(10),
+            ssr: SsrBypass::from_config(Some(TOKEN), 5),
+        };
+        let app = Router::new()
+            .route("/v1/assets", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(limits, middleware));
+        let egress: SocketAddr = "198.51.100.20:443".parse().unwrap();
+        let mk = |token: Option<&str>| {
+            let mut b = HttpRequest::builder().uri("/v1/assets");
+            if let Some(t) = token {
+                b = b.header(SSR_TOKEN_HEADER, t);
+            }
+            let mut req = b.body(Body::empty()).unwrap();
+            req.extensions_mut().insert(ConnectInfo(egress));
+            req
+        };
+        // 5 authenticated requests pass even though the public limit is 2.
+        for i in 0..5 {
+            let r = app.clone().oneshot(mk(Some(TOKEN))).await.unwrap();
+            assert_eq!(r.status(), StatusCode::OK, "ssr request {i}");
+            assert_eq!(
+                r.headers()
+                    .get("ratelimit-limit")
+                    .and_then(|v| v.to_str().ok()),
+                Some("5")
+            );
+        }
+        // The 6th exceeds the web budget.
+        let r = app.clone().oneshot(mk(Some(TOKEN))).await.unwrap();
+        assert_eq!(r.status(), StatusCode::TOO_MANY_REQUESTS);
+        // The public bucket for the same IP is untouched: 2 pass, then 429.
+        for _ in 0..2 {
+            let r = app.clone().oneshot(mk(None)).await.unwrap();
+            assert_eq!(r.status(), StatusCode::OK);
+        }
+        let r = app.clone().oneshot(mk(Some("wrong-token"))).await.unwrap();
+        assert_eq!(
+            r.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "a wrong token is metered as public"
         );
     }
 

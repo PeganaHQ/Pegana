@@ -13,12 +13,17 @@
 // /embed.js script-loader — same visual language across both surfaces.
 
 import type { NextRequest } from "next/server";
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
 import { reconcileBps } from "@/lib/api/format";
 import { isStale } from "@/lib/asset/freshness";
+import { siteOrigin } from "@/lib/seo/site-origin";
+import { lookupAsset } from "@/lib/asset/fetch-asset";
+import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
+import { publicSurfaceOf } from "@/lib/asset/public-surface";
+import { notTrackedResponse } from "@/lib/embed/not-tracked";
 
 const API_BASE = apiBase();
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
+const SITE_URL = siteOrigin();
 
 interface AssetState {
   state?: string;
@@ -26,8 +31,9 @@ interface AssetState {
   discount?: string | null;
   intrinsic_usd?: string | null;
   market_usd?: string | null;
-  /** Snapshot freshness timestamp (ISO 8601). Gated against the app's 2-minute
-   *  STALE_AFTER_MS bound so a frozen feed can't paint a stale state. */
+  /** Snapshot freshness timestamp (ISO 8601). Gated against the app's
+   *  STALE_AFTER_MS bound (15 minutes) so a frozen feed can't paint a stale
+   *  state. */
   updated_at?: string | null;
 }
 
@@ -76,7 +82,15 @@ export async function GET(
   context: { params: Promise<{ asset: string }> },
 ) {
   const { asset: raw } = await context.params;
-  const asset = decodeURIComponent(raw);
+  // Canonical DB symbol for the lookup and /state fetch (eHYUSD -> sHYUSD),
+  // like the badge route; `shown` is what the page prints.
+  const asset = resolveAliasSymbol(decodeURIComponent(raw));
+  const shown = displaySymbol(asset);
+
+  // Started first so it overlaps the /state fetch below. Unknown symbols and
+  // leveraged synths (xSOL, no peg) get a neutral "not tracked" 404 instead of
+  // a peg verdict.
+  const lookupPromise = lookupAsset(asset);
 
   let state = "UNKNOWN";
   let bps: number | null = null;
@@ -84,15 +98,15 @@ export async function GET(
     const r = await fetch(
       `${API_BASE}/v1/assets/${encodeURIComponent(asset)}/state`,
       {
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", ...serverApiHeaders() },
         next: { revalidate: 60 },
       },
     );
     if (r.ok) {
       const data = (await r.json()) as AssetState;
-      // App-level 2-minute freshness gate (STALE_AFTER_MS). /state returns the
-      // last value even when its own looser 15-min bound trips, so gate here
-      // to match the app dashboard and never show a frozen state as live.
+      // App-level freshness gate (STALE_AFTER_MS, 15 minutes). /state returns
+      // the last value even when its own bound trips, so gate here to match
+      // the app dashboard and never show a frozen state as live.
       const stale = isStale(data.updated_at, Date.now());
       state = stale ? "UNKNOWN" : (data.state ?? data.peg_state ?? "UNKNOWN");
       // Shared reconcileBps (same 200 bps suspect-drift + impossible clamp as
@@ -108,6 +122,10 @@ export async function GET(
     }
   } catch {
     // Render UNKNOWN — never break the host page's layout.
+  }
+
+  if (publicSurfaceOf(await lookupPromise) === "not_tracked") {
+    return notTrackedResponse(shown, false);
   }
 
   const color = STATE_COLOR[state] ?? STATE_COLOR.UNKNOWN;
@@ -128,7 +146,7 @@ export async function GET(
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>${xmlEscape(asset)} · Pegana</title>
+<title>${xmlEscape(shown)} · Pegana</title>
 <style>
   html,body{margin:0;padding:0;background:transparent}
   body{font:500 12px/1 system-ui,-apple-system,sans-serif;color:#f5f5f6}
@@ -143,7 +161,7 @@ export async function GET(
 <body>
 <a class="b" href="${xmlEscape(href)}" target="_top">
   <span class="pip" aria-hidden="true"></span>
-  <span class="sym">${xmlEscape(asset)}</span>
+  <span class="sym">${xmlEscape(shown)}</span>
   <span class="lbl">${xmlEscape(label)}</span><span class="bps">${xmlEscape(formatBps(bps))}</span>
   <span class="brand">Pegana ↗</span>
 </a>

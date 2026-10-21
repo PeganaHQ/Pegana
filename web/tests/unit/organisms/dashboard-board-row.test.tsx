@@ -169,3 +169,55 @@ describe("DashboardBoardRow", () => {
     expect(screen.getByText("+1.03%")).toBeInTheDocument();
   });
 });
+
+describe("DashboardBoardRow badges (eHYUSD: BETA + SUSTAINED + provisional)", () => {
+  it("does not render a PROVISIONAL gauge that the BETA badge already states", () => {
+    render(
+      <DashboardBoardRow
+        asset={mk({
+          symbol: "sHYUSD",
+          monitoring_only: true,
+          calibration: "provisional",
+          sustained: true,
+          current_state_duration_secs: 86_400,
+        })}
+        state="DRIFT"
+        bps={45}
+        hasBps
+        discount="0.0045"
+        jitter={8}
+        jLabel="choppy"
+        riskScore={22}
+        velocity={null}
+        rowRef={noop}
+        rovingActive
+      />,
+    );
+    // BETA is present (its accessible name carries "Provisional calibration").
+    expect(
+      screen.getAllByRole("button", { name: /Beta\. Provisional calibration/ })
+        .length,
+    ).toBeGreaterThan(0);
+    // The duplicate gauge, which the clipped badge slot hid, is gone.
+    expect(screen.queryAllByTitle("Calibration: Provisional")).toHaveLength(0);
+  });
+
+  it("still shows the gauge for a provisional asset without the BETA badge", () => {
+    render(
+      <DashboardBoardRow
+        asset={mk({ symbol: "PRV", monitoring_only: false, calibration: "provisional" })}
+        state="PEGGED"
+        bps={5}
+        hasBps
+        discount="0.0005"
+        jitter={1}
+        jLabel="steady"
+        riskScore={5}
+        velocity={null}
+        rowRef={noop}
+        rovingActive
+      />,
+    );
+    expect(screen.queryAllByTitle("Calibration: Provisional").length).toBeGreaterThan(0);
+  });
+});

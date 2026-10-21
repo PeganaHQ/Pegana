@@ -1,6 +1,5 @@
 "use client";
-import useSWR from "swr";
-import { api } from "@/lib/api/client";
+import { useHistoryRange } from "@/lib/hooks/use-history-range";
 import type { HistoryPoint } from "@/lib/api/types";
 
 // 5000 minutes — matches the API's single-call limit cap.
@@ -56,15 +55,15 @@ export async function fetchHistory30d(
 }
 
 /**
- * SWR hook that paginates the 1m history to cover the full tracked window
- * (up to 30 days) rather than the single-call ceiling of ~3.47 days.
+ * The 30-day strip's history. Shares the asset chart's 30D range (same SWR
+ * key, see use-history-range.ts), so opening the strip and the 30D chart costs
+ * one paged load, not two. The range is averaged to 1-hour buckets that keep
+ * the worst state seen in each hour, which is all the per-day strip reads.
  */
 export function useHistory30d(symbol: string | null): {
   data?: HistoryPoint[];
   error?: unknown;
 } {
-  // SWR key must be a stable primitive (no objects) so cache identity is reliable.
-  return useSWR(symbol ? ["history-30d", symbol] : null, ([, sym]) =>
-    fetchHistory30d(sym, (s, opts) => api.assetHistory(s, opts)),
-  );
+  const { data, error } = useHistoryRange(symbol, "30d");
+  return { data: data?.points, error };
 }

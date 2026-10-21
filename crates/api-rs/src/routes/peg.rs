@@ -49,17 +49,31 @@ pub struct PegSignal {
     pub anchor: String,
     pub peg_target: String,
     pub decimals: i16,
-    /// PEGGED..BLACK_SWAN | UNKNOWN. Omitted when there is no current snapshot.
+    /// PEGGED..BLACK_SWAN | UNKNOWN. Always present: UNKNOWN (state_reason
+    /// stale_source on `/v1/assets`; `stale: true` here) when there is no
+    /// fresh snapshot.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<crate::schema::PegState>)]
     pub state: Option<String>,
-    /// Signed discount fraction (serialized as a string).
+    /// Signed discount fraction (serialized as a string): the smoothed value
+    /// the state machine classifies, in SOL terms for LSTs. Do not recompute it
+    /// from `intrinsic_usd` / `market_usd`; the USD legs use separate SOL/USD
+    /// reads and can differ by a few bps, near zero even in sign.
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "crate::serde_fmt::opt_dec_norm"
     )]
     pub discount: Option<Decimal>,
-    /// Convenience `discount × 10000` as a number (consumer rounds). Raw.
+    /// Unsmoothed discount for the same tick (before the EWMA), same basis as
+    /// `discount`. Omitted when there is no fresh snapshot. `discount` (and
+    /// `state`) remain the values to act on; see `AssetCard.discount_raw`.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::serde_fmt::opt_dec_norm"
+    )]
+    pub discount_raw: Option<Decimal>,
+    /// Convenience `discount × 10000` in basis points, a JSON number rounded
+    /// to 4 dp. The only ratio field serialized as a number, not a string.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discount_bps: Option<f64>,
     #[serde(
@@ -111,7 +125,11 @@ pub struct PegSignal {
     /// the verifiable peg fields above. Omitted when the token carries no tracked leverage.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub systemic: Option<SystemicSignal>,
-    /// True when `updated_at` is older than the 15-min freshness bound, or absent.
+    /// True whenever there is no trustworthy fresh discount: `state` is
+    /// UNKNOWN or absent, OR `updated_at` is older than the 15-min freshness
+    /// bound or absent. `updated_at` can be fresh while `stale` is true (it may
+    /// be the intrinsic leg's time when the market leg is missing; see
+    /// `state_reason` `market_unavailable` on `/v1/assets`).
     pub stale: bool,
     /// Human/agent verify pointer for this asset.
     pub receipt_url: String,
@@ -135,8 +153,18 @@ pub struct PegFeedResponse {
 /// freshness/derivation logic is testable. The global methodology version is
 /// stamped on the batch envelope, not on each signal.
 fn card_to_signal(card: AssetCard, now: DateTime<Utc>) -> PegSignal {
-    let receipt_url = format!("https://pegana.xyz/audit?asset={}", card.symbol);
-    let discount_bps = card.discount.and_then(|d| d.to_f64()).map(|x| x * 10_000.0);
+    // Canonical www host (the apex 308-redirects), symbol percent-encoded:
+    // `hyloSOL+` must not arrive as "hyloSOL " (a raw `+` is a space in a query).
+    let receipt_url = format!(
+        "https://www.pegana.xyz/audit?asset={}",
+        encode_query_value(&card.symbol)
+    );
+    // Scale in Decimal, round to 4 dp, then convert: `to_f64() * 10000` leaked
+    // binary noise (0.00017 -> 1.7000000000000002).
+    let discount_bps = card
+        .discount
+        .and_then(|d| d.checked_mul(Decimal::from(10_000)))
+        .and_then(|bps| bps.round_dp(4).to_f64());
     // `stale` is the single freshness gate partners (tokens.xyz) branch on, so it
     // MUST be true whenever the peg computation is untrustworthy. `updated_at` is
     // COALESCE(discount_ts, intrinsic_ts) upstream, so a dead MARKET leg with a
@@ -161,6 +189,7 @@ fn card_to_signal(card: AssetCard, now: DateTime<Utc>) -> PegSignal {
         decimals: card.decimals,
         state: card.state,
         discount: card.discount,
+        discount_raw: card.discount_raw,
         discount_bps,
         intrinsic_usd: card.intrinsic_usd,
         market_usd: card.market_usd,
@@ -178,6 +207,20 @@ fn card_to_signal(card: AssetCard, now: DateTime<Utc>) -> PegSignal {
         stale,
         receipt_url,
     }
+}
+
+/// Percent-encode a query-string value (RFC 3986: everything but unreserved
+/// `A-Za-z0-9-._~`).
+fn encode_query_value(v: &str) -> String {
+    let mut out = String::with_capacity(v.len());
+    for b in v.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 /// Latest released methodology version (mirrors `methodology::current`'s query),
@@ -369,7 +412,8 @@ pub async fn feed(
     ),
     responses(
         (status = 200, description = "Peg signal for the asset", body = PegSignal),
-        (status = 404, description = "No active asset with that mint", body = ApiError)
+        (status = 400, description = "invalid_asset: the mint path parameter is malformed (mint must be a base58 Solana address, 32-44 chars)", body = ApiError),
+        (status = 404, description = "unknown_asset: no active, public asset with that mint (synth_lev, e.g. xSOL, is not public)", body = ApiError)
     )
 )]
 pub async fn feed_by_mint(
@@ -379,6 +423,7 @@ pub async fn feed_by_mint(
     // Single-resource GET: returns the bare `PegSignal` (the same shape as one
     // element of the batch feed's `data[]`), per the API's list-vs-single
     // convention — lists are enveloped, single resources are the object itself.
+    crate::routes::assets::resolve_mint(&state.pg, &mint).await?;
     let card = fetch_card(&state.pg, "a.mint", &mint)
         .await?
         .ok_or_else(|| ApiError::unknown_asset(&mint))?;
@@ -406,11 +451,12 @@ mod tests {
             mint: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn".into(),
             class: "lst".into(),
             anchor: "NAV".into(),
-            risk_side: crate::schema::risk_side_for_anchor("NAV").into(),
+            risk_side: crate::schema::risk_side_for_class("lst").into(),
             peg_target: "SOL".into(),
             decimals: 9,
             state: Some("PEGGED".into()),
             discount: Some(Decimal::from_str("-0.007405").unwrap()),
+            discount_raw: None,
             risk_score: None,
             intrinsic_usd: Some(Decimal::from_str("180.5").unwrap()),
             market_usd: Some(Decimal::from_str("179.2").unwrap()),
@@ -458,7 +504,7 @@ mod tests {
         assert_eq!(v["calibration"], "calibrated");
         assert_eq!(v["monitoring_only"], false);
         assert_eq!(v["stale"], true);
-        assert_eq!(v["receipt_url"], "https://pegana.xyz/audit?asset=USDC");
+        assert_eq!(v["receipt_url"], "https://www.pegana.xyz/audit?asset=USDC");
         // None fields OMITTED (not null).
         assert!(v.get("discount").is_none());
         assert!(v.get("discount_bps").is_none());
@@ -470,13 +516,40 @@ mod tests {
         assert!(v.get("systemic").is_none());
     }
 
+    /// Regression for the float-noise values seen on the live feed, and for
+    /// symbols that need encoding in the receipt link.
+    #[test]
+    fn discount_bps_is_clean_and_receipt_url_is_encoded() {
+        let now = "2026-06-24T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        for (d, want) in [
+            ("0.00017", 1.7),
+            ("0.001017", 10.17),
+            ("0.000079", 0.79),
+            ("0.001799", 17.99),
+        ] {
+            let mut c = sample_card();
+            c.discount = Some(Decimal::from_str(d).unwrap());
+            assert_eq!(card_to_signal(c, now).discount_bps, Some(want), "{d}");
+        }
+        let mut c = sample_card();
+        c.symbol = "hyloSOL+".into();
+        assert_eq!(
+            card_to_signal(c, now).receipt_url,
+            "https://www.pegana.xyz/audit?asset=hyloSOL%2B"
+        );
+        assert_eq!(encode_query_value("USD*"), "USD%2A");
+    }
+
     #[test]
     fn card_to_signal_derives_bps_receipt_and_stale() {
         let now = "2026-06-24T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
         let sig = card_to_signal(sample_card(), now);
         let bps = sig.discount_bps.unwrap();
-        assert!((bps - (-74.05)).abs() < 1e-9, "got {bps}");
-        assert_eq!(sig.receipt_url, "https://pegana.xyz/audit?asset=jitoSOL");
+        assert_eq!(bps, -74.05, "exact, no float noise");
+        assert_eq!(
+            sig.receipt_url,
+            "https://www.pegana.xyz/audit?asset=jitoSOL"
+        );
         assert!(sig.updated_at.is_none());
         assert!(sig.stale);
     }

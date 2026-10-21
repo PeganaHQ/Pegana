@@ -117,6 +117,27 @@ body:has(.pegana-v2) {
   }
 }
 
+/* Hero h1/sub entrance (LCP elements). CSS-only so it starts at first paint
+   with no hydration dependency, and it never animates opacity: the text is
+   visible from the first frame, so it is a valid LCP candidate immediately.
+   The default (no animation) state is the settled one; only
+   `prefers-reduced-motion: no-preference` adds the rise. */
+@media (prefers-reduced-motion: no-preference) {
+  .pegana-v2 .v2-hero-rise {
+    animation: v2-hero-rise 0.85s var(--v2-ease, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  }
+}
+@keyframes v2-hero-rise {
+  from {
+    transform: translateY(18px);
+    filter: blur(5px);
+  }
+  to {
+    transform: none;
+    filter: blur(0px);
+  }
+}
+
 /* Belt-and-suspenders: even if a class was applied before hydration settled
    the JS reduced-motion check, these never animate under the OS setting. */
 @media (prefers-reduced-motion: reduce) {

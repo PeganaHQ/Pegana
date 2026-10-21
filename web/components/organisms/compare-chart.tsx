@@ -10,7 +10,20 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { useHistory } from "@/lib/hooks/use-history";
+import { useHistoryRange } from "@/lib/hooks/use-history-range";
+import { historyCoverageNote } from "@/lib/asset/history-range";
+import type { ChartBucket } from "@/lib/asset/chart-bucket";
+
+/** Per-series page cap for the compare overlay (see `fetchHistoryRange`). */
+const COMPARE_MAX_PAGES = 3;
+
+/** The compare page offers 24h / 7d / 30d windows in hours. */
+export function hoursToRange(hours: number): ChartBucket {
+  if (hours <= 1) return "1h";
+  if (hours <= 24) return "24h";
+  if (hours <= 168) return "7d";
+  return "30d";
+}
 import {
   formatGap,
   isPlausibleDiscount,
@@ -18,6 +31,7 @@ import {
 } from "@/lib/api/format";
 import { cn } from "@/lib/utils/cn";
 import { seriesColor } from "@/lib/compare/series-colors";
+import { displaySymbol } from "@/lib/asset/display-symbol";
 import { useTvChart } from "./tv-chart/use-tv-chart";
 import { ExpandShell } from "./tv-chart/expand-shell";
 import type { TvTokens } from "./tv-chart/theme";
@@ -42,21 +56,32 @@ export function CompareChart({
   exportKey = 0,
   onExportPng,
 }: CompareChartProps) {
-  const params = useMemo(
-    () => ({
-      bucket: "1m" as const,
-      from: new Date(Date.now() - hours * 3600_000).toISOString(),
-      limit: 2000,
-    }),
-    [hours],
-  );
+  const range = hoursToRange(hours);
+  // Up to four series: cap paging at three calls each so a 30D overlay costs
+  // at most 12 requests, not 36. A capped range says so under the chart.
+  const pageCap = { maxPages: COMPARE_MAX_PAGES };
 
   // Hooks must be called unconditionally — pad up to 4 slots.
-  const s0 = useHistory(symbols[0] ?? null, params);
-  const s1 = useHistory(symbols[1] ?? null, params);
-  const s2 = useHistory(symbols[2] ?? null, params);
-  const s3 = useHistory(symbols[3] ?? null, params);
+  const r0 = useHistoryRange(symbols[0] ?? null, range, pageCap);
+  const r1 = useHistoryRange(symbols[1] ?? null, range, pageCap);
+  const r2 = useHistoryRange(symbols[2] ?? null, range, pageCap);
+  const r3 = useHistoryRange(symbols[3] ?? null, range, pageCap);
+  const s0 = { data: r0.data?.points, isLoading: r0.isLoading };
+  const s1 = { data: r1.data?.points, isLoading: r1.isLoading };
+  const s2 = { data: r2.data?.points, isLoading: r2.isLoading };
+  const s3 = { data: r3.data?.points, isLoading: r3.isLoading };
   const responses = [s0, s1, s2, s3];
+  const coverageNote = useMemo(() => {
+    for (const r of [r0.data, r1.data, r2.data, r3.data].slice(
+      0,
+      symbols.length,
+    )) {
+      if (!r) continue;
+      const note = historyCoverageNote(r.points, r.fromMs, r.truncated);
+      if (note) return note;
+    }
+    return null;
+  }, [symbols.length, r0.data, r1.data, r2.data, r3.data]);
 
   const seriesData = useMemo<Record<string, Sample[]>>(() => {
     // Depend on the stable per-series `.data` refs below, not the `responses`
@@ -144,6 +169,7 @@ export function CompareChart({
           preview={preview && !inModal}
           exportKey={exportKey}
           onExportPng={onExportPng}
+          coverageNote={inModal ? null : coverageNote}
         />
       )}
     </ExpandShell>
@@ -159,6 +185,7 @@ interface ChartSurfaceProps {
   preview: boolean;
   exportKey: number;
   onExportPng?: (dataUrl: string) => void;
+  coverageNote?: string | null;
 }
 
 function ChartSurface({
@@ -170,6 +197,7 @@ function ChartSurface({
   preview,
   exportKey,
   onExportPng,
+  coverageNote,
 }: ChartSurfaceProps) {
   const { containerRef, chart, tokens, aliveRef } = useTvChart();
   const seriesMapRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
@@ -378,6 +406,14 @@ function ChartSurface({
         values={displayed}
         preview={preview}
       />
+      {coverageNote && !preview && (
+        <p
+          className="border-t border-hairline px-3 py-2 font-mono text-[10px] text-text-muted"
+          data-testid="history-coverage-note"
+        >
+          {coverageNote}
+        </p>
+      )}
     </div>
   );
 }
@@ -478,8 +514,10 @@ function Legend({
               className="inline-block h-0.5 w-3"
               style={{ background: color }}
             />
-            <span className="uppercase tracking-[0.06em] text-text-muted">
-              {sym}
+            {/* Display alias (sHYUSD shows as eHYUSD everywhere else) and the
+                symbol's own casing: uppercasing turned jitoSOL into JITOSOL. */}
+            <span className="tracking-[0.02em] text-text-muted">
+              {displaySymbol(sym)}
             </span>
             {/* `values` is ALREADY holder-signed (negated once at the single
                 entry point above), and spreadSignClass takes the RAW bps — so

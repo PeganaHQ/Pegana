@@ -382,12 +382,12 @@ Together these prevent backdating: the engine can't claim it
 decided 2 hours ago about an event that just happened, because the
 Memo commit would have a block_time later than the receipt's
 `detected_at`. Code: `crates/methodology/src/canonical.rs` (the
-hash function) + the engine's `onchain_commit.rs` in the closed
-sibling repo.
+hash function) + the engine's `crates/engine-rs/src/onchain_commit.rs` in
+[PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana).
 
 Note: the anti-backdating enforcement (`block_time > detected_at` check)
-runs inside the closed sibling repo's engine and is therefore not
-verifiable from this public repo. The hash itself — which you can
+runs inside the engine (in [PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana),
+not in this verifier subset), so this CLI does not re-check it. The hash itself — which you can
 reproduce from this repo's `canonical_receipt_hash` — is what you verify;
 the block_time ordering is confirmable directly from the Solana explorer
 for any `onchain_tx_sig`.
@@ -450,10 +450,11 @@ A few things this design explicitly does not do, with reasons:
 | [`crates/pegana-replay-cli/`](crates/pegana-replay-cli) | The CLI binary that runs the methodology against a fetched receipt. |
 | [`crates/common-verify/`](crates/common-verify) | Config types + `AlertEvidence` schema returned by the API. |
 | [`assets.toml`](assets.toml) | Canonical asset list. Hashed into every receipt. |
-| [`docs/adr/`](docs/adr) | ADRs that decided each load-bearing methodology choice, dated and rationalised. |
+| [`docs/adr/`](https://github.com/PeganaHQ/Pegana/tree/main/docs/adr) (upstream, not mirrored here) | ADRs that decided each load-bearing methodology choice, dated and rationalised. |
 
-The engine that runs this methodology in production (the closed
-sibling repo) is **not** in scope for this document. What that engine
+The engine that runs this methodology in production (open source in
+[PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana), outside this verifier subset) is
+**not** in scope for this document. What that engine
 must do is produce, for each state transition, an `AlertEvidence`
 that this methodology can verify. As long as that happens, the
 engine is interchangeable — anyone could write their own
@@ -470,4 +471,4 @@ That's the point of separating the math from the runtime.
 - Audit ledger (live receipts post 2026-06-11 verdict gate):
   <https://www.pegana.xyz/audit>
 - Install verifier: <https://releases.pegana.xyz>
-- Telegram for questions: [@PeganaWatchBot](https://t.me/PeganaWatchBot)
+- Questions and issues: [github.com/PeganaHQ/Pegana/issues](https://github.com/PeganaHQ/Pegana/issues)

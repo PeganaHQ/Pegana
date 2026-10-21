@@ -1,1 +1,1 @@
-Pegana — peg-risk oracle for Solana
+Pegana: peg-risk oracle for Solana

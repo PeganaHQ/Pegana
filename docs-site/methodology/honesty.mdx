@@ -95,7 +95,7 @@ for historical continuity but the engine no longer polls it. `dSOL` (Drift's LST
 was soft-deactivated on 2026-05-26 after the 2026-04-01 exploit — no live counterparty
 for redemption. Rather than an `active = false` entry, its definition is preserved as a
 commented-out block in `assets.toml` so historical snapshots remain reproducible while the
-indexer and engine skip it entirely. It is excluded from the 69 assets tracked live
+indexer and engine skip it entirely. It is excluded from the 67 assets on the public peg surface
 and no longer polled.
 
 ## Frozen backing can currently read as confident
@@ -119,7 +119,8 @@ issuer's backing is still being updated. Cross-check the issuer directly.
 
 The classification is instantaneous: it describes the spread at the moment of decision,
 not how long the asset has been there. Duration *is* published — `sustained` and
-`current_state_duration_secs` are on `/v1/assets` — but they are **not** part of the
+`current_state_duration_secs` (omitted when the engine has no duration for the asset) are on
+`/v1/assets` — but they are **not** part of the
 frozen inputs that get hashed into the receipt, and a forced `UNKNOWN` resets the clock.
 
 This matters if you are building on the receipt rather than on the API: a receipt tells
@@ -130,12 +131,21 @@ needs a different input than the one we currently sign.
 ## How to verify mistrust
 
 Every alert includes the `intrinsic_usd`, `market_usd`, and `discount` values at the
-moment it fired. Re-fetch the asset's history endpoint around the alert timestamp:
+moment it fired. Pick a real receipt from the ledger, then re-fetch that asset's history
+around its `detected_at`:
 
 ```bash
-curl "https://api.pegana.xyz/v1/assets/USDC/history?from=2026-05-26T14:32:00Z&to=2026-05-26T14:33:00Z&bucket=raw"
+# 1. The newest non-PEGGED transition: note its asset and detected_at.
+curl -s "https://api.pegana.xyz/v1/audit?limit=1" | jq '.[0] | {id, asset, to_state, detected_at}'
+
+# 2. The raw series in a window around it (replace ASSET, FROM and TO; URL-encode the
+#    symbol, e.g. hyloSOL+ becomes hyloSOL%2B).
+curl -s "https://api.pegana.xyz/v1/assets/ASSET/history?from=FROM&to=TO&bucket=raw" \
+  | jq '.data[] | {ts, discount, state}'
 ```
 
-If the raw spread series doesn't show the threshold crossing, the alert is wrong and
-you should open a Sentry ticket — but in practice you will see exactly the print that
-fired the alert, with the same numbers.
+If the raw spread series doesn't show the threshold crossing, the alert is wrong and you
+should open an issue at [github.com/PeganaHQ/Pegana/issues](https://github.com/PeganaHQ/Pegana/issues)
+with the receipt id. In practice you will see exactly the print that fired the alert, with
+the same numbers. For a byte-exact check, re-derive the receipt offline with
+[`pegana-replay`](https://crates.io/crates/pegana-replay).

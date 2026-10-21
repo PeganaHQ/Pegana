@@ -134,11 +134,11 @@ describe("LstDirectoryTableV2", () => {
       src?.includes("/api/token-logo?mint="),
     );
 
-    // Covered row (aSOL, MintA) — unchanged vendored icon, never the proxy.
-    expect(coveredSrc).toBe("/tokens/MintA.webp");
+    // Covered row (aSOL, MintA) — vendored icon from the API box (lib/static-assets.ts), never the proxy.
+    expect(coveredSrc).toBe("https://api.pegana.xyz/static/tokens/MintA.webp");
 
     // Uncovered rows (bSOL/MintB, stSOL/MintC) — same-origin proxy, never a
-    // raw external CDN URL (CSP img-src is 'self' data: blob: only).
+    // raw external CDN URL (CSP img-src does not allow those hosts).
     expect(uncoveredSrcs.slice().sort()).toEqual(
       ["/api/token-logo?mint=MintB", "/api/token-logo?mint=MintC"].sort(),
     );

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 
 import { pageMetadata } from "@/lib/seo/page-metadata";
 

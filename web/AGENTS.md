@@ -321,8 +321,8 @@ Excludes `tests/e2e/`, `.claude/**`, `worktrees/**`.
 
 All data surfaces bind to real API endpoints via SWR hooks (`useAssets()`,
 `useAsset()`, `useStats()`, etc.). Numbers come from production API — NEVER
-hardcode. When live data is unavailable, use the existing `MockDataBanner`
-honest-degradation pattern: show sample data with a visible "sample" caption.
+hardcode. When live data is unavailable, show an explicit in-place "unavailable" state with a retry
+control (as the landing hero board does); never render sample rows.
 
 **`dashSafe()`** (`components/organisms/v2/shared.tsx`): `formatValue`/
 `formatGap` fall back to em-dash for null input. DESIGN.md bans visible em-dashes
