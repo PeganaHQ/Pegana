@@ -29,15 +29,38 @@ vi.mock("@/lib/verify-receipt", () => ({
 class FakeIO {
   static last: FakeIO | null = null;
   cb: IntersectionObserverCallback;
+  target: Element | null = null;
   constructor(cb: IntersectionObserverCallback) {
     this.cb = cb;
     FakeIO.last = this;
   }
-  observe() {}
+  observe(el: Element) {
+    this.target = el;
+  }
   disconnect() {}
   unobserve() {}
+  /** Deliver an entry for the observed element. */
+  emit(e: {
+    isIntersecting: boolean;
+    ratio?: number;
+    visibleHeight?: number;
+    rootHeight?: number;
+  }) {
+    this.cb(
+      [
+        {
+          isIntersecting: e.isIntersecting,
+          intersectionRatio: e.ratio ?? (e.isIntersecting ? 1 : 0),
+          intersectionRect: { height: e.visibleHeight ?? 0 },
+          rootBounds: e.rootHeight != null ? { height: e.rootHeight } : null,
+          target: this.target,
+        } as unknown as IntersectionObserverEntry,
+      ],
+      this as unknown as IntersectionObserver,
+    );
+  }
   trigger() {
-    this.cb([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+    this.emit({ isIntersecting: true, ratio: 1 });
   }
 }
 
@@ -289,5 +312,82 @@ describe("TrustSceneV2 - choreography", () => {
     fireEvent.click(screen.getByRole("button", { name: "Replay" }));
     expect(beat("freeze")).toBe("active");
     expect(beat("recompute")).toBe("hidden");
+  });
+});
+
+describe("TrustSceneV2 - autoplay when the chart is in view", () => {
+  const beatNow = (id: string) =>
+    document.querySelector(`[data-beat="${id}"]`)!.getAttribute("data-beat-state");
+
+  beforeEach(() => {
+    reduced = false;
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance", "Date"],
+    });
+  });
+
+  const full = FREEZE_MS + SWEEP_MS + MATCH_MS + 200;
+
+  it("observes the chart element, not the whole section", () => {
+    render(<TrustSceneV2 />);
+    expect(FakeIO.last!.target).toBe(screen.getByTestId("replay-chart"));
+  });
+
+  it("does not start for a barely visible chart, starts at 60%", async () => {
+    render(<TrustSceneV2 />);
+    act(() => FakeIO.last!.emit({ isIntersecting: true, ratio: 0.3, visibleHeight: 100, rootHeight: 900 }));
+    expect(beatNow("freeze")).toBe("hidden");
+    act(() => FakeIO.last!.emit({ isIntersecting: true, ratio: 0.65 }));
+    expect(beatNow("freeze")).toBe("active");
+  });
+
+  it("starts on a short viewport that can never show 60% of the chart (60% of the viewport)", () => {
+    render(<TrustSceneV2 />);
+    act(() => FakeIO.last!.emit({ isIntersecting: true, ratio: 0.4, visibleHeight: 330, rootHeight: 500 }));
+    expect(beatNow("freeze")).toBe("active");
+  });
+
+  it("waits for the tab to be visible before playing", () => {
+    const vis = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    render(<TrustSceneV2 />);
+    act(() => FakeIO.last!.trigger());
+    expect(beatNow("freeze")).toBe("hidden");
+    vis.mockReturnValue("visible");
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(beatNow("freeze")).toBe("active");
+    vis.mockRestore();
+  });
+
+  it("does not replay after the user interacted, even on re-entry", async () => {
+    render(<TrustSceneV2 />);
+    act(() => FakeIO.last!.trigger());
+    await act(async () => { await vi.advanceTimersByTimeAsync(full); });
+    fireEvent.click(screen.getAllByTestId("marker")[0]); // user takes over
+    act(() => FakeIO.last!.emit({ isIntersecting: false }));
+    act(() => FakeIO.last!.trigger());
+    expect(beatNow("freeze")).toBe("done");
+    expect(beatNow("recompute")).toBe("done");
+  });
+
+  it("may autoplay once more on re-entry if untouched, but only once", async () => {
+    render(<TrustSceneV2 />);
+    act(() => FakeIO.last!.trigger());
+    await act(async () => { await vi.advanceTimersByTimeAsync(full); });
+    act(() => FakeIO.last!.emit({ isIntersecting: false }));
+    act(() => FakeIO.last!.trigger());
+    expect(beatNow("freeze")).toBe("active"); // second autoplay
+    await act(async () => { await vi.advanceTimersByTimeAsync(full); });
+    act(() => FakeIO.last!.emit({ isIntersecting: false }));
+    act(() => FakeIO.last!.trigger());
+    expect(beatNow("freeze")).toBe("done"); // no third
+  });
+
+  it("re-entering while it is still playing does not restart it", async () => {
+    render(<TrustSceneV2 />);
+    act(() => FakeIO.last!.trigger());
+    await act(async () => { await vi.advanceTimersByTimeAsync(FREEZE_MS + 400); });
+    act(() => FakeIO.last!.emit({ isIntersecting: false }));
+    act(() => FakeIO.last!.trigger());
+    expect(beatNow("recompute")).toBe("active");
   });
 });

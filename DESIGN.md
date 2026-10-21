@@ -124,7 +124,7 @@ to `{duration: 0}` under reduced motion.
 | Scroll reveals (.rv) | hierarchy | IntersectionObserver once, threshold .1, stagger i%6*70ms, same fade/blur |
 | Live pips pulse | real state semantics | 2.2s opacity blink, only on non-pegged states |
 | Nav glass ramp | the pill stays legible over content | `--nav-glass` 0 to 1, scroll-linked to the live board's top edge (120px range), written to the element so scrolling never re-renders React |
-| Verdict replay (trust) | FREEZE, RECOMPUTE, MATCH of the real USDe event | plays once on entering the viewport (threshold .4), not scroll-linked: freeze 600ms, sweep 2400ms, match 700ms |
+| Verdict replay (trust) | FREEZE, RECOMPUTE, MATCH of the real USDe event | autoplays when the chart is mostly in view (60% of the chart, or of a short viewport) and the tab is visible, then hands control to the user (one re-autoplay on re-entry only if untouched); not scroll-linked: freeze 600ms, sweep 2400ms, match 700ms |
 | Micro-hovers | affordance | links, rows and cards change border/background in ≤200ms; no transforms beyond 1px |
 
 **Reduced-motion matrix (mandatory):** verdict replay shows its final state · reveals instant · nav glass jumps between endpoints ·

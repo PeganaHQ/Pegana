@@ -240,11 +240,15 @@ export function TrustSceneV2() {
   const head = useRevealV2<HTMLDivElement>({ index: 0 });
   const reduced = useAppReducedMotion();
   const { ref: chartRef, width } = useChartWidth();
-  const wrapRef = useRef<HTMLDivElement | null>(null);
   const markerEls = useRef<Array<HTMLButtonElement | null>>([]);
   const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const raf = useRef<number | null>(null);
   const started = useRef(false);
+  // Autoplay bookkeeping: how many autoplays ran, and whether the user has
+  // taken over (any Replay click or marker selection).
+  const autoplays = useRef(0);
+  const interacted = useRef(false);
+  const phaseRef = useRef<Phase>("idle");
 
   const total = REPLAY_MARKERS.length;
   const critical = criticalMarker();
@@ -322,37 +326,66 @@ export function TrustSceneV2() {
     if (reduced) showFinal();
   }, [reduced, showFinal]);
 
-  // Plays once when the scene enters the viewport. Not scroll-linked.
+  phaseRef.current = phase;
+
+  // Autoplays when the CHART (not the whole section, which is far taller than
+  // many viewports) is mostly in view and the tab is visible, then hands
+  // control to the user. If the user has not touched anything it may replay
+  // once more after the chart leaves and re-enters view. Not scroll-linked.
   useEffect(() => {
-    if (reduced || started.current) return;
-    const el = wrapRef.current;
-    const begin = () => {
-      if (started.current) return;
+    if (reduced) return;
+    const el = chartRef.current;
+    let inView = false;
+    const visible = () => document.visibilityState !== "hidden";
+    const maybe = () => {
+      if (!inView || !visible()) return;
+      if (interacted.current || autoplays.current >= 2) return;
+      if (autoplays.current > 0 && phaseRef.current !== "done") return;
+      autoplays.current += 1;
       started.current = true;
       play();
     };
+    const onVisibility = () => maybe();
+    document.addEventListener("visibilitychange", onVisibility);
     if (!el || typeof IntersectionObserver === "undefined") {
-      begin();
-      return;
+      inView = true;
+      maybe();
+      return () => document.removeEventListener("visibilitychange", onVisibility);
     }
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          io.disconnect();
-          begin();
+        const e = entries[entries.length - 1];
+        if (!e) return;
+        // "Mostly visible": 60% of the chart, or 60% of the viewport when the
+        // viewport is shorter than the chart can ever fill.
+        const enough =
+          e.isIntersecting &&
+          (e.intersectionRatio >= 0.6 ||
+            (e.rootBounds != null &&
+              e.intersectionRect.height >= 0.6 * e.rootBounds.height));
+        if (enough && !inView) {
+          inView = true;
+          maybe();
+        } else if (!e.isIntersecting && inView) {
+          inView = false;
         }
       },
-      { threshold: 0.4 },
+      // The fixed nav covers the top of the viewport.
+      { threshold: [0, 0.3, 0.6, 1], rootMargin: "-72px 0px 0px 0px" },
     );
     io.observe(el);
-    return () => io.disconnect();
-  }, [reduced, play]);
+    return () => {
+      io.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [reduced, play, chartRef]);
 
   const selected = REPLAY_MARKERS.find((m) => m.file === selectedFile) ?? null;
   const verify = useVerify(selected);
   const animate = !reduced;
 
   function select(i: number) {
+    interacted.current = true;
     const m = REPLAY_MARKERS[i];
     if (phase === "freeze" || phase === "recompute") return;
     setSelectedFile(m.file);
@@ -428,7 +461,7 @@ export function TrustSceneV2() {
   const announce = idx(phase) >= idx("match");
 
   return (
-    <div className="py-20 scene:py-24" ref={wrapRef}>
+    <div className="py-20 scene:py-24">
       <div className="mx-auto w-full max-w-[1180px] px-6 sm:px-10">
         <div ref={head.ref} style={head.style} className="mb-10 max-w-[56ch]">
           <h2 className="text-balance text-[clamp(30px,4.2vw,50px)] font-medium leading-[1.05] tracking-[-0.022em]">
@@ -471,6 +504,7 @@ export function TrustSceneV2() {
             <button
               type="button"
               onClick={() => {
+                interacted.current = true;
                 started.current = true;
                 play();
               }}
@@ -481,7 +515,11 @@ export function TrustSceneV2() {
           </div>
 
           <div className="px-2 pb-3 sm:px-5">
-            <div ref={chartRef} className="relative min-w-0">
+            <div
+              ref={chartRef}
+              data-testid="replay-chart"
+              className="relative min-w-0"
+            >
               <svg
                 width={g.w}
                 height={g.h}
