@@ -22,7 +22,7 @@ export function IncidentCardV2({
       <div className="v2-in-prose">{children}</div>
       {commits.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[11px] text-[var(--v2-dim)]">
+          <span className="font-mono text-[12px] text-[var(--v2-dim)]">
             shipped in
           </span>
           {commits.map((c) => (

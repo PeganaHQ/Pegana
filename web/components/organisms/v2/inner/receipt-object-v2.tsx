@@ -54,7 +54,7 @@ export function ReceiptObjectV2({
           )}
           {displaySymbol(symbol)}
           {subLabel && (
-            <span className="font-mono text-[11px] text-[var(--v2-muted)]">
+            <span className="font-mono text-[12px] text-[var(--v2-muted)]">
               {subLabel}
             </span>
           )}

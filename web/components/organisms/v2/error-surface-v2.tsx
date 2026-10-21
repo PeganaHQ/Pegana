@@ -135,7 +135,7 @@ function DriftMotif({
           x="414"
           y="30"
           textAnchor="end"
-          className="font-mono text-[9.5px] tracking-[0.08em]"
+          className="font-mono text-[12px] tracking-[0.08em]"
           fill="var(--v2-dim)"
         >
           published surfaces
@@ -180,7 +180,7 @@ function DriftMotif({
         <text
           x="384"
           y="134"
-          className="font-mono text-[9.5px] tracking-[0.08em]"
+          className="font-mono text-[12px] tracking-[0.08em]"
           fill={st.hex}
           fillOpacity=".9"
         >
@@ -189,7 +189,7 @@ function DriftMotif({
       </svg>
 
       <span
-        className="v2-err-statepill absolute -bottom-4 -right-3.5 inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] font-mono text-[11px]"
+        className="v2-err-statepill absolute -bottom-4 -right-3.5 inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] font-mono text-[12px]"
         style={{
           color: st.hex,
           border: `1px solid ${st.border}`,
@@ -259,7 +259,7 @@ export function ErrorSurfaceV2({
               {primary.label}
               <span
                 aria-hidden
-                className="-my-1 ml-0.5 -mr-2.5 grid h-[22px] w-[22px] place-items-center rounded-full bg-[rgba(20,17,24,.09)] text-[11px] transition-transform duration-500 ease-[var(--v2-ease-phys)] group-hover:translate-x-0.5"
+                className="-my-1 ml-0.5 -mr-2.5 grid h-[22px] w-[22px] place-items-center rounded-full bg-[rgba(20,17,24,.09)] text-[12px] transition-transform duration-500 ease-[var(--v2-ease-phys)] group-hover:translate-x-0.5"
               >
                 →
               </span>
@@ -275,7 +275,7 @@ export function ErrorSurfaceV2({
             sub-not-found. */}
         {standalone && (
           <div className="mt-16 flex flex-col items-center gap-3">
-            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--v2-dim)]">
+            <p className="font-mono text-[12px] uppercase tracking-[0.14em] text-[var(--v2-dim)]">
               Or jump straight to a live asset
             </p>
             <div className="flex flex-wrap justify-center gap-2">
@@ -283,7 +283,7 @@ export function ErrorSurfaceV2({
                   <Link
                     key={pick.symbol}
                     href={`/asset/${encodeURIComponent(pick.symbol)}`}
-                    className="group inline-flex items-center gap-2 rounded-full border border-[var(--v2-line)] px-3.5 py-2 font-mono text-[11px] text-[var(--v2-muted)] transition-[border-color,color,background] duration-300 hover:border-[var(--v2-line2)] hover:bg-white/[0.03] hover:text-[var(--v2-text)]"
+                    className="group inline-flex items-center gap-2 rounded-full border border-[var(--v2-line)] px-3.5 py-2 font-mono text-[12px] text-[var(--v2-muted)] transition-[border-color,color,background] duration-300 hover:border-[var(--v2-line2)] hover:bg-white/[0.03] hover:text-[var(--v2-text)]"
                   >
                     {pick.label}
                   </Link>

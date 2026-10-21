@@ -178,21 +178,21 @@ export function HeroV2() {
               <span className="v2-board-tabs mr-auto flex items-center gap-1 overflow-x-auto rounded-full border border-[var(--v2-line)] bg-white/[0.04] p-[3px] font-mono">
                 <button
                   type="button"
-                  className="cursor-default rounded-full bg-white/10 px-3 py-[5px] text-[11.5px] whitespace-nowrap text-[var(--v2-text)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[11px]"
+                  className="cursor-default rounded-full bg-white/10 px-3 py-[5px] text-[12px] whitespace-nowrap text-[var(--v2-text)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px]"
                 >
                   all{totalCount != null ? ` · ${totalCount}` : ""}
                 </button>
-                <span className="cursor-default px-3 py-[5px] text-[11.5px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[11px]">
+                <span className="cursor-default px-3 py-[5px] text-[12px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px]">
                   stables
                 </span>
-                <span className="cursor-default px-3 py-[5px] text-[11.5px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[11px]">
+                <span className="cursor-default px-3 py-[5px] text-[12px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px]">
                   LSTs
                 </span>
-                <span className="cursor-default px-3 py-[5px] text-[11.5px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[11px]">
+                <span className="cursor-default px-3 py-[5px] text-[12px] whitespace-nowrap text-[var(--v2-dim)] max-[760px]:px-[13px] max-[760px]:py-1.5 max-[760px]:text-[12px]">
                   yield
                 </span>
               </span>
-              <span className="inline-flex items-center gap-[7px] rounded-full border border-[var(--v2-line)] px-3 py-1.5 font-mono text-[11.5px] uppercase tracking-[0.06em] text-[var(--v2-muted)] max-[760px]:ml-auto">
+              <span className="inline-flex items-center gap-[7px] rounded-full border border-[var(--v2-line)] px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.06em] text-[var(--v2-muted)] max-[760px]:ml-auto">
                 <span className="h-1.5 w-1.5 rounded-full bg-[var(--v2-peg)]" />
                 live · 60s
               </span>
@@ -208,7 +208,7 @@ export function HeroV2() {
                 <tr
                   role="row"
                   className={cn(
-                    "grid items-center gap-3 border-b border-[var(--v2-line)] px-5 pb-[13px] pt-[13px] font-mono text-[10.5px] uppercase tracking-[0.09em] text-[var(--v2-muted)]",
+                    "grid items-center gap-3 border-b border-[var(--v2-line)] px-5 pb-[13px] pt-[13px] font-mono text-[12px] uppercase tracking-[0.09em] text-[var(--v2-muted)]",
                     GRID_MOBILE,
                     GRID_DESKTOP,
                     "max-[859px]:hidden",
@@ -231,13 +231,13 @@ export function HeroV2() {
                   </th>
                   <th
                     scope="col"
-                    className={cn("text-left text-[10.5px]", HIDE_M)}
+                    className={cn("min-w-0 text-left text-[12px] whitespace-nowrap max-[1023px]:tracking-[0.04em]", HIDE_M)}
                   >
                     Band proximity
                   </th>
                   <th
                     scope="col"
-                    className={cn("text-left text-[10.5px]", HIDE_SPARK)}
+                    className={cn("min-w-0 text-left text-[12px] whitespace-nowrap max-[1023px]:tracking-[0.04em]", HIDE_SPARK)}
                   >
                     Spread · 24h
                   </th>
@@ -269,7 +269,7 @@ export function HeroV2() {
             </div>
           </div>
           {usingSample && (
-            <p className="mt-[13px] text-center font-mono text-[11px] tracking-[0.02em] text-[var(--v2-muted)]">
+            <p className="mt-[13px] text-center font-mono text-[12px] tracking-[0.02em] text-[var(--v2-muted)]">
               sample rows: production binds to /v1/assets
             </p>
           )}
@@ -350,7 +350,7 @@ function BoardRowView({
             <span className="font-semibold text-[var(--v2-text)] transition-colors duration-200 group-hover:text-white">
               {displaySymbol(row.symbol)}
             </span>
-            <span className="truncate font-mono text-[10.5px] text-[var(--v2-muted)]">
+            <span className="truncate font-mono text-[12px] text-[var(--v2-muted)]">
               {row.classLabel}
             </span>
           </span>
@@ -370,7 +370,7 @@ function BoardRowView({
       <td
         className={cn(
           "text-right font-mono text-xs tabular-nums text-[var(--v2-muted)]",
-          row.gaugePct == null && "text-[11px]",
+          row.gaugePct == null && "text-[12px]",
           HIDE_M,
         )}
       >
@@ -386,7 +386,7 @@ function BoardRowView({
       </td>
       <td className={cn("items-center gap-2", HIDE_M_FLEX)}>
         {row.gaugePct == null ? (
-          <span className="font-mono text-[10.5px] text-[var(--v2-muted)]">
+          <span className="font-mono text-[12px] text-[var(--v2-muted)]">
             -
           </span>
         ) : (
@@ -407,7 +407,7 @@ function BoardRowView({
                 }}
               />
             </span>
-            <span className="w-8 text-right font-mono text-[10.5px] text-[var(--v2-muted)]">
+            <span className="w-8 text-right font-mono text-[12px] text-[var(--v2-muted)]">
               {row.gaugePct}%
             </span>
           </>
@@ -420,7 +420,7 @@ function BoardRowView({
             color={sparkColorHex(row.state)}
           />
         ) : (
-          <span className="font-mono text-[10.5px] text-[var(--v2-muted)]">
+          <span className="font-mono text-[12px] text-[var(--v2-muted)]">
             -
           </span>
         )}
