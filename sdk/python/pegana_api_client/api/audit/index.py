@@ -1,5 +1,7 @@
+import datetime
 from http import HTTPStatus
 from typing import Any, cast
+from uuid import UUID
 
 import httpx
 
@@ -14,6 +16,11 @@ def _get_kwargs(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
+    asset: str | Unset = UNSET,
+    since: datetime.datetime | Unset = UNSET,
+    until: datetime.datetime | Unset = UNSET,
+    before: datetime.datetime | Unset = UNSET,
+    before_id: UUID | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -23,6 +30,28 @@ def _get_kwargs(
     params["exclude_pegged"] = exclude_pegged
 
     params["state"] = state
+
+    params["asset"] = asset
+
+    json_since: str | Unset = UNSET
+    if not isinstance(since, Unset):
+        json_since = since.isoformat()
+    params["since"] = json_since
+
+    json_until: str | Unset = UNSET
+    if not isinstance(until, Unset):
+        json_until = until.isoformat()
+    params["until"] = json_until
+
+    json_before: str | Unset = UNSET
+    if not isinstance(before, Unset):
+        json_before = before.isoformat()
+    params["before"] = json_before
+
+    json_before_id: str | Unset = UNSET
+    if not isinstance(before_id, Unset):
+        json_before_id = str(before_id)
+    params["before_id"] = json_before_id
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -75,6 +104,11 @@ def sync_detailed(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
+    asset: str | Unset = UNSET,
+    since: datetime.datetime | Unset = UNSET,
+    until: datetime.datetime | Unset = UNSET,
+    before: datetime.datetime | Unset = UNSET,
+    before_id: UUID | Unset = UNSET,
 ) -> Response[Any | list[AuditIndexRow]]:
     """List recent audit receipts
 
@@ -82,6 +116,11 @@ def sync_detailed(
         limit (int | Unset):
         exclude_pegged (bool | Unset):
         state (str | Unset):
+        asset (str | Unset):
+        since (datetime.datetime | Unset):
+        until (datetime.datetime | Unset):
+        before (datetime.datetime | Unset):
+        before_id (UUID | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -95,6 +134,11 @@ def sync_detailed(
         limit=limit,
         exclude_pegged=exclude_pegged,
         state=state,
+        asset=asset,
+        since=since,
+        until=until,
+        before=before,
+        before_id=before_id,
     )
 
     response = client.get_httpx_client().request(
@@ -110,6 +154,11 @@ def sync(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
+    asset: str | Unset = UNSET,
+    since: datetime.datetime | Unset = UNSET,
+    until: datetime.datetime | Unset = UNSET,
+    before: datetime.datetime | Unset = UNSET,
+    before_id: UUID | Unset = UNSET,
 ) -> Any | list[AuditIndexRow] | None:
     """List recent audit receipts
 
@@ -117,6 +166,11 @@ def sync(
         limit (int | Unset):
         exclude_pegged (bool | Unset):
         state (str | Unset):
+        asset (str | Unset):
+        since (datetime.datetime | Unset):
+        until (datetime.datetime | Unset):
+        before (datetime.datetime | Unset):
+        before_id (UUID | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -131,6 +185,11 @@ def sync(
         limit=limit,
         exclude_pegged=exclude_pegged,
         state=state,
+        asset=asset,
+        since=since,
+        until=until,
+        before=before,
+        before_id=before_id,
     ).parsed
 
 
@@ -140,6 +199,11 @@ async def asyncio_detailed(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
+    asset: str | Unset = UNSET,
+    since: datetime.datetime | Unset = UNSET,
+    until: datetime.datetime | Unset = UNSET,
+    before: datetime.datetime | Unset = UNSET,
+    before_id: UUID | Unset = UNSET,
 ) -> Response[Any | list[AuditIndexRow]]:
     """List recent audit receipts
 
@@ -147,6 +211,11 @@ async def asyncio_detailed(
         limit (int | Unset):
         exclude_pegged (bool | Unset):
         state (str | Unset):
+        asset (str | Unset):
+        since (datetime.datetime | Unset):
+        until (datetime.datetime | Unset):
+        before (datetime.datetime | Unset):
+        before_id (UUID | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -160,6 +229,11 @@ async def asyncio_detailed(
         limit=limit,
         exclude_pegged=exclude_pegged,
         state=state,
+        asset=asset,
+        since=since,
+        until=until,
+        before=before,
+        before_id=before_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -173,6 +247,11 @@ async def asyncio(
     limit: int | Unset = UNSET,
     exclude_pegged: bool | Unset = UNSET,
     state: str | Unset = UNSET,
+    asset: str | Unset = UNSET,
+    since: datetime.datetime | Unset = UNSET,
+    until: datetime.datetime | Unset = UNSET,
+    before: datetime.datetime | Unset = UNSET,
+    before_id: UUID | Unset = UNSET,
 ) -> Any | list[AuditIndexRow] | None:
     """List recent audit receipts
 
@@ -180,6 +259,11 @@ async def asyncio(
         limit (int | Unset):
         exclude_pegged (bool | Unset):
         state (str | Unset):
+        asset (str | Unset):
+        since (datetime.datetime | Unset):
+        until (datetime.datetime | Unset):
+        before (datetime.datetime | Unset):
+        before_id (UUID | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -195,5 +279,10 @@ async def asyncio(
             limit=limit,
             exclude_pegged=exclude_pegged,
             state=state,
+            asset=asset,
+            since=since,
+            until=until,
+            before=before,
+            before_id=before_id,
         )
     ).parsed

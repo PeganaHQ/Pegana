@@ -1,5 +1,7 @@
 "use client";
 
+import { isRateLimited } from "@/lib/api/client";
+import { RATE_LIMITED_BODY, RATE_LIMITED_LABEL } from "@/lib/api/rate-limit-copy";
 import {
   Suspense,
   useCallback,
@@ -9,7 +11,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useSearchParams } from "next/navigation";
 import { MarketFeed } from "@/components/organisms/market-feed";
 import { OnboardingModal } from "@/components/organisms/onboarding-modal";
@@ -786,7 +788,11 @@ function DashboardBoard() {
         )}
 
         {backendDown && (
-          <BackendDownState onRetry={() => mutate()} className="py-16" />
+          <BackendDownState
+            onRetry={() => mutate()}
+            rateLimited={isRateLimited(error)}
+            className="py-16"
+          />
         )}
 
         {!isLoading && !backendDown && (
@@ -1200,19 +1206,27 @@ export default function DashboardPage() {
 // means the Pegana API itself failed, not that the filter is too narrow.
 function BackendDownState({
   onRetry,
+  rateLimited = false,
   className,
 }: {
   onRetry: () => void;
+  rateLimited?: boolean;
   className?: string;
 }) {
   return (
     <div className={cn("text-center", className)}>
       <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-st-drift">
-        ● Live feed unreachable
+        ● {rateLimited ? RATE_LIMITED_LABEL : "Live feed unreachable"}
       </p>
       <p className="mx-auto mt-3 max-w-[360px] text-[13px] leading-[1.6] text-text-muted">
-        The Pegana API isn&apos;t responding right now. Assets will reappear
-        automatically as soon as it&apos;s healthy.
+        {rateLimited ? (
+          RATE_LIMITED_BODY
+        ) : (
+          <>
+            The Pegana API isn&apos;t responding right now. Assets will reappear
+            automatically as soon as it&apos;s healthy.
+          </>
+        )}
       </p>
       <div className="mt-5 flex items-center justify-center gap-3">
         <button

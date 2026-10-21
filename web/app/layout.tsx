@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ApiPreconnect } from "@/components/atoms/api-preconnect";
 import { headers } from "next/headers";
 import { Analytics } from "@vercel/analytics/next";
 import { MotionProvider } from "@/components/atoms/motion-provider";
@@ -142,7 +143,7 @@ const jsonLd = {
   applicationCategory: "FinanceApplication",
   operatingSystem: "Web",
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-  license: "https://github.com/PeganaHQ/ReplayCLI/blob/main/LICENSE",
+  license: "https://github.com/PeganaHQ/Pegana/blob/main/LICENSE",
   author: {
     "@type": "Person",
     name: "Rafael Souza",
@@ -161,6 +162,7 @@ const jsonLd = {
   sameAs: [
     "https://x.com/PeganaHQ",
     "https://github.com/PeganaHQ",
+    "https://github.com/PeganaHQ/Pegana",
     "https://github.com/PeganaHQ/ReplayCLI",
   ],
 };
@@ -196,6 +198,7 @@ export default async function RootLayout({
       className={cn(switzerV2.variable, geistMonoV2.variable, "font-sans")}
     >
       <body>
+        <ApiPreconnect />
         <ThemeProvider
           attribute="data-theme"
           defaultTheme="dark"

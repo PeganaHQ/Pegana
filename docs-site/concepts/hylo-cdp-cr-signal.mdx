@@ -86,17 +86,27 @@ a confidently-wrong CR.
 - **xSOL** — the leveraged-SOL synthetic that absorbs the volatility hyUSD sheds.
   Intentionally volatile; "peg" here means the design-intended leverage ratio.
 
-Pegana tracks all five (hyUSD, hyloSOL, hyloSOL+, eHYUSD, xSOL) and emits class-appropriate
-alerts for each. The Hylo design is interlocking: stress on hyUSD shows up first in
+Pegana publishes peg state for four of them on the public surface (hyUSD, hyloSOL, hyloSOL+
+and eHYUSD, listed in the API as `sHYUSD`). xSOL is still computed by the engine, but as a
+leveraged synthetic it is kept off `GET /v1/assets` and the peg feed: a design-intended
+leverage ratio is not a peg a holder can rely on. The Hylo design is interlocking: stress on hyUSD shows up first in
 CR, then in xSOL repricing, then in eHYUSD's absorption mechanic.
 
 ## What this means for builders
 
 If your protocol accepts hyUSD as collateral, you want to know the moment CR
-breaches 130% — when Hylo enters Mode 2 and redemptions get re-prioritised. Pegana's
-`/v1/assets/hyUSD/extra` endpoint exposes CR directly with timestamp; the WebSocket
-`/v1/ws` pushes a hyUSD update every 30s and a transition alert the moment CR crosses
-a threshold.
+breaches 130% — when Hylo enters Mode 2 and redemptions get re-prioritised. The Pegana API
+does not serve the raw CR value today. What it does publish:
+
+- `GET /v1/assets/hyUSD` carries the CR bands Pegana classifies against, as
+  `thresholds.cr_drift`, `cr_depeg`, `cr_critical` and `cr_black_swan` (percent).
+- `GET /v1/assets/hyUSD/state` returns the current CR-driven `state` and `since`, the moment
+  the current state began.
+- `GET /v1/audit?asset=hyUSD` lists every hyUSD transition with its public receipt, and the
+  WebSocket `/v1/ws` pushes a hyUSD reading on every engine recompute, so a band crossing
+  shows up as a `state` change on the next frame.
+
+If you need the CR number itself, decode Hylo's Exchange account as described above.
 
 ## Read next
 

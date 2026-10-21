@@ -43,7 +43,7 @@ const GROUPS: ReadonlyArray<Group> = [
     eyebrow: "V1 · live on mainnet",
     h: "V1 is live.",
     intro:
-      "Everything below this section shipped to production on 2026-07-23 and has been running since. 68 assets on the public peg surface. 72 in the canon, 69 active on mainnet, 56 fully calibrated.",
+      "Everything below this section shipped to production on 2026-07-23 and has been running since. At launch: 68 assets on the public peg surface, 72 in the canon, 69 active on mainnet, 56 fully calibrated. Live counts are on the dashboard.",
     entries: [
       {
         tag: "systemic",
@@ -72,7 +72,7 @@ const GROUPS: ReadonlyArray<Group> = [
     eyebrow: "For developers",
     h: "Built to be consumed, and to be doubted.",
     intro:
-      "The whole surface is public and keyless: 39 REST endpoints under one self-describing contract, a live WebSocket feed, and an MCP server so an agent can ask directly.",
+      "The whole surface is public and keyless: 24 REST endpoints under one self-describing OpenAPI contract, a live WebSocket feed, and an MCP server so an agent can ask directly.",
     entries: [
       {
         tag: "verify",

@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Guards the /status delivery row against BOTH of its historical failure modes.
+ * History: guarded the /status delivery row against BOTH of its failure modes.
+ * The row itself is gone now (webhooks were removed); the UNKNOWN ladder
+ * guard still applies to every remaining row.
  *
  * 1. False GREEN — the original bug: `deliveryState` was PEGGED whenever
  *    `failed_24h === 0`, regardless of `sent_24h`. With 3 alerts fired and 0
@@ -24,15 +26,12 @@ const SRC = readFileSync(
   "utf8",
 );
 
-describe("status delivery health", () => {
-  it("does not report healthy on the mere absence of failures", () => {
-    // The state derivation must consult sent_24h, not only failed_24h.
-    const block = SRC.slice(
-      SRC.indexOf("const deliveryState"),
-      SRC.indexOf("const deliveryDetail"),
-    );
-    expect(block).toContain("sent_24h");
-    expect(block).toContain("UNKNOWN");
+describe("status source rows", () => {
+  it("no longer lists an Alert delivery row (webhook delivery was removed)", () => {
+    // delivery_health counts a channel with no subscribers: it can only ever
+    // read 0 sent / 0 failed, so the row reported nothing real.
+    expect(SRC).not.toContain('name="Alert delivery"');
+    expect(SRC).not.toContain("webhook dispatch");
   });
 
   it("has an explicit UNKNOWN branch in BOTH the label and colour ladders", () => {
@@ -44,9 +43,5 @@ describe("status delivery health", () => {
     // "Major outage" / --v2-crit.
     expect(block).toMatch(/state === "UNKNOWN"[\s\S]*?"No data"/);
     expect(block).toMatch(/state === "UNKNOWN"[\s\S]*?var\(--v2-unk\)/);
-  });
-
-  it("says 'no deliveries to report' rather than inventing a number", () => {
-    expect(SRC).toContain("no deliveries to report");
   });
 });

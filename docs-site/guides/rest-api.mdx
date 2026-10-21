@@ -30,7 +30,7 @@ The full schema lives in the [API Reference](/api-reference/introduction).
 
 The `v1` read surface is a **stable, versioned contract** you can wire a risk engine
 against. Going forward we make only **additive** changes within `v1` — new fields (such as
-[`risk_score`](#risk-score-one-number-to-branch-on)) and new endpoints — never a
+[`risk_score`](#risk-score)) and new endpoints — never a
 breaking rename or removal; any future breaking change would ship under a new prefix (`v2`)
 with `v1` left working.
 
@@ -41,6 +41,17 @@ count, data }` envelope, the peg feed became a `data` array, and a few fields we
 (`as_of`→`updated_at`, `model_note`/`note`→`advisory_note`, `positions_affected`→`positions`).
 See the [changelog](/changelog) for the migration. The additive-only promise above holds from
 that point on.
+</Note>
+
+<Note>
+**Open-source release (2026-10-20): authenticated surfaces removed.** When Pegana became
+open source and free, everything that required an account went away with the accounts:
+`GET /v1/alerts`, `/v1/me/*` and `/v1/auth/*` were removed from `v1` and now return
+`404 not_found`. This was a removal without a `v2` prefix or a `Sunset` period, which is an
+exception to the promise above. The public transition ledger that replaces `GET /v1/alerts`
+is [`GET /v1/audit`](#audit-receipts). See the
+[changelog](/changelog#migrating-from-removed-endpoints) for the migration. No other `v1`
+endpoint or field changed.
 </Note>
 
 Poll `/v1/assets/{symbol}/state` as often as your logic needs (limit:
@@ -66,15 +77,21 @@ values never change form in a breaking way.
 - **USD aggregates are cent-rounded; signal fields keep full precision.** Large USD totals
   (`market_cap`, `loop_exposure_usd`, `liquidatable_usd`, `collateral_usd`,
   `collateral_lev_usd`, `debt_usd`) are rounded to two decimals — sub-cent noise on a
-  hundreds-of-millions figure is meaningless. Price and discount fields (`discount`,
-  `intrinsic_usd`, `market_usd`, …) are **not** rounded — they carry the full peg signal.
+  hundreds-of-millions figure is meaningless. `discount` carries **6 decimal places** (the
+  precision it is stored at), with one exception: on `/v1/assets/{symbol}/history?bucket=1m`
+  each point is the average of the samples in that minute and is not re-rounded, so it can
+  carry more digits (for example `"0.0009515"`). Only the USD price legs (`intrinsic_usd`, `market_usd`, …) keep
+  full precision, up to 18 decimal places, so they carry the full peg signal.
+- **`discount_bps` is the one numeric ratio.** On `/v1/peg/feed`, `discount_bps` is
+  `discount × 10000` in basis points, a JSON **number** rounded to 4 decimal places (e.g.
+  `-74.05`). It is a convenience for display; use the `discount` string for anything exact.
 - **Timestamps are RFC3339 UTC, millisecond precision, `Z` suffix** — e.g.
   `2026-07-24T15:33:14.545Z`. Every `*_at` / `ts` / `generated_at` field uses this
   single form; parse with any RFC3339/`Date` parser. Resource freshness is always
   `updated_at`; the response's own build time is `generated_at`.
-- **Lists are enveloped; single resources are bare.** Every endpoint that returns a
-  collection (`/v1/assets`, `/v1/calibration`, `/v1/assets/{s}/history`,
-  `/v1/peg/feed`) wraps its rows in a uniform envelope so you always branch on the same
+- **Lists are enveloped; single resources are bare.** These collection endpoints
+  (`/v1/assets`, `/v1/calibration`, `/v1/assets/{s}/history`,
+  `/v1/peg/feed`) wrap their rows in a uniform envelope so you always branch on the same
   shape and new top-level fields never break you:
 
   ```json
@@ -83,7 +100,10 @@ values never change form in a breaking way.
 
   Read the rows from `data`. Single-resource endpoints (`/v1/assets/{s}`,
   `/v1/assets/{s}/state`, `/v1/assets/{s}/loop-exposure`, …) return the resource object
-  itself (the Stripe/GitHub convention); errors always use the `{error, message}` envelope.
+  itself (the Stripe/GitHub convention). One exception predates the envelope and stays as
+  is within `v1`: the receipt ledger `GET /v1/audit` returns a **bare JSON array** of rows
+  (see [Pagination](/guides/pagination#the-receipt-ledger)). Errors always carry a
+  stable `error` code (see [Errors](/guides/errors)).
 
 <Note>
 Do **not** compare decimals or timestamps as exact byte strings — compare the parsed numeric
@@ -114,7 +134,7 @@ curl https://api.pegana.xyz/v1/assets/USDC/state
 This is the single most-used endpoint. It returns the **current** peg state with the
 two underlying values. Use it for dashboards, pre-flight checks, automation gates.
 
-### `risk_score` — one number to branch on
+### Risk score
 
 `risk_score` (present on `/v1/assets`, `/v1/assets/{symbol}` and `/v1/peg/feed`, not on `/state`) is a derived **0–100** integer for integrators who want a single
 sortable / thresholdable value — `if risk_score >= 75 { gate_market() }` — **alongside**
@@ -178,7 +198,9 @@ or authority is ever read**. Coverage today spans **Kamino + Jupiter Lend** — 
 numbers as an honest floor, not a ceiling.
 </Note>
 
-### Exposure + cascade — `/v1/assets/{symbol}/loop-exposure`
+### Exposure and cascade
+
+`GET /v1/assets/{symbol}/loop-exposure`
 
 ```bash
 curl https://api.pegana.xyz/v1/assets/JupSOL/loop-exposure
@@ -215,7 +237,15 @@ leveraged collateral crossing a liquidation threshold at each preset shock (in b
 `positions` is a **k-floored range**, never a raw count. The array is empty (or
 the object omitted) when the asset carries no tracked leverage.
 
-### Single shock — `/v1/assets/{symbol}/simulate-depeg`
+The cascade is built only from health-factor bands written in the **last 3 hours**
+(the enumerators run hourly). `cascade_updated_at` is the timestamp of the oldest band
+used, separate from `updated_at` (the freshest exposure row). When no band is that
+fresh, the cascade is empty and `simulate-depeg` returns `coverage: "unknown"`, rather
+than serving an old cascade under a current timestamp.
+
+### Single shock
+
+`GET /v1/assets/{symbol}/simulate-depeg`
 
 ```bash
 curl 'https://api.pegana.xyz/v1/assets/JupSOL/simulate-depeg?shock_bps=1000'
@@ -226,7 +256,9 @@ sweeps are refused so the anonymised distribution can't be differenced). Returns
 same estimate as one `cascade` rung, plus a `by_protocol` breakdown. `coverage` is
 `partial` whenever risky bands were privacy-suppressed (the honest default).
 
-### Partner feed — `/v1/peg/feed`
+### Partner feed
+
+`GET /v1/peg/feed`
 
 The batch feed carries the full peg signal for every active asset as a `data` **array**
 (each signal carries its own `mint`), including an optional **`systemic`** block — the same
@@ -262,13 +294,41 @@ once on the envelope, not on every signal:
 
 Index `data[]` by each signal's `mint`. `systemic` is **omitted (not null)** when the token
 carries no tracked leverage, and it never mixes into the verifiable peg fields (`state`,
-`discount`, `receipt_url`). The feed supports conditional GETs (`ETag` / `If-None-Match` →
+`discount`, `receipt_url`). Each signal also carries `discount_bps` (a JSON number rounded
+to 4 dp, see [Response format](#response-format)); `state` is always present: with no fresh
+snapshot it reads `UNKNOWN` and `stale` is `true` (the same asset shows `state_reason:
+stale_source` on `/v1/assets`). The feed supports conditional GETs (`ETag` / `If-None-Match` →
 `304`), so high-volume pollers stay cheap.
+
+## Audit receipts
+
+Every state transition gets a public receipt. `GET /v1/audit` lists them (newest first),
+`GET /v1/audit/{alert_id}` returns one receipt with its methodology version and frozen inputs,
+`GET /v1/audit/{alert_id}/replay-bundle` downloads the inputs for offline replay, and
+`GET /v1/audit.csv` exports a window as CSV.
+
+`GET /v1/audit/{alert_id}` answers `200` with the receipt, `202` while the receipt is still
+being persisted (retry after `retry_after_seconds`), `410` if persistence failed permanently,
+and `404` for an unknown id.
+
+**On-chain anchors.** Transitions into `DEPEG`, `CRITICAL` or `BLACK_SWAN` are additionally
+anchored on Solana with an SPL Memo commit when the operator has on-chain commits enabled
+(ADR-0004). `DRIFT` transitions and recoveries are never anchored, and some historical severe
+receipts carry no anchor because on-chain commits were disabled when they fired. Read
+`onchain_tx_sig` on the ledger row, or call `GET /v1/audit/{alert_id}/onchain`, which returns
+the signature or a `404` whose `error` says why there is none (see [Errors](/guides/errors)).
+Receipts produced under methodology 0.4.0 or later, anchored or not, can be re-derived
+offline with [`pegana-replay`](https://crates.io/crates/pegana-replay). Older receipts predate
+the first published verifier; check their hash in the browser at
+`https://www.pegana.xyz/audit/{alert_id}`.
 
 ## Pagination
 
-We do not paginate `/v1/assets` (a few dozen rows). For `/v1/audit` (`limit`, max 100) and `/history`, use the
-`since` / `from` + `limit` parameters and walk forward by adjusting the lower bound.
+We do not paginate `/v1/assets` (a few dozen rows). `/v1/assets/{symbol}/history` is
+windowed with `from` / `to` and `limit`. `/v1/audit` is paged with a keyset cursor
+(`before` + `before_id`, max 100 rows per page): pass the last row's `detected_at` and `id`
+to get the next, older page. `since` / `until` bound the window but are not a cursor. Full
+walkthrough in [Pagination & limits](/guides/pagination#the-receipt-ledger).
 
 ## Errors
 
@@ -280,10 +340,10 @@ We return standard HTTP status codes:
 | `400` | Bad request (invalid query param) |
 | `404` | Asset not found, or no snapshots yet |
 | `429` | Rate-limited (per-IP; currently 60 req/min) |
-| `500` | Server error — open a Sentry-style report |
+| `500` | Server error. Retry with backoff; if it persists, open a [GitHub issue](https://github.com/PeganaHQ/Pegana/issues) quoting the `x-request-id` |
 | `503` | Not ready (readiness probe only) |
 
-Error bodies are `{"error": "...", "message": "..."}` (plus an optional `asset`) — short, machine-readable. Branch on `error`, never on `message`.
+Error bodies are `{"error": "...", "message": "..."}` (plus an optional `asset`) — short, machine-readable. Branch on `error`, never on `message`. Errors from the `/v1/audit` routes may carry `hint` or route-specific fields instead of `message`. The full code list is in [Errors](/guides/errors).
 
 ## CORS
 
@@ -310,7 +370,7 @@ None. The API is public: no key, no sign-in, no token. See
 
 <CardGroup cols={2}>
   <Card title="WebSocket stream" icon="bolt" href="/guides/websocket">
-    Sub-second push for state changes — better than polling.
+    Live push of every peg reading, instead of polling.
   </Card>
   <Card title="API Reference" icon="code" href="/api-reference/introduction">
     Full OpenAPI spec with try-it-now.

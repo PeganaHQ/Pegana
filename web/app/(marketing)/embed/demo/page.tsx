@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/seo/page-metadata";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { cn } from "@/lib/utils/cn";
 import { switzerV2, geistMonoV2 } from "@/app/fonts/v2-fonts";
 import { PageHeroV2 } from "@/components/organisms/v2/inner/page-hero-v2";
 import { CodeBlockV2 } from "@/components/organisms/v2/inner/code-block-v2";
 import { PillGhost } from "@/components/organisms/v2/shared";
+import { siteOrigin } from "@/lib/seo/site-origin";
 
 // Wave 11M.3 — /embed/demo showcase page.
 //
@@ -27,7 +28,7 @@ export const metadata: Metadata = pageMetadata({
 
 const SHOWCASE_ASSETS = ["USDe", "JupUSD", "jitoSOL", "hyUSD", "USDS"];
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
+const SITE_URL = siteOrigin();
 
 export default function EmbedDemoPage() {
   return (

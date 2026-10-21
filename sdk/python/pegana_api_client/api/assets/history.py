@@ -63,6 +63,11 @@ def _parse_response(
 
         return response_400
 
+    if response.status_code == 404:
+        response_404 = ApiError.from_dict(response.json())
+
+        return response_404
+
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:

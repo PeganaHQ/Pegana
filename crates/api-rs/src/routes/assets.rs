@@ -60,12 +60,14 @@ pub(crate) const STALE_HEADER: &str = "x-pegana-stale";
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct ListQuery {
-    /// Filter by asset class (e.g. `lst`, `stable_fiat`, `stable_cdp`,
-    /// `stable_yield`, `synthetic_leverage`). Case-sensitive match against
-    /// the engine's asset_class enum.
+    /// Filter by asset class. One of `lst`, `stable_fiat`, `stable_cdp`,
+    /// `stable_rwa`, `stable_dn`, `stable_fx`, `stable_yield` (case-sensitive).
+    /// Any other value, including the non-public `synth_lev`, is a 400
+    /// `invalid_query`.
     pub class: Option<String>,
-    /// Filter by peg target (e.g. `SOL`, `USD`, `BRL`). Matches the asset's
-    /// declared peg, not its observed value.
+    /// Filter by peg target. One of `SOL`, `USD`, `BRL`, `EUR`
+    /// (case-sensitive). Matches the asset's declared peg, not its observed
+    /// value. Any other value is a 400 `invalid_query`.
     pub peg: Option<String>,
 }
 
@@ -98,8 +100,40 @@ pub struct AssetCard {
     pub decimals: i16,
     #[schema(value_type = Option<crate::schema::PegState>)]
     pub state: Option<String>,
+    /// Signed discount fraction the state machine classifies: `1 - market /
+    /// intrinsic` (positive = below NAV/peg, negative = premium), the
+    /// EWMA-smoothed value. This is the number to use. Do NOT recompute it from
+    /// `intrinsic_usd` / `market_usd`: for LSTs it is computed in SOL terms
+    /// (market SOL per LST vs intrinsic SOL per LST), while each USD leg is
+    /// converted with its own SOL/USD read, so the legs can differ from it by a
+    /// few bps and, near zero, even in sign. `null` when there is no fresh
+    /// snapshot.
+    ///
+    /// Worked example (live, 2026-10-21): cgntSOL published `discount`
+    /// 0.0001 while `1 - market_usd / intrinsic_usd` was -0.000051. Both are
+    /// correct: the published value is the smoothed SOL-terms discount; the
+    /// USD ratio mixes two SOL/USD reads. Branch on `discount` and `state`.
+    ///
+    /// Illiquid LSTs: the market leg is a Jupiter exact-in quote of one token
+    /// to SOL (precision about 1e-9; the published value is NUMERIC(10,6)).
+    /// When the only route is a pool that itself prices the LST at its stake
+    /// pool NAV, the quote is NAV minus that pool's fee, so several LSTs can
+    /// publish the same round value (e.g. exactly 0.0011). That value then
+    /// reflects the route's fee, not an independent market price, and moves
+    /// only if the pool's NAV or fee moves.
     #[serde(serialize_with = "crate::serde_fmt::opt_dec_norm")]
     pub discount: Option<Decimal>,
+    /// The same tick's UNSMOOTHED discount (before the EWMA), same sign
+    /// convention and same basis as `discount` (SOL terms for LSTs). Shown
+    /// for transparency: `discount` is `discount_raw` after smoothing, so the
+    /// two differ by the smoothing lag, never by basis. Omitted when there is
+    /// no fresh snapshot.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::serde_fmt::opt_dec_norm"
+    )]
+    pub discount_raw: Option<Decimal>,
 
     /// Derived 0-100 peg-risk score — a single sortable/thresholdable number for
     /// integrators, ALONGSIDE (never replacing) `state`. Anchored to the committed
@@ -125,13 +159,14 @@ pub struct AssetCard {
     )]
     pub series_24h: Option<Vec<f64>>,
 
-    /// Stake-pool SOL per share for Sanctum LSTs (`rust_decimal`, serialized as
-    /// a JSON string). Omitted for non-LST assets. Reflects the LATEST intrinsic
-    /// snapshot — read together with `updated_at` for freshness. NAV decomposition
-    /// is `intrinsic_usd = sol_per_lst × SOL/USD`.
+    /// Stake-pool SOL per share for LSTs (decimal string, at most 18 decimal
+    /// places like the USD legs, trailing zeros trimmed). Omitted for non-LST
+    /// assets. Reflects the LATEST intrinsic snapshot — read together with
+    /// `updated_at` for freshness. NAV decomposition is
+    /// `intrinsic_usd = sol_per_lst × SOL/USD`.
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "crate::serde_fmt::opt_dec_norm"
+        serialize_with = "crate::serde_fmt::opt_dec_18"
     )]
     pub sol_per_lst: Option<Decimal>,
 
@@ -196,7 +231,8 @@ pub struct AssetCard {
 
     /// Peg-jitter scalar over the trailing 24h (BSRV-03): peak-to-trough
     /// dispersion of the discount, `max(max_discount) - min(min_discount)`,
-    /// in the same signed-fraction units as `discount`. A cheap stability
+    /// in the same fraction units as `discount` (NOT basis points, despite the
+    /// name, which is kept for v1 compatibility: multiply by 10000 for bps). A cheap stability
     /// measure (always >= 0) computed server-side once per scan instead of
     /// every client recomputing it from the averaged `series_24h`. Trailing
     /// 24h, independent of the current-snapshot freshness bound. Omitted when
@@ -225,8 +261,12 @@ pub struct AssetCard {
     /// - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
     ///   the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
     ///   suspect).
-    /// - `stale_source` — API layer: feed is >15 min stale, state collapsed to
-    ///   UNKNOWN; no fresh discount snapshot exists.
+    /// - `stale_source` — API layer: no discount snapshot in the last 15 min
+    ///   (sources or engine dark), state collapsed to UNKNOWN.
+    /// - `market_unavailable` — API layer: no discount snapshot in the last 15
+    ///   min, but the intrinsic leg IS fresh and no market tick exists in that
+    ///   window (thin market, no reliable quote). State UNKNOWN; `intrinsic_usd`
+    ///   and `updated_at` are the fresh intrinsic reading, `market_usd` is null.
     ///
     /// **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
     /// work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
@@ -236,10 +276,12 @@ pub struct AssetCard {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_reason: Option<String>,
 
-    /// Which direction of `discount` is the risk signal, so a consumer reading
-    /// the raw signed number knows how to interpret it. Derived from `anchor`:
-    /// `"below"` for USD/FX anchors (a discount from peg is the risk),
-    /// `"either"` for NAV anchors (premium and discount are both meaningful).
+    /// Which direction of `discount` can escalate `state`, so a consumer reading
+    /// the raw signed number knows how to interpret it. Derived from `class`
+    /// with the engine's own premium carve-out (ADR-0021): `"below"` for every
+    /// tracked class today (USD/FX anchors, and LSTs / yield stables /
+    /// synthetic leverage, whose premium is informational and classifies
+    /// PEGGED). `"either"` is reserved for a class without that carve-out.
     #[schema(value_type = crate::schema::RiskSide)]
     pub risk_side: String,
 
@@ -337,6 +379,7 @@ pub async fn list(
     State(state): State<Arc<AppState>>,
     ValQuery(q): ValQuery<ListQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_list_filters(q.class.as_deref(), q.peg.as_deref())?;
     // B-022: the unfiltered list is a single global response the dashboard
     // polls constantly. Serve it from a 5s Redis cache to cut ~95% of the
     // (heavy, LATERAL-join) Postgres cost. Filtered requests skip the cache.
@@ -488,7 +531,7 @@ pub(crate) fn assets_list_is_healthy(cards: &[AssetCard]) -> bool {
 fn row_to_card(r: sqlx::postgres::PgRow) -> AssetCard {
     let class: String = r.get("class");
     let anchor = crate::schema::anchor_for_class(&class).to_string();
-    let risk_side = crate::schema::risk_side_for_anchor(&anchor).to_string();
+    let risk_side = crate::schema::risk_side_for_class(&class).to_string();
     let market_usd: Option<Decimal> = r.try_get("market_usd").ok();
     let state_reason: Option<String> = r.try_get("state_reason").ok();
     // The three oracle columns only exist on `fetch_card`'s SQL (single-asset
@@ -520,6 +563,7 @@ fn row_to_card(r: sqlx::postgres::PgRow) -> AssetCard {
         decimals: r.get("decimals"),
         state,
         discount,
+        discount_raw: r.try_get("discount_raw").ok(),
         risk_score,
         intrinsic_usd: r.try_get("intrinsic_usd").ok(),
         market_usd,
@@ -577,8 +621,12 @@ const ASSETS_LIST_SQL: &str = r#"
         SELECT
             a.symbol, a.name, a.mint, a.class::text AS class,
             a.peg_target::text AS peg_target, a.decimals,
-            COALESCE(d.state::text, CASE WHEN i.value_usd IS NOT NULL THEN 'UNKNOWN' END) AS state,
-            d.discount_smooth AS discount,
+            -- Every row here is an active, tracked asset, so "no fresh discount
+            -- snapshot" is UNKNOWN whether or not an intrinsic row exists. It used
+            -- to be NULL when the intrinsic side was dark too, so the same asset
+            -- read UNKNOWN on /v1/stats but null here and absent on the feed.
+            COALESCE(d.state::text, 'UNKNOWN') AS state,
+            d.discount_smooth AS discount, d.discount_raw,
             COALESCE(d.intrinsic_usd, i.value_usd) AS intrinsic_usd,
             d.market_usd,
             COALESCE(d.ts, i.ts) AS updated_at,
@@ -594,12 +642,22 @@ const ASSETS_LIST_SQL: &str = r#"
             (d.extra->>'current_state_duration_secs')::bigint AS current_state_duration_secs,
             (d.extra->>'sustained')::boolean AS sustained,
             -- state_reason: use the DB value for fresh rows; synthesize 'stale_source'
-            -- when the discount LATERAL (d) returned NULL (feed >15min stale) but we
-            -- have intrinsic data — matches what /state returns for the same asset.
+            -- whenever the discount LATERAL (d) returned NULL (no snapshot in the
+            -- 15-min window, including "sources have produced none at all") —
+            -- matches what /state returns for the same asset.
             -- Mirrors Rust const STATE_REASON_STALE_SOURCE = "stale_source".
+            -- 'market_unavailable' instead when the intrinsic leg IS fresh but no
+            -- market tick exists in the window (thin market, no reliable quote):
+            -- the asset is dark on the MARKET side, not on its sources overall.
+            -- Mirrors Rust const STATE_REASON_MARKET_UNAVAILABLE.
             COALESCE(d.state_reason,
-                     CASE WHEN d.state IS NULL AND i.value_usd IS NOT NULL
-                          THEN 'stale_source' END) AS state_reason,
+                     CASE WHEN d.state IS NULL THEN
+                       CASE WHEN i.ts >= now() - INTERVAL '15 minutes'
+                             AND NOT EXISTS (SELECT 1 FROM market_snapshots ms
+                                             WHERE ms.asset = a.symbol
+                                               AND ms.ts >= now() - INTERVAL '15 minutes')
+                            THEN 'market_unavailable' ELSE 'stale_source' END
+                     END) AS state_reason,
             -- Size/context signal (migration 0065) — populated by the
             -- isolated `token_supply` indexer source, NOT the NAV/discount
             -- pipeline. market_cap is NULL whenever either factor is NULL
@@ -680,6 +738,28 @@ const ASSETS_LIST_SQL: &str = r#"
         ORDER BY a.class, a.symbol
         "#;
 
+/// `?class=` / `?peg=` must name a real, public enum value. An unknown value
+/// used to return `200 {count:0}`, indistinguishable from "no such assets".
+fn validate_list_filters(class: Option<&str>, peg: Option<&str>) -> Result<(), ApiError> {
+    if let Some(c) = class {
+        if !crate::schema::PUBLIC_CLASSES.contains(&c) {
+            return Err(ApiError::invalid_query(format!(
+                "class must be one of: {}",
+                crate::schema::PUBLIC_CLASSES.join(", ")
+            )));
+        }
+    }
+    if let Some(p) = peg {
+        if !crate::schema::PEG_TARGETS.contains(&p) {
+            return Err(ApiError::invalid_query(format!(
+                "peg must be one of: {}",
+                crate::schema::PEG_TARGETS.join(", ")
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Run the assets-list query and map rows to cards. `class`/`peg` filter when
 /// `Some`; `None`/`None` is the unfiltered global list.
 pub async fn fetch_assets_list(
@@ -724,7 +804,8 @@ pub async fn refresh_assets_list_cache(pg: &PgPool, redis: &redis::Client) -> an
     ),
     responses(
         (status = 200, description = "Latest snapshot for the asset", body = AssetCard),
-        (status = 404, description = "Asset symbol unknown or inactive", body = ApiError)
+        (status = 400, description = "invalid_asset: the symbol path parameter is malformed (symbol must be 1-32 chars of [A-Za-z0-9._+*-])", body = ApiError),
+        (status = 404, description = "unknown_asset: symbol not tracked, inactive, or not public (synth_lev, e.g. xSOL)", body = ApiError)
     )
 )]
 pub async fn detail(
@@ -750,18 +831,39 @@ pub async fn detail(
     ),
     responses(
         (status = 200, description = "Latest snapshot for the asset", body = AssetCard),
-        (status = 404, description = "No active asset with that mint", body = ApiError)
+        (status = 400, description = "invalid_asset: the mint path parameter is malformed (mint must be a base58 Solana address, 32-44 chars)", body = ApiError),
+        (status = 404, description = "unknown_asset: no active, public asset with that mint (synth_lev, e.g. xSOL, is not public)", body = ApiError)
     )
 )]
 pub async fn detail_by_mint(
     State(state): State<Arc<AppState>>,
     Path(mint): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
+    resolve_mint(&state.pg, &mint).await?;
     let card = fetch_card(&state.pg, "a.mint", &mint)
         .await?
         .ok_or_else(|| ApiError::unknown_asset(&mint))?;
     Ok(card_response(card))
 }
+
+/// Freshness bound on `loop_hf_distribution` bands, as a SQL predicate. The HF
+/// sources poll hourly (`KAMINO_HF_POLL_MS` / `JUPITER_HF_POLL_MS`), so 3 hours
+/// is three missed cycles. Without it the DISTINCT ON "latest band" read kept
+/// serving bands frozen for days (2026-10-17 19:32Z onward) while the fresh
+/// exposure rows made the response look current. Stale bands are dropped: the
+/// cascade is then empty (no rungs at all, never a ladder of zeros),
+/// `cascade_coverage` is `"unknown"` on `/loop-exposure` and the feed's
+/// `systemic` block, and `simulate-depeg` reports `coverage: "unknown"`. That is
+/// the honest answer when the enumerators are not running.
+macro_rules! hf_band_fresh_sql {
+    () => {
+        "ts >= now() - INTERVAL '3 hours'"
+    };
+}
+
+/// Hours behind [`hf_band_fresh_sql`], for tests and docs.
+#[cfg(test)]
+const HF_BAND_MAX_AGE_HOURS: i64 = 3;
 
 // ── Sub-C Loop Intelligence — advisory leverage exposure (ADR-0036 variant A) ──
 // A read-only rollup of `loop_exposure_snapshots` (written by protocol-indexer-ts
@@ -803,9 +905,18 @@ pub struct LoopByProtocol {
 #[derive(Serialize, ToSchema)]
 pub struct LoopExposureResponse {
     pub asset: String,
-    /// Σ leveraged collateral (USD) across covered protocols.
+    /// Σ leveraged collateral (USD) across covered protocols: the deposits of
+    /// leverage loops only (Kamino leverage/multiply pairs, Jupiter Lend vaults
+    /// with this asset as collateral). Narrower than `cascade[].liquidatable_usd`,
+    /// which counts every borrowing position holding the asset.
     #[serde(serialize_with = "crate::serde_fmt::dec_money2")]
     pub loop_exposure_usd: Decimal,
+    /// Σ collateral base (USD) across covered protocols. On Kamino it is the
+    /// reserve's total supply of the asset, of which `loop_exposure_usd` is the
+    /// leveraged part. On Jupiter Lend it is the vault collateral itself, so
+    /// there it equals that protocol's share of `loop_exposure_usd`. This, not
+    /// `loop_exposure_usd`, is the comparable basis for the cascade's
+    /// `liquidatable_usd`.
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "crate::serde_fmt::opt_dec_money2"
@@ -813,19 +924,44 @@ pub struct LoopExposureResponse {
     pub collateral_usd: Option<Decimal>,
     #[serde(serialize_with = "crate::serde_fmt::dec_money2")]
     pub debt_usd: Decimal,
-    /// `full` | `partial` | `unknown` — worst across covered protocols.
+    /// `full` | `partial` | `unknown` for the whole response (exposure rollup AND
+    /// cascade). `unknown` when there is no exposure data. Never `full` once a
+    /// cascade is involved: a cascade built from k-floored bands is `partial`,
+    /// and a missing cascade (no fresh bands) also makes the response `partial`.
     pub coverage: String,
+    /// Coverage of the `cascade` alone, the same value `simulate-depeg` reports
+    /// as its `coverage` for this asset: `partial` when fresh health-factor bands
+    /// exist, `unknown` when none do (enumerator not run, or bands older than 3
+    /// hours). With `unknown` the cascade is omitted: the liquidatable amount is
+    /// NOT known, which is different from "nothing liquidates".
+    pub cascade_coverage: String,
     pub by_protocol: Vec<LoopByProtocol>,
     /// Depeg-cascade across the preset shock grid ($0 → $Nm as the depeg deepens),
-    /// so a client renders the whole stress ladder from one call. Empty when no HF
-    /// distribution has been enumerated for this asset.
+    /// so a client renders the whole stress ladder from one call. Omitted when no
+    /// fresh HF distribution exists for this asset (`cascade_coverage: unknown`).
+    ///
+    /// Basis: each rung's `liquidatable_usd` is the TOTAL collateral (USD) of the
+    /// positions whose health factor crosses 1 at that shock, counting every
+    /// position that holds this asset as collateral, looped or not. It is
+    /// therefore NOT a subset of `loop_exposure_usd` (leveraged collateral only)
+    /// and can exceed it; compare it with `collateral_usd` instead.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub cascade: Vec<CascadeRung>,
     /// RFC3339 of the freshest protocol snapshot (absent when no data).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+    /// RFC3339 of the OLDEST health-factor band the `cascade` was built from,
+    /// i.e. how old the cascade can be. Bands older than 3 hours are never
+    /// used. Absent when there is no cascade.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cascade_updated_at: Option<String>,
     /// ADR-0036 inv.9 — this is a model estimate, not a verifiable receipt.
     pub advisory_note: String,
+}
+
+/// Oldest band timestamp: the age of the cascade built from these bands.
+fn oldest_band_ts(bands: &[HfBandRow]) -> Option<DateTime<Utc>> {
+    bands.iter().map(|b| b.ts).min()
 }
 
 #[utoipa::path(
@@ -839,7 +975,8 @@ pub struct LoopExposureResponse {
     ),
     responses(
         (status = 200, description = "Latest leverage-exposure rollup (empty + coverage:unknown when no data)", body = LoopExposureResponse),
-        (status = 404, description = "Asset symbol unknown or inactive", body = ApiError)
+        (status = 400, description = "invalid_asset: the symbol path parameter is malformed (symbol must be 1-32 chars of [A-Za-z0-9._+*-])", body = ApiError),
+        (status = 404, description = "unknown_asset: symbol not tracked, inactive, or not public (synth_lev, e.g. xSOL)", body = ApiError)
     )
 )]
 pub async fn loop_exposure(
@@ -862,11 +999,12 @@ pub async fn loop_exposure(
     .map_err(ApiError::db)?;
 
     // Latest HF bands for this asset → the depeg-cascade ladder (one call).
-    let bands = sqlx::query_as::<_, HfBandRow>(
+    let bands = sqlx::query_as::<_, HfBandRow>(concat!(
         "SELECT DISTINCT ON (protocol, hf_band) protocol, hf_band, collateral_usd, \
-         position_bucket, ts FROM loop_hf_distribution WHERE asset = $1 \
-         ORDER BY protocol, hf_band, ts DESC",
-    )
+             position_bucket, ts FROM loop_hf_distribution WHERE asset = $1 AND ",
+        hf_band_fresh_sql!(),
+        " ORDER BY protocol, hf_band, ts DESC"
+    ))
     .bind(&canonical)
     .fetch_all(&state.pg)
     .await
@@ -877,26 +1015,17 @@ pub async fn loop_exposure(
     let mut debt_usd = Decimal::ZERO;
     let mut collateral_usd = Decimal::ZERO;
     let mut as_of: Option<DateTime<Utc>> = None;
-    let mut coverage = if rows.is_empty() { "unknown" } else { "full" };
     for r in &rows {
         loop_exposure_usd += r.collateral_lev_usd.unwrap_or(Decimal::ZERO);
         debt_usd += r.debt_usd.unwrap_or(Decimal::ZERO);
         collateral_usd += r.collateral_usd.unwrap_or(Decimal::ZERO);
         as_of = Some(as_of.map_or(r.ts, |m| m.max(r.ts)));
-        if r.coverage != "full" {
-            coverage = "partial";
-        }
     }
     // Bands can be fresher than the exposure snapshot — advance as_of over them too.
     for b in &bands {
         as_of = Some(as_of.map_or(b.ts, |m| m.max(b.ts)));
     }
-    // The cascade is built from k-floored, dominance-suppressed bands, so once we
-    // attach it the rollup is no longer a full accounting — report `partial`,
-    // matching simulate_depeg + the feed's systemic block (honest floor).
-    if !bands.is_empty() && coverage == "full" {
-        coverage = "partial";
-    }
+    let (coverage, cascade_coverage) = exposure_coverage(!rows.is_empty(), !bands.is_empty());
 
     let body = LoopExposureResponse {
         asset: canonical,
@@ -904,9 +1033,11 @@ pub async fn loop_exposure(
         collateral_usd: (!rows.is_empty()).then_some(collateral_usd),
         debt_usd,
         coverage: coverage.to_string(),
+        cascade_coverage: cascade_coverage.to_string(),
         by_protocol: rows,
         cascade,
         updated_at: as_of.map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
+        cascade_updated_at: oldest_band_ts(&bands).map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
         advisory_note: "advisory model estimate — not a verifiable receipt".to_string(),
     };
 
@@ -970,7 +1101,12 @@ pub struct SimulateByProtocol {
 #[derive(Debug, Serialize, ToSchema, Clone)]
 pub struct CascadeRung {
     pub shock_bps: i32,
-    /// Collateral (USD) whose bands cross their liquidation threshold at this shock.
+    /// Collateral (USD) of this asset, summed over every borrowing position whose
+    /// health-factor band crosses 1 at this shock. Basis: ALL positions that post
+    /// the asset as collateral and carry any debt (Kamino obligations, Jupiter
+    /// Lend vault positions), not only the leverage loops counted in
+    /// `loop_exposure_usd`. It can therefore be larger than `loop_exposure_usd`;
+    /// the comparable denominator is `collateral_usd`.
     #[serde(serialize_with = "crate::serde_fmt::dec_money2")]
     pub liquidatable_usd: Decimal,
     /// Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
@@ -982,9 +1118,14 @@ pub struct SimulateDepegResponse {
     pub asset: String,
     pub shock_bps: i32,
     /// Total leveraged collateral across protocols (context, from loop-exposure).
+    /// Counts leverage loops only (e.g. Kamino multiply pairs), so it is a
+    /// NARROWER basis than `liquidatable_usd` and is not its upper bound.
     #[serde(serialize_with = "crate::serde_fmt::dec_money2")]
     pub loop_exposure_usd: Decimal,
-    /// Collateral (USD) in bands that cross their liquidation threshold at this shock.
+    /// Collateral (USD) of this asset in every borrowing position (looped or
+    /// not) whose health-factor band crosses 1 at this shock. Not a subset of
+    /// `loop_exposure_usd`: a plain deposit-and-borrow position counts here but
+    /// not there, so this value can exceed `loop_exposure_usd`.
     #[serde(serialize_with = "crate::serde_fmt::dec_money2")]
     pub liquidatable_usd: Decimal,
     /// Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
@@ -1046,9 +1187,13 @@ fn liquidatable_at_shock(
 }
 
 /// The full depeg cascade across every preset shock — used by `/loop-exposure`
-/// and the feed's `systemic` block. Empty bands ⇒ all-zero rungs (honest: exposure
-/// exists but no risky HF distribution has been enumerated yet).
+/// and the feed's `systemic` block. Empty bands ⇒ NO rungs. A ladder of `$0`
+/// rungs would read as "nothing liquidates" when the truth is "not known" (the
+/// HF enumerator has not run, or its bands are past the 3h freshness bound).
 fn cascade_over_bands(bands: &[HfBandRow]) -> Vec<CascadeRung> {
+    if bands.is_empty() {
+        return Vec::new();
+    }
     SHOCK_BPS_GRID
         .iter()
         .map(|&shock_bps| {
@@ -1061,6 +1206,21 @@ fn cascade_over_bands(bands: &[HfBandRow]) -> Vec<CascadeRung> {
             }
         })
         .collect()
+}
+
+/// `(coverage, cascade_coverage)` for an exposure rollup plus its cascade.
+///
+/// * `cascade_coverage`: `partial` when fresh bands exist (k-floored and
+///   dominance-suppressed, so never complete), else `unknown`. Matches
+///   `simulate-depeg`'s `coverage` for the same asset.
+/// * `coverage`: `unknown` with no exposure rows; otherwise `partial`, because
+///   the cascade half of the response is either partial (k-floored bands) or
+///   missing (no fresh bands). It is therefore never `full`: the round-2 bug
+///   was a `full` next to an all-zero cascade built from no bands at all.
+fn exposure_coverage(has_rows: bool, has_bands: bool) -> (&'static str, &'static str) {
+    let cascade_coverage = if has_bands { "partial" } else { "unknown" };
+    let coverage = if has_rows { "partial" } else { "unknown" };
+    (coverage, cascade_coverage)
 }
 
 // ── Sub-C systemic summary for the tokens.xyz feed ─────────────────────────────
@@ -1077,13 +1237,24 @@ pub struct SystemicSignal {
     pub loop_exposure_usd: Decimal,
     /// Covered protocols (e.g. `kamino`, `jupiter_lend`).
     pub protocols: Vec<String>,
-    /// Depeg-cascade across the preset shock grid.
+    /// Depeg-cascade across the preset shock grid. Empty (`[]`) when no fresh
+    /// health-factor bands exist; `cascade_coverage` is then `unknown`. Same
+    /// basis as `/loop-exposure`: total collateral of positions whose health
+    /// factor crosses 1, looped or not, so it can exceed `loop_exposure_usd`.
     pub cascade: Vec<CascadeRung>,
-    /// `full` | `partial` | `unknown` — worst across covered protocols.
+    /// `partial` | `unknown` for the whole block. Never `full`: the cascade is
+    /// either partial (k-floored bands) or missing.
     pub coverage: String,
+    /// Coverage of `cascade` alone (`partial` with fresh bands, `unknown`
+    /// without), equal to `simulate-depeg`'s `coverage` for the asset.
+    pub cascade_coverage: String,
     /// RFC3339 of the freshest underlying snapshot.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+    /// RFC3339 of the oldest health-factor band behind `cascade` (bands older
+    /// than 3 hours are never used). Absent when the cascade has no bands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cascade_updated_at: Option<String>,
     /// ADR-0036 inv.9 — advisory, not a verifiable receipt.
     pub advisory_note: String,
 }
@@ -1131,15 +1302,11 @@ fn build_systemic(exposure: &[ExposureTuple], bands: &[HfBandRow]) -> Option<Sys
     }
     let mut loop_exposure_usd = Decimal::ZERO;
     let mut protocols: Vec<String> = Vec::new();
-    let mut coverage = "full";
     let mut as_of: Option<DateTime<Utc>> = None;
-    for (protocol, lev, cov, ts) in exposure {
+    for (protocol, lev, _cov, ts) in exposure {
         loop_exposure_usd += lev.unwrap_or(Decimal::ZERO);
         if !protocols.contains(protocol) {
             protocols.push(protocol.clone());
-        }
-        if cov != "full" {
-            coverage = "partial";
         }
         as_of = Some(as_of.map_or(*ts, |m| m.max(*ts)));
     }
@@ -1150,18 +1317,18 @@ fn build_systemic(exposure: &[ExposureTuple], bands: &[HfBandRow]) -> Option<Sys
     for b in bands {
         as_of = Some(as_of.map_or(b.ts, |m| m.max(b.ts)));
     }
-    // A cascade is built from k-floored, dominance-suppressed bands, so it is
-    // never a complete accounting — report `partial` whenever bands exist, so the
-    // feed's systemic block never overclaims vs. `simulate_depeg` (honest floor).
-    if !bands.is_empty() {
-        coverage = "partial";
-    }
+    // Same rule as /loop-exposure: never `full`, and `unknown` cascade coverage
+    // (with no rungs) when there are no fresh bands, so a frozen HF enumerator
+    // can never surface as a confident "$0 liquidatable, full coverage".
+    let (coverage, cascade_coverage) = exposure_coverage(true, !bands.is_empty());
     Some(SystemicSignal {
         loop_exposure_usd,
         protocols,
         cascade: cascade_over_bands(bands),
         coverage: coverage.to_string(),
+        cascade_coverage: cascade_coverage.to_string(),
         updated_at: as_of.map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
+        cascade_updated_at: oldest_band_ts(bands).map(|t| crate::serde_fmt::rfc3339_millis_z(&t)),
         advisory_note: "advisory model estimate — not a verifiable receipt".to_string(),
     })
 }
@@ -1177,10 +1344,12 @@ pub async fn systemic_signal_map(
     )
     .fetch_all(pg)
     .await?;
-    let bands = sqlx::query_as::<_, HfBandBatchRow>(
+    let bands = sqlx::query_as::<_, HfBandBatchRow>(concat!(
         "SELECT DISTINCT ON (asset, protocol, hf_band) asset, protocol, hf_band, collateral_usd, \
-         position_bucket, ts FROM loop_hf_distribution ORDER BY asset, protocol, hf_band, ts DESC",
-    )
+             position_bucket, ts FROM loop_hf_distribution WHERE ",
+        hf_band_fresh_sql!(),
+        " ORDER BY asset, protocol, hf_band, ts DESC"
+    ))
     .fetch_all(pg)
     .await?;
 
@@ -1223,11 +1392,12 @@ pub async fn systemic_signal_for(
     .bind(asset)
     .fetch_all(pg)
     .await?;
-    let bands = sqlx::query_as::<_, HfBandRow>(
+    let bands = sqlx::query_as::<_, HfBandRow>(concat!(
         "SELECT DISTINCT ON (protocol, hf_band) protocol, hf_band, collateral_usd, \
-         position_bucket, ts FROM loop_hf_distribution WHERE asset = $1 \
-         ORDER BY protocol, hf_band, ts DESC",
-    )
+             position_bucket, ts FROM loop_hf_distribution WHERE asset = $1 AND ",
+        hf_band_fresh_sql!(),
+        " ORDER BY protocol, hf_band, ts DESC"
+    ))
     .bind(asset)
     .fetch_all(pg)
     .await?;
@@ -1250,8 +1420,8 @@ pub async fn systemic_signal_for(
     ),
     responses(
         (status = 200, description = "Cascade estimate for the shock", body = SimulateDepegResponse),
-        (status = 400, description = "shock_bps not in {100,250,500,1000,2000}", body = ApiError),
-        (status = 404, description = "Asset symbol unknown or inactive", body = ApiError)
+        (status = 400, description = "bad_request (shock_bps not in {100,250,500,1000,2000}), invalid_query (shock_bps missing or not an integer) or invalid_asset (malformed symbol)", body = ApiError),
+        (status = 404, description = "unknown_asset: symbol not tracked, inactive, or not public (synth_lev, e.g. xSOL)", body = ApiError)
     )
 )]
 pub async fn simulate_depeg(
@@ -1269,11 +1439,12 @@ pub async fn simulate_depeg(
         .ok_or_else(|| ApiError::unknown_asset(&symbol))?;
 
     // Latest HF bands per (protocol, band).
-    let bands = sqlx::query_as::<_, HfBandRow>(
+    let bands = sqlx::query_as::<_, HfBandRow>(concat!(
         "SELECT DISTINCT ON (protocol, hf_band) protocol, hf_band, collateral_usd, \
-         position_bucket, ts FROM loop_hf_distribution WHERE asset = $1 \
-         ORDER BY protocol, hf_band, ts DESC",
-    )
+             position_bucket, ts FROM loop_hf_distribution WHERE asset = $1 AND ",
+        hf_band_fresh_sql!(),
+        " ORDER BY protocol, hf_band, ts DESC"
+    ))
     .bind(&canonical)
     .fetch_all(&state.pg)
     .await
@@ -1291,7 +1462,9 @@ pub async fn simulate_depeg(
     .await
     .map_err(ApiError::db)?;
 
-    let as_of: Option<DateTime<Utc>> = bands.iter().map(|b| b.ts).max();
+    // Oldest input, not freshest: the estimate is only as current as its
+    // stalest band (bands past the 3h bound are already excluded above).
+    let as_of: Option<DateTime<Utc>> = oldest_band_ts(&bands);
     let (liquidatable_usd, by_protocol, positions_affected) =
         liquidatable_at_shock(&bands, q.shock_bps);
 
@@ -1345,12 +1518,47 @@ fn card_response(card: AssetCard) -> impl IntoResponse {
 /// its own `a.is_active` in fetch_card). The canonical string is then bound
 /// into the exact-case hot-table queries, so they stay on the existing
 /// `asset` B-tree (no `lower()` seq-scan). Returns None when nothing matches.
+///
+/// A string that cannot be a symbol (NUL byte, bad characters, > 32 chars) is
+/// a 400 `invalid_asset` here, before it reaches Postgres (a NUL was a 500).
+///
+/// A non-public class (`synth_lev`, e.g. xSOL) is a 404 here, so detail,
+/// state, history, loop-exposure and simulate-depeg all agree with the list,
+/// the feed, stats and the WebSocket stream, which already exclude it.
 async fn resolve_symbol(pg: &sqlx::PgPool, requested: &str) -> Result<Option<String>, ApiError> {
-    sqlx::query_scalar("SELECT symbol FROM assets WHERE lower(symbol) = lower($1)")
-        .bind(requested)
-        .fetch_optional(pg)
-        .await
-        .map_err(ApiError::db)
+    crate::params::check_symbol(requested)?;
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT symbol, class::text FROM assets WHERE lower(symbol) = lower($1)")
+            .bind(requested)
+            .fetch_optional(pg)
+            .await
+            .map_err(ApiError::db)?;
+    public_symbol(row)
+}
+
+/// Same as [`resolve_symbol`], keyed by mint.
+pub(crate) async fn resolve_mint(
+    pg: &sqlx::PgPool,
+    mint: &str,
+) -> Result<Option<String>, ApiError> {
+    crate::params::check_mint(mint)?;
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT symbol, class::text FROM assets WHERE mint = $1")
+            .bind(mint)
+            .fetch_optional(pg)
+            .await
+            .map_err(ApiError::db)?;
+    public_symbol(row)
+}
+
+/// `(symbol, class)` → the symbol, or `not_public` for an excluded class.
+fn public_symbol(row: Option<(String, String)>) -> Result<Option<String>, ApiError> {
+    match row {
+        Some((symbol, class)) if !crate::schema::is_public_class(&class) => {
+            Err(ApiError::not_public(symbol))
+        }
+        other => Ok(other.map(|(symbol, _)| symbol)),
+    }
 }
 
 /// Fetch the full `AssetCard` for an active asset, looked up by `column`
@@ -1369,8 +1577,9 @@ pub(crate) async fn fetch_card(
         SELECT
             a.symbol, a.name, a.mint, a.class::text AS class,
             a.peg_target::text AS peg_target, a.decimals,
-            COALESCE(d.state::text, CASE WHEN i.value_usd IS NOT NULL THEN 'UNKNOWN' END) AS state,
-            d.discount_smooth AS discount,
+            -- Active + tracked, so no fresh snapshot = UNKNOWN (mirrors ASSETS_LIST_SQL).
+            COALESCE(d.state::text, 'UNKNOWN') AS state,
+            d.discount_smooth AS discount, d.discount_raw,
             COALESCE(d.intrinsic_usd, i.value_usd) AS intrinsic_usd,
             d.market_usd,
             COALESCE(d.ts, i.ts) AS updated_at,
@@ -1386,12 +1595,20 @@ pub(crate) async fn fetch_card(
             (d.extra->>'current_state_duration_secs')::bigint AS current_state_duration_secs,
             (d.extra->>'sustained')::boolean AS sustained,
             -- state_reason: use the DB value for fresh rows; synthesize 'stale_source'
-            -- when the discount LATERAL (d) returned NULL (feed >15min stale) but we
-            -- have intrinsic data — matches what /state returns for the same asset.
+            -- whenever the discount LATERAL (d) returned NULL (mirrors ASSETS_LIST_SQL).
             -- Mirrors Rust const STATE_REASON_STALE_SOURCE = "stale_source".
+            -- 'market_unavailable' instead when the intrinsic leg IS fresh but no
+            -- market tick exists in the window (thin market, no reliable quote):
+            -- the asset is dark on the MARKET side, not on its sources overall.
+            -- Mirrors Rust const STATE_REASON_MARKET_UNAVAILABLE.
             COALESCE(d.state_reason,
-                     CASE WHEN d.state IS NULL AND i.value_usd IS NOT NULL
-                          THEN 'stale_source' END) AS state_reason,
+                     CASE WHEN d.state IS NULL THEN
+                       CASE WHEN i.ts >= now() - INTERVAL '15 minutes'
+                             AND NOT EXISTS (SELECT 1 FROM market_snapshots ms
+                                             WHERE ms.asset = a.symbol
+                                               AND ms.ts >= now() - INTERVAL '15 minutes')
+                            THEN 'market_unavailable' ELSE 'stale_source' END
+                     END) AS state_reason,
             -- Size/context signal (migration 0065) — mirrors ASSETS_LIST_SQL,
             -- see its comment. Populated by the isolated `token_supply`
             -- indexer source, NOT the NAV/discount pipeline.
@@ -1596,8 +1813,9 @@ pub struct HistoryPoint {
         HistoryQuery,
     ),
     responses(
-        (status = 200, description = "Time series of discount values, newest first", body = crate::response::ApiList<HistoryPoint>),
-        (status = 400, description = "Invalid ?bucket= (must be one of raw|1m)", body = ApiError)
+        (status = 200, description = "Time series of discount values, newest first (empty when the asset has no samples in the window)", body = crate::response::ApiList<HistoryPoint>),
+        (status = 400, description = "invalid_bucket (must be one of raw|1m), invalid_range (from after to), invalid_asset (malformed symbol) or invalid_query", body = ApiError),
+        (status = 404, description = "unknown_asset: the symbol was never in the tracked universe, or is not public (synth_lev, e.g. xSOL)", body = ApiError)
     )
 )]
 pub async fn history(
@@ -1617,14 +1835,21 @@ pub async fn history(
         return Err(ApiError::invalid_bucket(&q.bucket, &VALID_BUCKETS));
     }
 
+    // An inverted window is a client error, as on /v1/audit (`invalid_range`),
+    // not an empty 200 that reads like "no data".
+    if from > to {
+        return Err(ApiError::invalid_range("`from` must not be after `to`"));
+    }
+
     // Case-insensitive resolution: map the requested symbol to its canonical
     // catalog casing (no is_active filter — history serves preserved snapshots
     // for soft-deleted assets), then run the exact-case hot-table query with it.
-    // An unknown symbol returns an empty series (unchanged), not a 404.
-    let symbol = match resolve_symbol(&state.pg, &symbol).await? {
-        Some(canonical) => canonical,
-        None => return Ok(Json(crate::response::ApiList::new(Vec::new()))),
-    };
+    // A symbol that was never in the registry is 404 `unknown_asset`, like every
+    // sibling route (it used to be an empty 200). A registered asset with no
+    // samples in the window is still an empty 200.
+    let symbol = resolve_symbol(&state.pg, &symbol)
+        .await?
+        .ok_or_else(|| ApiError::unknown_asset(&symbol))?;
 
     // For "raw" we sample directly from discount_snapshots and surface both
     // the smoothed (used by the FSM) and the raw sample (audit / chart
@@ -1720,7 +1945,59 @@ pub async fn history(
             state: r.get("state"),
         })
         .collect();
-    Ok(Json(crate::response::ApiList::new(points)))
+    let start = history_start(&state.pg, &symbol)
+        .await
+        .map_err(ApiError::db)?;
+    Ok(Json(
+        crate::response::ApiList::new(points)
+            .with_history_start(start.map(|t| crate::serde_fmt::rfc3339_millis_z(&t))),
+    ))
+}
+
+/// How long a per-asset history floor is reused before re-reading it. The
+/// floor only moves when old rows are deleted (retention, or a data cleanup),
+/// so ten minutes is plenty fresh and keeps the probe off the /state hot path.
+const HISTORY_START_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+
+type HistoryStartCache =
+    std::sync::Mutex<HashMap<String, (std::time::Instant, Option<DateTime<Utc>>)>>;
+
+fn history_start_cache() -> &'static HistoryStartCache {
+    static CACHE: std::sync::OnceLock<HistoryStartCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Earliest stored discount snapshot for `symbol`: the floor of Pegana's
+/// history for the asset. Production history begins 2026-10-17T09:20Z (the
+/// database was rebuilt), so for most assets this is that instant, and a
+/// `since` equal to it means "in this state since at least then".
+async fn history_start(pg: &PgPool, symbol: &str) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+    if let Some((at, v)) = history_start_cache()
+        .lock()
+        .expect("history_start cache poisoned")
+        .get(symbol)
+    {
+        if at.elapsed() < HISTORY_START_TTL {
+            return Ok(*v);
+        }
+    }
+    let v: Option<DateTime<Utc>> = sqlx::query_scalar(
+        "SELECT ts FROM discount_snapshots WHERE asset = $1 ORDER BY ts ASC LIMIT 1",
+    )
+    .bind(symbol)
+    .fetch_optional(pg)
+    .await?;
+    history_start_cache()
+        .lock()
+        .expect("history_start cache poisoned")
+        .insert(symbol.to_string(), (std::time::Instant::now(), v));
+    Ok(v)
+}
+
+/// `since` is only a lower bound when it sits at (or before) the start of
+/// stored history: the asset may have entered its state earlier.
+fn since_is_lower_bound(since: DateTime<Utc>, history_start: Option<DateTime<Utc>>) -> bool {
+    history_start.is_some_and(|h| since <= h)
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1732,10 +2009,25 @@ pub struct StateResp {
     /// first snapshot of the current contiguous run. Constant across
     /// recomputes; it changes ONLY on a real state transition. For an asset
     /// that has only ever held one state it is that asset's first observed
-    /// snapshot. When `stale` is true it collapses to `updated_at`, the moment
-    /// data stopped.
+    /// snapshot, which is NOT a transition: see `since_is_lower_bound` and
+    /// `history_start`. When `stale` is true it collapses to `updated_at`, the
+    /// moment data stopped.
     #[serde(serialize_with = "crate::serde_fmt::ts_millis_z")]
     pub since: DateTime<Utc>,
+    /// RFC3339 of the earliest snapshot Pegana has stored for this asset; no
+    /// history exists before it. Production history begins
+    /// 2026-10-17T09:20Z (the database was rebuilt then), so for assets
+    /// tracked before that it is about that instant. Omitted when unknown.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::serde_fmt::opt_ts_millis_z"
+    )]
+    pub history_start: Option<DateTime<Utc>>,
+    /// `true` when `since` is at the start of stored history (`since <=
+    /// history_start`): the asset has held this state for the whole recorded
+    /// window and may have entered it earlier, so `since` is a lower bound,
+    /// not a transition time.
+    pub since_is_lower_bound: bool,
     #[serde(serialize_with = "crate::serde_fmt::dec_norm")]
     pub discount: Decimal,
     #[serde(serialize_with = "crate::serde_fmt::dec_norm")]
@@ -1762,8 +2054,13 @@ pub struct StateResp {
     /// - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
     ///   the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
     ///   suspect).
-    /// - `stale_source` — API layer: feed is >15 min stale, state collapsed to
-    ///   UNKNOWN; no fresh discount snapshot exists.
+    /// - `stale_source` — API layer: no discount snapshot in the last 15 min
+    ///   (sources or engine dark), state collapsed to UNKNOWN.
+    /// - `market_unavailable` — API layer: no discount snapshot in the last 15
+    ///   min, but the intrinsic leg IS fresh and no market tick exists in that
+    ///   window (thin market, no reliable quote). State UNKNOWN; the other
+    ///   fields are from the last discount snapshot (`updated_at` = when it
+    ///   stopped), like `stale_source`.
     ///
     /// **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
     /// work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
@@ -1792,7 +2089,8 @@ pub struct StateResp {
     ),
     responses(
         (status = 200, description = "Current state + transition timestamp", body = StateResp),
-        (status = 404, description = "unknown_asset (symbol not tracked) or no_data (tracked, no snapshot yet)", body = ApiError)
+        (status = 400, description = "invalid_asset: the symbol path parameter is malformed (symbol must be 1-32 chars of [A-Za-z0-9._+*-])", body = ApiError),
+        (status = 404, description = "unknown_asset (symbol not tracked, or not public: synth_lev) or no_data (tracked, but no stored snapshot; list endpoints report it as UNKNOWN with state_reason stale_source, or market_unavailable when only the market leg is missing)", body = ApiError)
     )
 )]
 pub async fn state(
@@ -1815,7 +2113,8 @@ pub async fn state(
     ),
     responses(
         (status = 200, description = "Current state + transition timestamp", body = StateResp),
-        (status = 404, description = "unknown_asset (mint not tracked) or no_data (tracked, no snapshot yet)", body = ApiError)
+        (status = 400, description = "invalid_asset: the mint path parameter is malformed (mint must be a base58 Solana address, 32-44 chars)", body = ApiError),
+        (status = 404, description = "unknown_asset (mint not tracked, or not public: synth_lev) or no_data (tracked, but no stored snapshot; list endpoints report it as UNKNOWN with state_reason stale_source, or market_unavailable when only the market leg is missing)", body = ApiError)
     )
 )]
 pub async fn state_by_mint(
@@ -1825,12 +2124,9 @@ pub async fn state_by_mint(
     // Resolve mint -> symbol WITHOUT an is_active filter: /state serves preserved
     // snapshots for soft-deleted assets, so the by-mint path must behave the same
     // (the by-symbol /state route has no is_active gate either).
-    let symbol: Option<String> = sqlx::query_scalar("SELECT symbol FROM assets WHERE mint = $1")
-        .bind(&mint)
-        .fetch_optional(&state.pg)
-        .await
-        .map_err(ApiError::db)?;
-    let symbol = symbol.ok_or_else(|| ApiError::unknown_asset(&mint))?;
+    let symbol = resolve_mint(&state.pg, &mint)
+        .await?
+        .ok_or_else(|| ApiError::unknown_asset(&mint))?;
     state_for_symbol(&state.pg, symbol).await
 }
 
@@ -1848,7 +2144,14 @@ const STATE_SQL: &str = r#"
         SELECT
           CASE WHEN c.is_stale THEN 'UNKNOWN'
                ELSE c.state::text END AS state,
-          CASE WHEN c.is_stale THEN 'stale_source'
+          -- Same split as ASSETS_LIST_SQL: a fresh intrinsic with no market tick
+          -- in the window is 'market_unavailable', anything else 'stale_source'.
+          CASE WHEN c.is_stale THEN
+                 CASE WHEN EXISTS (SELECT 1 FROM intrinsic_snapshots x
+                                   WHERE x.asset = $1 AND x.ts >= now() - INTERVAL '15 minutes')
+                       AND NOT EXISTS (SELECT 1 FROM market_snapshots y
+                                       WHERE y.asset = $1 AND y.ts >= now() - INTERVAL '15 minutes')
+                      THEN 'market_unavailable' ELSE 'stale_source' END
                ELSE c.state_reason END AS state_reason,
           -- `since` = start of the CURRENT published-state run; constant across
           -- recomputes, moves only on a real transition. When stale it stays
@@ -1911,7 +2214,24 @@ async fn state_for_symbol(
                     .await
                     .map_err(ApiError::db)?;
             return Err(if exists {
-                ApiError::no_data(symbol)
+                // Word the 404 by cause: a fresh intrinsic with no market tick
+                // is a missing MARKET leg, not "sources have not produced a
+                // reading" (sUSD: fresh NAV, no reliable quote).
+                let market_only: bool = sqlx::query_scalar(
+                    "SELECT EXISTS (SELECT 1 FROM intrinsic_snapshots \
+                       WHERE asset = $1 AND ts >= now() - INTERVAL '15 minutes') \
+                     AND NOT EXISTS (SELECT 1 FROM market_snapshots \
+                       WHERE asset = $1 AND ts >= now() - INTERVAL '15 minutes')",
+                )
+                .bind(&symbol)
+                .fetch_one(pg)
+                .await
+                .map_err(ApiError::db)?;
+                if market_only {
+                    ApiError::no_data_market(symbol)
+                } else {
+                    ApiError::no_data(symbol)
+                }
             } else {
                 ApiError::unknown_asset(symbol)
             });
@@ -1925,12 +2245,16 @@ async fn state_for_symbol(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=3, stale-while-revalidate=10"),
     );
+    let since: DateTime<Utc> = row.get("since");
+    let start = history_start(pg, &symbol).await.map_err(ApiError::db)?;
     Ok((
         headers,
         Json(StateResp {
+            since_is_lower_bound: since_is_lower_bound(since, start),
+            history_start: start,
             asset: symbol,
             state: row.get("state"),
-            since: row.get("since"),
+            since,
             discount: row.get("discount"),
             intrinsic_usd: row.get("intrinsic_usd"),
             market_usd: row.get("market_usd"),
@@ -1945,6 +2269,7 @@ async fn state_for_symbol(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::SubsecRound;
     use rust_decimal::Decimal;
     use serde_json::json;
 
@@ -2014,6 +2339,7 @@ mod tests {
             decimals: 6,
             state: None,
             discount: None,
+            discount_raw: None,
             risk_score: None,
             intrinsic_usd: None,
             market_usd: None,
@@ -2063,7 +2389,19 @@ mod tests {
         assert_eq!(v["intrinsic_usd"], "82.37938714953432981");
         assert_eq!(v["market_usd"], "83.21561787525563");
         assert_eq!(v["discount"], "-0.011208");
+        assert!(v.get("discount_raw").is_none(), "omitted when None");
         assert_eq!(v["sol_per_lst"], "1.110411409");
+        c.discount_raw = Some(Decimal::from_str("-0.011300").unwrap());
+        assert_eq!(serde_json::to_value(&c).unwrap()["discount_raw"], "-0.0113");
+        // An older cached card without the key still deserializes.
+        let mut legacy = serde_json::to_value(&c).unwrap();
+        legacy.as_object_mut().unwrap().remove("discount_raw");
+        let back: AssetCard = serde_json::from_value(legacy).unwrap();
+        assert!(back.discount_raw.is_none());
+        // 28-dp metadata value (live jitoSOL) is capped at 18 dp.
+        c.sol_per_lst = Some(Decimal::from_str("1.3073201109336966174167741743").unwrap());
+        let v = serde_json::to_value(&c).expect("serialize");
+        assert_eq!(v["sol_per_lst"], "1.307320110933696617");
         assert_eq!(v["circulating_supply"], "9079403.708996305");
         // USD aggregate: rounded to the cent (was 20-scale noise before).
         assert_eq!(v["market_cap"], "755548189.58");
@@ -2114,6 +2452,7 @@ mod tests {
         // k-suppressed cascade → never overclaims full coverage (honest floor,
         // consistent with simulate_depeg).
         assert_eq!(sig.coverage, "partial");
+        assert_eq!(sig.cascade_coverage, "partial");
         let at = |bps: i32| {
             sig.cascade
                 .iter()
@@ -2128,6 +2467,154 @@ mod tests {
         // The systemic block is serialized under its own key (not mixed into peg
         // fields), carrying the advisory note.
         assert!(sig.advisory_note.contains("advisory"));
+    }
+
+    /// The cascade carries the age of its OLDEST band, separate from the
+    /// exposure `updated_at`, so fresh exposure rows can no longer make a stale
+    /// cascade look current (finding: bands frozen 3+ days under a fresh
+    /// `updated_at`).
+    #[test]
+    fn systemic_cascade_reports_its_oldest_band() {
+        let fresh = "2026-10-21T01:51:09Z".parse::<DateTime<Utc>>().unwrap();
+        let older = "2026-10-21T00:40:00Z".parse::<DateTime<Utc>>().unwrap();
+        let exp = vec![(
+            "kamino".to_string(),
+            Some(Decimal::from(1_000_000)),
+            "full".to_string(),
+            fresh,
+        )];
+        let band = |protocol: &str, ts| HfBandRow {
+            protocol: protocol.to_string(),
+            hf_band: "1.0-1.05".to_string(),
+            collateral_usd: Decimal::from(10),
+            position_bucket: "5-20".to_string(),
+            ts,
+        };
+        let bands = vec![band("kamino", fresh), band("jupiter_lend", older)];
+        let sig = build_systemic(&exp, &bands).expect("has leverage");
+        assert_eq!(sig.updated_at.as_deref(), Some("2026-10-21T01:51:09.000Z"));
+        assert_eq!(
+            sig.cascade_updated_at.as_deref(),
+            Some("2026-10-21T00:40:00.000Z")
+        );
+        // No bands → no cascade age.
+        let sig = build_systemic(&exp, &[]).expect("has leverage");
+        assert!(sig.cascade_updated_at.is_none());
+        let v = serde_json::to_value(&sig).unwrap();
+        assert!(v.get("cascade_updated_at").is_none());
+    }
+
+    /// Round-2 P1: with NO fresh HF bands (enumerator frozen, or bands past the
+    /// 3h bound) the systemic block must never claim `coverage: full` next to a
+    /// ladder of `$0` rungs. It carries no rungs and `cascade_coverage: unknown`,
+    /// the same answer `simulate-depeg` gives for the asset.
+    #[test]
+    fn empty_bands_never_yield_full_coverage_or_zero_rungs() {
+        let ts = "2026-10-21T12:45:00Z".parse::<DateTime<Utc>>().unwrap();
+        let exp = vec![(
+            "jupiter_lend".to_string(),
+            Some(Decimal::from(124_694_888)),
+            "full".to_string(),
+            ts,
+        )];
+        assert!(cascade_over_bands(&[]).is_empty());
+        let sig = build_systemic(&exp, &[]).expect("has leverage");
+        assert!(sig.cascade.is_empty(), "no bands -> no rungs");
+        assert_ne!(sig.coverage, "full");
+        assert_eq!(sig.cascade_coverage, "unknown");
+        let v = serde_json::to_value(&sig).unwrap();
+        assert_eq!(v["cascade"], serde_json::json!([]));
+        assert_eq!(v["cascade_coverage"], "unknown");
+
+        // The shared rule behind /loop-exposure, across every input combination.
+        assert_eq!(exposure_coverage(false, false), ("unknown", "unknown"));
+        assert_eq!(exposure_coverage(true, false), ("partial", "unknown"));
+        assert_eq!(exposure_coverage(true, true), ("partial", "partial"));
+        assert_eq!(exposure_coverage(false, true), ("unknown", "partial"));
+        for rows in [false, true] {
+            for bands in [false, true] {
+                assert_ne!(exposure_coverage(rows, bands).0, "full");
+            }
+        }
+    }
+
+    /// The list, detail and /state SQL all split a market-only outage from a
+    /// dead feed, using the methodology constants' exact literals.
+    #[test]
+    fn stale_reason_split_is_in_every_state_query() {
+        use pegana_methodology::{STATE_REASON_MARKET_UNAVAILABLE, STATE_REASON_STALE_SOURCE};
+        let detail_sql = include_str!("assets.rs");
+        for (name, sql) in [("list", ASSETS_LIST_SQL), ("state", STATE_SQL)] {
+            assert!(
+                sql.contains(&format!("'{STATE_REASON_MARKET_UNAVAILABLE}'")),
+                "{name}"
+            );
+            assert!(
+                sql.contains(&format!("'{STATE_REASON_STALE_SOURCE}'")),
+                "{name}"
+            );
+            assert!(sql.contains("market_snapshots"), "{name}");
+        }
+        // fetch_card's SQL is built inline: two copies of the CASE (list + card).
+        assert!(
+            detail_sql
+                .matches("THEN 'market_unavailable' ELSE 'stale_source' END")
+                .count()
+                >= 3
+        );
+    }
+
+    #[test]
+    fn since_lower_bound_only_at_the_history_floor() {
+        let t = |s: &str| s.parse::<DateTime<Utc>>().unwrap();
+        let floor = Some(t("2026-10-17T09:20:24.939Z"));
+        assert!(since_is_lower_bound(t("2026-10-17T09:20:24.939Z"), floor));
+        assert!(!since_is_lower_bound(t("2026-10-19T00:00:00Z"), floor));
+        assert!(!since_is_lower_bound(t("2026-10-17T09:20:24.939Z"), None));
+        let mut v = serde_json::to_value(
+            crate::response::ApiList::new(vec![1])
+                .with_history_start(Some("2026-10-17T09:20:00.000Z".into())),
+        )
+        .unwrap();
+        assert_eq!(v["history_start"], "2026-10-17T09:20:00.000Z");
+        v = serde_json::to_value(crate::response::ApiList::new(vec![1])).unwrap();
+        assert!(v.get("history_start").is_none());
+    }
+
+    #[test]
+    fn list_filters_reject_unknown_and_non_public_values() {
+        assert!(validate_list_filters(None, None).is_ok());
+        assert!(validate_list_filters(Some("lst"), Some("SOL")).is_ok());
+        assert!(validate_list_filters(Some("stable_dn"), None).is_ok());
+        for bad in ["bogus", "synthetic_leverage", "synth_lev", "LST", ""] {
+            let e = validate_list_filters(Some(bad), None).unwrap_err();
+            assert_eq!(e.error, "invalid_query", "{bad}");
+        }
+        assert_eq!(
+            validate_list_filters(None, Some("usd")).unwrap_err().error,
+            "invalid_query"
+        );
+    }
+
+    #[test]
+    fn non_public_class_resolves_to_not_public_404() {
+        let e = public_symbol(Some(("xSOL".into(), "synth_lev".into()))).unwrap_err();
+        assert_eq!(e.error, "unknown_asset");
+        assert_eq!(e.asset.as_deref(), Some("xSOL"));
+        assert!(e.message.contains("synth_lev"));
+        assert_eq!(
+            public_symbol(Some(("jitoSOL".into(), "lst".into()))).unwrap(),
+            Some("jitoSOL".to_string())
+        );
+        assert_eq!(public_symbol(None).unwrap(), None);
+    }
+
+    #[test]
+    fn hf_band_freshness_predicate_is_three_hours() {
+        assert_eq!(
+            hf_band_fresh_sql!(),
+            format!("ts >= now() - INTERVAL '{HF_BAND_MAX_AGE_HOURS} hours'")
+        );
     }
 
     /// BSRV-01/02/03: when all three new fields are `None`, the serialized JSON
@@ -2388,6 +2875,8 @@ mod tests {
             stale: true,
             state_reason: None,
             confidence: Some("unknown".into()),
+            history_start: None,
+            since_is_lower_bound: false,
         };
         let v = serde_json::to_value(&resp).expect("serialize");
         let obj = v.as_object().expect("state resp is a JSON object");
@@ -2499,6 +2988,22 @@ mod tests {
         );
     }
 
+    /// risk_side follows the engine's premium carve-out (ADR-0021): every
+    /// tracked NAV class treats a premium as informational, so it is "below",
+    /// matching `state_for_bps_discount_aware` returning PEGGED on a premium.
+    #[test]
+    fn risk_side_for_class_matches_the_premium_carve_out() {
+        use crate::schema::risk_side_for_class;
+        for class in ["lst", "stable_yield", "synth_lev"] {
+            assert_eq!(risk_side_for_class(class), "below", "{class}");
+        }
+        for class in ["stable_fiat", "stable_fx", "stable_dn", "stable_cdp"] {
+            assert_eq!(risk_side_for_class(class), "below", "{class}");
+        }
+        // Unknown class: anchor fallback (NAV) keeps the conservative "either".
+        assert_eq!(risk_side_for_class("not_a_class"), "either");
+    }
+
     /// risk_side helper: "NAV" → "either", everything else → "below".
     /// Also locks the mapping for unknown/future anchors (conservative default).
     #[test]
@@ -2518,7 +3023,7 @@ mod tests {
     /// risk_side is always present on AssetCard and serializes correctly.
     /// - USD anchor (stable_fiat) → "below"
     /// - FX anchor (stable_fx)   → "below"
-    /// - NAV anchor (lst)        → "either"
+    /// - NAV anchor (lst)        → "below" (premium carve-out, ADR-0021)
     #[test]
     fn asset_card_risk_side_serializes() {
         // USD anchor (the baseline empty_card is stable_fiat / USD).
@@ -2547,25 +3052,25 @@ mod tests {
         let mut lst_card = empty_card();
         lst_card.class = "lst".into();
         lst_card.anchor = crate::schema::anchor_for_class("lst").into();
-        lst_card.risk_side = crate::schema::risk_side_for_anchor(&lst_card.anchor).into();
+        lst_card.risk_side = crate::schema::risk_side_for_class(&lst_card.class).into();
         lst_card.peg_target = "SOL".into();
         let v_lst = serde_json::to_value(&lst_card).expect("serialize lst card");
         assert_eq!(
             v_lst.get("risk_side").and_then(|x| x.as_str()),
-            Some("either"),
-            "NAV anchor must serialize risk_side=either"
+            Some("below"),
+            "LST premium is informational (ADR-0021): risk_side=below"
         );
 
         // NAV anchor — stable_yield.
         let mut yield_card = empty_card();
         yield_card.class = "stable_yield".into();
         yield_card.anchor = crate::schema::anchor_for_class("stable_yield").into();
-        yield_card.risk_side = crate::schema::risk_side_for_anchor(&yield_card.anchor).into();
+        yield_card.risk_side = crate::schema::risk_side_for_class(&yield_card.class).into();
         let v_yield = serde_json::to_value(&yield_card).expect("serialize yield card");
         assert_eq!(
             v_yield.get("risk_side").and_then(|x| x.as_str()),
-            Some("either"),
-            "NAV anchor (stable_yield) must serialize risk_side=either"
+            Some("below"),
+            "stable_yield premium is informational (ADR-0021): risk_side=below"
         );
     }
 
@@ -2684,6 +3189,8 @@ mod tests {
     async fn clean(pool: &sqlx::PgPool, sym: &str) {
         for q in [
             "DELETE FROM engine_state_snapshot WHERE asset = $1",
+            "DELETE FROM intrinsic_snapshots WHERE asset = $1",
+            "DELETE FROM market_snapshots WHERE asset = $1",
             "DELETE FROM discount_snapshots WHERE asset = $1",
             "DELETE FROM assets WHERE symbol = $1",
         ] {
@@ -2747,6 +3254,146 @@ mod tests {
         (r.get("state"), r.get("since"), r.get("updated_at"))
     }
 
+    async fn intrinsic_at(pool: &sqlx::PgPool, sym: &str, ts: DateTime<Utc>) {
+        sqlx::query(
+            "INSERT INTO intrinsic_snapshots (asset, value_usd, source, ts) VALUES ($1, 1.18, 'test', $2)",
+        )
+        .bind(sym)
+        .bind(ts)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn market_at(pool: &sqlx::PgPool, sym: &str, ts: DateTime<Utc>) {
+        sqlx::query(
+            "INSERT INTO market_snapshots (asset, value_usd, numeraire, ts) VALUES ($1, 1.18, 'USDC', $2)",
+        )
+        .bind(sym)
+        .bind(ts)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    fn clean_history_cache(sym: &str) {
+        history_start_cache().lock().unwrap().remove(sym);
+    }
+
+    async fn card_reason(pool: &sqlx::PgPool, sym: &str) -> Option<String> {
+        fetch_card(pool, "a.symbol", sym)
+            .await
+            .unwrap()
+            .expect("card")
+            .state_reason
+    }
+
+    /// Round-2 #52: a fresh intrinsic with no market tick is
+    /// `market_unavailable` (sUSD), not `stale_source`; both stale legs, or
+    /// a fresh market with no discount (engine dark), stay `stale_source`.
+    #[tokio::test]
+    async fn no_snapshot_reason_distinguishes_a_missing_market_leg() {
+        let Some(pool) = pg_or_skip().await else {
+            return;
+        };
+        const SYM: &str = "ZZ_REASON_TEST";
+        seed_asset(&pool, SYM).await;
+        let now = Utc::now();
+
+        // Nothing at all -> stale_source; /state is a 404 no_data.
+        assert_eq!(
+            card_reason(&pool, SYM).await.as_deref(),
+            Some("stale_source")
+        );
+
+        // Fresh intrinsic, no market -> market_unavailable.
+        intrinsic_at(&pool, SYM, now - chrono::Duration::minutes(1)).await;
+        assert_eq!(
+            card_reason(&pool, SYM).await.as_deref(),
+            Some("market_unavailable")
+        );
+        let list = fetch_assets_list(&pool, None, None).await.unwrap();
+        let row = list.iter().find(|c| c.symbol == SYM).expect("listed");
+        assert_eq!(row.state_reason.as_deref(), Some("market_unavailable"));
+        let err = state_for_symbol(&pool, SYM.to_string())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.error, "no_data");
+        assert!(
+            err.message.contains("no reliable market price"),
+            "{}",
+            err.message
+        );
+
+        // A stale discount snapshot with the same market-only outage -> /state
+        // returns UNKNOWN + market_unavailable.
+        tick(&pool, SYM, "PEGGED", now - chrono::Duration::minutes(40)).await;
+        let r = sqlx::query(STATE_SQL)
+            .bind(SYM)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(r.get::<String, _>("state"), "UNKNOWN");
+        assert_eq!(
+            r.get::<Option<String>, _>("state_reason").as_deref(),
+            Some("market_unavailable")
+        );
+
+        // History floor: the single (stale) snapshot is the earliest stored.
+        clean_history_cache(SYM);
+        let floor = history_start(&pool, SYM).await.unwrap();
+        assert_eq!(
+            floor.map(|t| t.timestamp_millis()),
+            Some((now - chrono::Duration::minutes(40)).timestamp_millis())
+        );
+
+        // Fresh market too (engine not producing) -> back to stale_source.
+        market_at(&pool, SYM, now - chrono::Duration::minutes(1)).await;
+        assert_eq!(
+            card_reason(&pool, SYM).await.as_deref(),
+            Some("stale_source")
+        );
+        let r = sqlx::query(STATE_SQL)
+            .bind(SYM)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            r.get::<Option<String>, _>("state_reason").as_deref(),
+            Some("stale_source")
+        );
+        clean(&pool, SYM).await;
+    }
+
+    /// Round-2 #29: xSOL (synth_lev) resolves to a 404 on every symbol/mint route.
+    #[tokio::test]
+    async fn synth_lev_is_not_resolvable() {
+        let Some(pool) = pg_or_skip().await else {
+            return;
+        };
+        let Some((sym, mint)): Option<(String, String)> = sqlx::query_as(
+            "SELECT symbol, mint FROM assets WHERE class::text = 'synth_lev' LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        .unwrap() else {
+            eprintln!("skip: no synth_lev asset seeded");
+            return;
+        };
+        let e = resolve_symbol(&pool, &sym.to_lowercase())
+            .await
+            .unwrap_err();
+        assert_eq!(e.error, "unknown_asset");
+        let e = resolve_mint(&pool, &mint).await.unwrap_err();
+        assert_eq!(e.error, "unknown_asset");
+        assert!(fetch_assets_list(&pool, None, None)
+            .await
+            .unwrap()
+            .iter()
+            .all(|c| c.class != "synth_lev"));
+    }
+
     /// Fallback path (engine has not stamped `state_since`): the exact derivation
     /// from snapshot history.
     #[tokio::test]
@@ -2758,7 +3405,9 @@ mod tests {
         seed_asset(&pool, SYM).await;
 
         // Minute-spaced ticks, all inside the 15-minute freshness window.
-        let t0 = Utc::now() - chrono::Duration::minutes(14);
+        // Truncate to µs: Postgres timestamptz round-trips at µs, while Linux
+        // `Utc::now()` carries ns, so an un-truncated t0 never compares equal.
+        let t0 = Utc::now().trunc_subsecs(6) - chrono::Duration::minutes(14);
         let at = |m: i64| t0 + chrono::Duration::minutes(m);
 
         // Only ever PEGGED: since == first observed snapshot, however many ticks.
@@ -2817,7 +3466,9 @@ mod tests {
         };
         const SYM: &str = "ZZ_SINCE_FAST_TEST";
         seed_asset(&pool, SYM).await;
-        let t0 = Utc::now() - chrono::Duration::minutes(14);
+        // Truncate to µs: Postgres timestamptz round-trips at µs, while Linux
+        // `Utc::now()` carries ns, so an un-truncated t0 never compares equal.
+        let t0 = Utc::now().trunc_subsecs(6) - chrono::Duration::minutes(14);
         let at = |m: i64| t0 + chrono::Duration::minutes(m);
 
         // History alone would say since == at(0); the engine says at(0) too, and

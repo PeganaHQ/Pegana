@@ -120,7 +120,7 @@ test.describe("landing chrome — phone 390", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1500);
 
-    // The MockDataBanner's wrapper used to render unconditionally while the
+    // A former global banner wrapper (since removed) used to render unconditionally while the
     // banner inside it returned null on every healthy load. An empty box with a
     // border and a background does not vanish: it collapsed to its own edges
     // and painted a 2px grey line pinned to the bottom of the viewport.

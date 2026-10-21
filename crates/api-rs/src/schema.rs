@@ -115,30 +115,33 @@ pub enum Anchor {
     NAV,
 }
 
-/// Which direction of the signed `discount` is the risk signal for this
-/// asset's anchor type.
+/// Which direction of the signed `discount` can move this asset's published
+/// `state`.
 ///
-/// - `"below"` — a discount BELOW the peg/anchor is the risk (USD and FX
-///   anchors: the asset is worth less than the target, which is bad).
-/// - `"either"` — BOTH a discount and a premium are meaningful risk signals
-///   (NAV anchors: LSTs, yield-bearing stables, synthetic leverage — the
-///   intrinsic value moves, so deviation in either direction from NAV signals
-///   mispricing or liquidity stress).
+/// - `"below"` — only a discount (market BELOW the peg/anchor) is a risk
+///   signal. A premium never escalates the state. This covers USD and FX
+///   anchors, and also every NAV class today (LSTs, yield-bearing stables,
+///   synthetic leverage): for those the engine treats a premium as
+///   informational and classifies it PEGGED (ADR-0021), so a large negative
+///   `discount` on them is NOT a missed alert. An implausibly large premium on
+///   an LST or yield stable is reported as `UNKNOWN` (`state_reason:
+///   premium_sanity`), not as a depeg.
+/// - `"either"` — both a discount and a premium can escalate the state.
+///   Reserved for a NAV-anchored class without the premium carve-out; no
+///   tracked class uses it today.
 #[derive(ToSchema)]
 #[allow(non_camel_case_types, dead_code)]
 pub enum RiskSide {
-    /// A discount from peg is the risk. USD and FX anchors.
+    /// Only a discount escalates the state.
     below,
-    /// Both discount and premium are meaningful. NAV anchors.
+    /// Both a discount and a premium escalate the state.
     either,
 }
 
-/// Map an `anchor` value (`"USD"`, `"FX"`, or `"NAV"`) to the consumer-facing
-/// `risk_side` value (`"below"` or `"either"`).
-///
-/// `"below"` for USD/FX anchors — a discount from the fixed target IS the
-/// risk signal. `"either"` for NAV anchors — NAV itself moves, so both a
-/// discount and a premium can signal mispricing or liquidity stress.
+/// Map an `anchor` value (`"USD"`, `"FX"`, or `"NAV"`) to a `risk_side`
+/// without class information. Prefer [`risk_side_for_class`], which knows
+/// about the ADR-0021 premium carve-out; this is kept for callers that only
+/// hold an anchor.
 ///
 /// On an unexpected anchor string (should not occur given the closed set) this
 /// returns `"below"` — the conservative default that avoids implying a premium
@@ -148,6 +151,19 @@ pub fn risk_side_for_anchor(anchor: &str) -> &'static str {
         "NAV" => "either",
         // "USD", "FX", and any unrecognised future value → "below".
         _ => "below",
+    }
+}
+
+/// The consumer-facing `risk_side` for an asset class, derived from the SAME
+/// rule the engine classifies with: when
+/// `pegana_methodology::thresholds::premium_is_informational(class)` holds, a
+/// premium is classified PEGGED, so only the discount side is a risk signal
+/// (`"below"`). Otherwise the anchor decides (`NAV` → `"either"`). An unknown
+/// class string falls back to the anchor mapping.
+pub fn risk_side_for_class(class: &str) -> &'static str {
+    match AssetClass::from_db_str(class) {
+        Some(ac) if pegana_methodology::thresholds::premium_is_informational(ac) => "below",
+        _ => risk_side_for_anchor(anchor_for_class(class)),
     }
 }
 
@@ -171,5 +187,85 @@ pub fn anchor_for_class(class: &str) -> &'static str {
         // should never fire: the Postgres `asset_class` enum is migrated in
         // lockstep with `AssetClass`.
         None => "NAV",
+    }
+}
+
+/// `asset_class` values served on the public peg surface. `synth_lev` (e.g.
+/// xSOL) is tracked internally but has no peg, so every public route, the
+/// feed, stats and the WebSocket stream exclude it.
+pub const PUBLIC_CLASSES: [&str; 7] = [
+    "lst",
+    "stable_fiat",
+    "stable_cdp",
+    "stable_rwa",
+    "stable_dn",
+    "stable_fx",
+    "stable_yield",
+];
+
+/// Classes tracked but never served publicly.
+pub const NON_PUBLIC_CLASSES: [&str; 1] = ["synth_lev"];
+
+/// True when assets of `class` appear on the public surface.
+pub fn is_public_class(class: &str) -> bool {
+    !NON_PUBLIC_CLASSES.contains(&class)
+}
+
+/// `peg_target` values (the Postgres enum).
+pub const PEG_TARGETS: [&str; 4] = ["SOL", "USD", "BRL", "EUR"];
+
+#[cfg(test)]
+mod class_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Classify every `AssetClass` variant, and name the next one so the walk
+    /// below visits them all. The `match` is exhaustive: adding a variant is a
+    /// compile error here until it is classified and chained in.
+    fn classify(c: AssetClass) -> (bool, Option<AssetClass>) {
+        use AssetClass::*;
+        match c {
+            Lst => (true, Some(StableFiat)),
+            StableFiat => (true, Some(StableCdp)),
+            StableCdp => (true, Some(StableRwa)),
+            StableRwa => (true, Some(StableDn)),
+            StableDn => (true, Some(StableFx)),
+            StableFx => (true, Some(StableYield)),
+            StableYield => (true, Some(SynthLev)),
+            SynthLev => (false, None),
+        }
+    }
+
+    /// The two lists partition the `AssetClass` enum exactly, so a new class
+    /// cannot silently fall out of `?class=` validation.
+    #[test]
+    fn public_and_non_public_classes_cover_every_asset_class() {
+        let mut seen = HashSet::new();
+        let mut cur = Some(AssetClass::Lst);
+        while let Some(c) = cur {
+            assert!(seen.insert(c), "{c:?} visited twice: fix the chain");
+            let (public, next) = classify(c);
+            let db = serde_json::to_value(c).unwrap();
+            let db = db.as_str().unwrap();
+            assert_eq!(AssetClass::from_db_str(db), Some(c));
+            assert_eq!(
+                PUBLIC_CLASSES.contains(&db),
+                public,
+                "{db} PUBLIC_CLASSES membership"
+            );
+            assert_eq!(
+                NON_PUBLIC_CLASSES.contains(&db),
+                !public,
+                "{db} NON_PUBLIC_CLASSES membership"
+            );
+            cur = next;
+        }
+        for c in PUBLIC_CLASSES.iter().chain(NON_PUBLIC_CLASSES.iter()) {
+            let v = AssetClass::from_db_str(c).unwrap_or_else(|| panic!("{c} is an AssetClass"));
+            assert!(seen.contains(&v), "{c} not reached by the classify walk");
+        }
+        assert_eq!(seen.len(), PUBLIC_CLASSES.len() + NON_PUBLIC_CLASSES.len());
+        assert!(!is_public_class("synth_lev"));
+        assert!(is_public_class("lst"));
     }
 }

@@ -54,11 +54,11 @@ You get back (captured live on 2026-10-20):
 Numeric fields are returned as strings to preserve full on-chain precision —
 parse them with your language's decimal type, not a float.
 
-That's it. No auth, and no SDK required (requests are rate-limited per IP; see [rate limits](/guides/rate-limits)) — though typed TypeScript (`@peganahq/sdk-ts`, published) and Python (`pegana-sdk`, `pip install pegana-sdk`) clients are generated from the OpenAPI spec if you want them.
+That's it. No auth, and no SDK required (requests are rate-limited per IP; see [rate limits](/guides/rate-limits)), though typed TypeScript (`@peganahq/sdk-ts`, `npm install @peganahq/sdk-ts`) and Python (`pegana-sdk`, `pip install pegana-sdk`) clients are generated from the OpenAPI spec if you want them. The published releases still include a few removed endpoints; see [SDKs](/api-reference/introduction#sdks).
 
-## Stream every state change
+## Stream live readings
 
-If you need sub-second updates instead of polling, open a WebSocket:
+If you want pushed updates instead of polling, open a WebSocket:
 
 <CodeGroup>
 
@@ -78,8 +78,8 @@ ws.on("message", (data) => {
 
 </CodeGroup>
 
-The server pushes `{op:"update", asset, payload}` whenever any asset state changes,
-plus a heartbeat every 5 seconds. See [WebSocket guide](/guides/websocket) for
+The server pushes `{op:"update", asset, payload}` for each asset every time the engine
+recomputes it (not only when the state changes), plus a heartbeat every 5 seconds. See [WebSocket guide](/guides/websocket) for
 filtering by asset.
 
 ## Add Pegana to Claude / Cursor (MCP)

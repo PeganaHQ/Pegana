@@ -24,8 +24,13 @@ class SimulateDepegResponse:
         by_protocol (list[SimulateByProtocol]):
         coverage (str): `full` | `partial` | `unknown`. `partial` whenever risky bands were
             k-floor-dropped or dominance-suppressed (the honest ADR-0036 posture).
-        liquidatable_usd (str): Collateral (USD) in bands that cross their liquidation threshold at this shock.
+        liquidatable_usd (str): Collateral (USD) of this asset in every borrowing position (looped or
+            not) whose health-factor band crosses 1 at this shock. Not a subset of
+            `loop_exposure_usd`: a plain deposit-and-borrow position counts here but
+            not there, so this value can exceed `loop_exposure_usd`.
         loop_exposure_usd (str): Total leveraged collateral across protocols (context, from loop-exposure).
+            Counts leverage loops only (e.g. Kamino multiply pairs), so it is a
+            NARROWER basis than `liquidatable_usd` and is not its upper bound.
         positions (str): Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
         shock_bps (int):
         updated_at (None | str | Unset):

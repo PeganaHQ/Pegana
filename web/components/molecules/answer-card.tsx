@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { TokenIcon } from "@/components/atoms/token-icon";
 import { IconArrowRight } from "@/components/atoms/icon-arrow-right";
 import { cardSurface } from "@/components/atoms/surface-card";

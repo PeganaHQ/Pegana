@@ -1,6 +1,6 @@
 # Post-QA Execution Report — 2026-05-29 sweep
 
-**Worktree:** `/Users/rafazaum/Desktop/Projetos/pegana/.claude/worktrees/trust-layer`
+**Worktree:** `<repo>/.claude/worktrees/trust-layer`
 **Branch:** `feat/jlp-asset-+-docs-sweep`
 **Date executed:** 2026-05-30
 **Status:** all edits UNCOMMITTED — human review + deploy pending. Nothing here was auto-run, committed, pushed, or deployed.
@@ -191,7 +191,7 @@ Flip serde at `crates/common-verify/src/lib.rs:278` from `rename_all="UPPERCASE"
 
 ### A. Review
 ```
-cd /Users/rafazaum/Desktop/Projetos/pegana/.claude/worktrees/trust-layer && git diff
+cd <repo>/.claude/worktrees/trust-layer && git diff
 ```
 Validate every change. New files (`git status`): `web/app/(app)/assets/[symbol]/page.tsx`, `web/app/(marketing)/live/page.tsx`.
 

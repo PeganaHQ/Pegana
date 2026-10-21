@@ -48,6 +48,9 @@ export interface AssetCardData {
   mint: string;
   class: AssetClass;
   peg_target: PegTarget;
+  /** What intrinsic value is measured against: "NAV" (LSTs, yield stables),
+   *  "USD" (fiat, CDP, delta-neutral stables) or "FX". */
+  anchor?: string | null;
   decimals: number;
   state: PegState | null;
   discount: string | null; // rust_decimal::Decimal serializes as string
@@ -298,6 +301,9 @@ export interface LoopExposureData {
   // Full cascade across the preset shock grid; empty/absent when no HF
   // distribution has been enumerated for the asset.
   cascade?: CascadeRung[];
+  /** `partial` when fresh health-factor bands back `cascade`, else `unknown`. */
+  cascade_coverage?: string;
+  cascade_updated_at?: string;
   updated_at?: string;
   advisory_note: string;
 }
@@ -307,6 +313,9 @@ export interface SystemicSignal {
   protocols: string[];
   cascade: CascadeRung[];
   coverage: string;
+  /** `partial` when fresh health-factor bands back `cascade`, else `unknown`.
+   *  Absent on older API builds; then fall back to `coverage`. */
+  cascade_coverage?: string;
   updated_at?: string;
   advisory_note: string;
 }

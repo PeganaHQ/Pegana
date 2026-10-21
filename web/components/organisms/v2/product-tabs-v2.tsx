@@ -6,6 +6,7 @@ import { Popover as PopoverPrimitive } from "radix-ui";
 import { Check, ChevronsUpDown, Copy } from "lucide-react";
 import { TokenIcon } from "@/components/atoms/token-icon";
 import { cn } from "@/lib/utils/cn";
+import { tokenIconUrl } from "@/lib/static-assets";
 import { api } from "@/lib/api/client";
 import { wsUrl } from "@/lib/api/base";
 import { createWsClient } from "@/lib/api/ws";
@@ -33,11 +34,15 @@ import type { AssetCardData, PegState } from "@/lib/api/types";
 // surfaces are a single quiet line underneath.
 //
 // Data path: the app's own `api` client (same SWR cache key the hero board
-// uses for the asset list), polled every 10s, plus the app's existing
-// `createWsClient` for sub-second updates. On Vercel previews the API base
+// uses for the asset list), polled every 30s (every 60s while the WebSocket
+// is live), plus the app's existing `createWsClient` for sub-second updates. On Vercel previews the API base
 // resolves through lib/api/base.ts exactly as the live board does.
 
-const POLL_MS = 10_000;
+// 30s, not 10s: at 10s this one card cost 6 of a tab's API requests per
+// minute against a 60/min per-IP budget (measured 2026-10-21). While the
+// socket is live, frames carry the updates and REST only backstops them.
+const POLL_MS = 30_000;
+const POLL_WHILE_LIVE_MS = 60_000;
 const WS_MAX_FAILURES = 3;
 
 const VALID_STATES: ReadonlySet<string> = new Set([
@@ -131,11 +136,13 @@ function useLiveVerdict(
   seed: AssetCardData | undefined,
   wsEnabled: boolean,
 ) {
+  const socketRef = useRef<"connecting" | "live" | "polling">("connecting");
   const rest = useSWR<AssetCardData>(
     `landing-verdict/${symbol}`,
     () => api.asset(symbol),
     {
-      refreshInterval: POLL_MS,
+      refreshInterval: () =>
+        socketRef.current === "live" ? POLL_WHILE_LIVE_MS : POLL_MS,
       shouldRetryOnError: false,
       keepPreviousData: false,
     },
@@ -146,6 +153,9 @@ function useLiveVerdict(
   const [socket, setSocket] = useState<"connecting" | "live" | "polling">(
     "connecting",
   );
+  useEffect(() => {
+    socketRef.current = socket;
+  }, [socket]);
   const symbolRef = useRef(symbol);
   const clientRef = useRef<ReturnType<typeof createWsClient> | null>(null);
   const openRef = useRef(false);
@@ -257,7 +267,7 @@ const IconPreload = memo(function IconPreload() {
       {CURATED_TOKENS.map((t) => (
         <img
           key={t.mint}
-          src={`/tokens/${t.mint}.webp`}
+          src={tokenIconUrl(t.mint)}
           alt=""
           loading="eager"
           decoding="sync"

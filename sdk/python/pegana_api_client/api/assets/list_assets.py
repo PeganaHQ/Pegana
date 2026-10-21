@@ -82,7 +82,8 @@ def sync_detailed(
     """List all active assets with their latest peg snapshot
 
      Returns every active asset with its latest discount, state, and peg-snapshot. This is the dashboard
-    screener endpoint — for the stream of peg state-transition alerts, use `GET /v1/alerts` instead.
+    screener endpoint — for the public receipt ledger of peg state-transition alerts, use `GET
+    /v1/audit` instead.
 
     Args:
         class_ (str | Unset):
@@ -117,7 +118,8 @@ def sync(
     """List all active assets with their latest peg snapshot
 
      Returns every active asset with its latest discount, state, and peg-snapshot. This is the dashboard
-    screener endpoint — for the stream of peg state-transition alerts, use `GET /v1/alerts` instead.
+    screener endpoint — for the public receipt ledger of peg state-transition alerts, use `GET
+    /v1/audit` instead.
 
     Args:
         class_ (str | Unset):
@@ -147,7 +149,8 @@ async def asyncio_detailed(
     """List all active assets with their latest peg snapshot
 
      Returns every active asset with its latest discount, state, and peg-snapshot. This is the dashboard
-    screener endpoint — for the stream of peg state-transition alerts, use `GET /v1/alerts` instead.
+    screener endpoint — for the public receipt ledger of peg state-transition alerts, use `GET
+    /v1/audit` instead.
 
     Args:
         class_ (str | Unset):
@@ -180,7 +183,8 @@ async def asyncio(
     """List all active assets with their latest peg snapshot
 
      Returns every active asset with its latest discount, state, and peg-snapshot. This is the dashboard
-    screener endpoint — for the stream of peg state-transition alerts, use `GET /v1/alerts` instead.
+    screener endpoint — for the public receipt ledger of peg state-transition alerts, use `GET
+    /v1/audit` instead.
 
     Args:
         class_ (str | Unset):

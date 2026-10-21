@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { m } from "framer-motion";
 import { XIcon } from "lucide-react";
 import {

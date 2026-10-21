@@ -28,7 +28,7 @@
 #   without prod's key. Net: `docker compose -p pegana-prodlocal ... up` can be
 #   run anytime without touching production.
 #
-# Production deploys to Hetzner CAX21 use the base docker-compose.yml ONLY
+# Production deploys to the Hostinger box use the base docker-compose.yml ONLY
 # (with real Caddyfile + DNS). This overlay only exists to smoke the prod
 # stack on your laptop before pushing to the server.
 
@@ -79,10 +79,19 @@ services:
       # Staging dummy: base64 of 32 random bytes. NOT a production key.
       PEGANA_WEBHOOK_SIGNING_KEY: "58cfYmBQIHiL4sGXhFWhyK9KlVaywKGT+th3BIerM8A="
 
+  # Inert channels so a local stack never posts to a real alert channel even
+  # when the local .env carries prod values: no Telegram token, no chat id, and
+  # a Discord webhook nothing listens on (:9). Delivery failures show up only
+  # in the local Alertmanager log. See the top-level `configs:` block below.
   alertmanager:
     environment:
-      ALERTMANAGER_TELEGRAM_BOT_TOKEN: "DISABLED"
-      ALERTMANAGER_TELEGRAM_CHAT_ID: "1"
+      ALERTMANAGER_TELEGRAM_CHAT_ID: ""
+
+  # No host backup cron locally: serve an empty textfile dir instead of the
+  # deploy user's ~/.pegana-metrics.
+  node-exporter:
+    volumes: !reset []
+    tmpfs: [/textfile]
 
   caddy:
     # No-op locally — production keeps Caddy for TLS termination.
@@ -90,3 +99,10 @@ services:
     command: ["sh", "-c", "echo 'caddy disabled in local overlay'; sleep infinity"]
     ports: !reset []
     restart: "no"
+
+# Overrides the prod channel secrets (docker-compose.yml) with inert values.
+configs:
+  alertmanager_telegram_bot_token:
+    content: "\n"
+  alertmanager_discord_webhook_url:
+    content: "https://127.0.0.1:9/disabled\n"

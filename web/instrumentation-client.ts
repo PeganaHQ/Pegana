@@ -15,26 +15,23 @@ Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
 
   // Performance: keep tracing on but sample VERY low. The free Sentry tier
-  // (5k events/mo) is easily blown by a public site; an exhausted quota /
-  // spend-cap is the likely cause of the 403s seen on the /monitoring tunnel
-  // (2026-06-22). Root cause (DSN key enabled? org over cap?) is dashboard-side;
-  // this just stops the browser SDK from burning the quota.
+  // (5k events/mo) is easily blown by a public site.
+  //
+  // INGESTION STATUS (verified 2026-10-21): Sentry rejects every event for
+  // this DSN with 403 `event submission rejected with_reason: ProjectId`,
+  // both through the /monitoring tunnel and posted straight to
+  // ingest.us.sentry.io. A bad key gives 401 instead, so the tunnel forwards
+  // fine and the DSN's project is what Sentry refuses (deleted, disabled or
+  // mismatched). This is NOT a quota problem, as an older note here guessed.
+  // The fix is dashboard-side: point NEXT_PUBLIC_SENTRY_DSN at an existing,
+  // enabled project (or unset it, which makes init a no-op).
   tracesSampleRate: 0.01,
 
-  // Replay quota is the biggest spender. Drop blanket session replays entirely
-  // (0%) and sample only a fraction of error sessions — still actionable for
-  // real bug reports, ~5x cheaper than 1.0.
-  replaysSessionSampleRate: 0.0,
-  replaysOnErrorSampleRate: 0.2,
-
-  integrations: [
-    Sentry.replayIntegration({
-      // Mask everything text-ish by default — Pegana is mostly numeric data
-      // so this won't hurt debugging.
-      maskAllText: true,
-      blockAllMedia: true,
-    }),
-  ],
+  // Session Replay is deliberately NOT registered. Session sampling was
+  // already 0%, error-session replays never reached Sentry (see above), and
+  // registering `replayIntegration()` eagerly put rrweb into the main chunk on
+  // every page (~75-83 KiB flagged unused by Lighthouse). Re-add it lazily
+  // (Sentry.lazyLoadIntegration) only once ingestion is confirmed working.
 
   // Same environment / release contract used by the Rust services.
   environment: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? "production",

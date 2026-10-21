@@ -91,6 +91,12 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
+  // Cross-origin requests are never touched. That includes the token and
+  // partner logos, which load from https://api.pegana.xyz/static/ (see
+  // lib/static-assets.ts): the browser's HTTP cache (1 day fresh + 7 days
+  // stale-while-revalidate, set by Caddy) is their only cache, and the
+  // /tokens/ and /logos/ cases in isImmutableAsset only apply if
+  // NEXT_PUBLIC_STATIC_BASE is "/".
   if (url.origin !== self.location.origin) return;
   if (NEVER_CACHE.some((prefix) => url.pathname.startsWith(prefix))) return;
 

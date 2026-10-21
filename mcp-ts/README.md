@@ -1,110 +1,121 @@
 # pegana-mcp
 
-TypeScript MCP server that exposes Pegana's peg-risk oracle to AI agents
-via the [Model Context Protocol](https://modelcontextprotocol.io/),
-metered per-call in USDC on Solana through
-[x402](https://x402.org/).
+TypeScript MCP server that exposes Pegana's peg-risk oracle for Solana to AI
+agents via the [Model Context Protocol](https://modelcontextprotocol.io/).
+Every tool is free: no API key, no signup, no payment.
 
-Hosted at `https://mcp.pegana.xyz` — no clone needed; point your MCP client at the
-URL. The verifier source (methodology, replay CLI, common-verify) is public at
-[pegana-replay](https://github.com/PeganaHQ/ReplayCLI).
+Hosted at `https://mcp.pegana.xyz` (Streamable HTTP, stateless). No clone
+needed; point your MCP client at the URL:
+
+```json
+{ "mcpServers": { "pegana": { "url": "https://mcp.pegana.xyz/" } } }
+```
+
+Docs: [docs.pegana.xyz/guides/mcp](https://docs.pegana.xyz/guides/mcp).
+Machine-readable manifest: `GET https://mcp.pegana.xyz/.well-known/mcp.json`.
 
 ## Tools
 
-| Name | Free / Paid | Returns |
-|---|---|---|
-| `ping` | free | `"pong (Ns)"` + server uptime |
-| `get_assets` | free | List of all tracked assets with current state |
-| `get_asset_state(symbol)` | free | Current peg state + discount + intrinsic + market for one asset (5-min stale gate) |
-| `get_methodology(symbol)` | free | Per-class peg-mechanism explainer + link to /methodology |
-| `get_loop_exposure(symbol)` | free | Anonymous aggregate cross-protocol leverage exposure (advisory) |
-| `simulate_depeg_impact(symbol, shock_bps)` | free | Estimated liquidation cascade for a preset depeg shock (advisory) |
-| `verify_alert(alert_id)` | free | Verify an alert receipt and optional on-chain anchor |
-| `ping_paid` | **$0.001** | `"paid pong"` — smoke test for x402 wiring |
-| `get_asset_history(symbol, bucket, limit)` | **$0.001** | Time-bucketed discount series (1m / 5m / 15m / 1h) |
-| `subscribe_peg_events(symbols, since_ts, threshold_bps?)` | **$0.0005** | Batch of AlertEvents since cursor |
+All ten tools are free and declare an `outputSchema`; `structuredContent`
+always matches it exactly (enforced by a test that validates every tool's
+real output with the official MCP SDK client).
 
-Free tools answer from an in-memory cache filled by a Redis SUBSCRIBE on
-`pegana:discount`. Paid tools hit Postgres (history) or `alert_events`
-(subscribe).
+| Name | Returns |
+|---|---|
+| `ping` | `pong (Ns)` + server uptime |
+| `ping_paid` | `paid pong`; legacy alias of `ping`, name kept for compatibility |
+| `get_assets` | Every asset with a live snapshot: state, discount, intrinsic, market, `ts`, `updated_at`, `stale`. Leveraged synthetics (`synth_lev`, xSOL) are excluded, as in REST `/v1/assets` |
+| `get_asset_state(symbol)` | Current snapshot for one asset (errors if older than 5 min) |
+| `get_methodology(symbol)` | How this asset's intrinsic and market prices are sourced, plus the state machine (errors if not tracked) |
+| `get_loop_exposure(symbol)` | Anonymous aggregate cross-protocol leverage exposure (advisory) |
+| `simulate_depeg_impact(symbol, shock_bps)` | Estimated liquidation cascade for a preset shock (advisory). `liquidatable_usd` is the total collateral of the bands that liquidate, so it can exceed `loop_exposure_usd` |
+| `verify_alert(alert_id)` | Public audit receipt for an alert, with replay bundle URL and on-chain anchor status |
+| `get_asset_history(symbol, bucket, limit)` | Time-bucketed discount series (1m / 5m / 15m / 1h, 30-day lookback) |
+| `subscribe_peg_events(symbols, since_ts, threshold_bps?)` | Batch of state-transition events since a lossless cursor, each with `evidence_url` and `evidence_status` (`ready`, `pending`, `failed_permanent` or `missing`; some alerts have no persisted receipt, and a just-created alert can show `missing` for a moment before its receipt lands) |
 
-## Stack (pinned)
+`discount` is `1 - market/intrinsic`, signed: negative means the asset trades
+above intrinsic (a premium), positive means below (a discount). Decimals and
+timestamps use the same formats as the REST API (`api.pegana.xyz`).
 
-- `@modelcontextprotocol/sdk@^1.30.0` (canonical stable; `@x402/mcp` pins `sdk@^1.12.1`)
-- `@x402/mcp@^2.13.0` + `@x402/svm@^2.13.0` + `@x402/core@~2.13.0`
-- `@solana/kit@^5.1.0`
-- `hono@^4.12.32` (Web Standard transport via `WebStandardStreamableHTTPServerTransport`)
-- `ioredis@^5.4.0`, `pg@^8.13.0`, `zod@^3.24.2`
-- Bun runtime
+Where the data comes from:
+
+- `get_assets`, `get_asset_state`: an in-memory cache filled by a Redis
+  SUBSCRIBE on `pegana:discount` (engine-rs publishes every recompute).
+- `get_asset_history`, `subscribe_peg_events`: Postgres
+  (`discount_snapshots`, `alert_events`; `evidence_status` reads
+  `alert_evidence` and `alert_evidence_pending`).
+- `get_loop_exposure`, `simulate_depeg_impact`, `verify_alert`: proxied from
+  api-rs, so they return the same model as REST.
+- `get_methodology`: `src/shared/asset-registry.ts`, generated from the
+  repo-root `assets.toml` (`bun run scripts/gen-asset-registry.ts`; a test
+  fails on drift).
+
+## Limits
+
+- 100 tool calls per minute per client IP, enforced in-app (ADR-0011
+  `withRateLimit`, keyed only on the proxy-set client IP), with usage
+  telemetered to `mcp_call_log`. There is no Caddy-level rate limit.
+- Request bodies are capped at 64 KB: above that the reply is HTTP 413 with
+  a JSON-RPC error (`-32600`), whether the body has a Content-Length or is
+  chunked.
+- Only `POST /` speaks JSON-RPC. The server is stateless with no SSE stream
+  and no sessions, so `GET /` asking for `text/event-stream` and
+  `DELETE`/`PUT`/`PATCH /` get HTTP 405 with `Allow: POST`.
+- Tool arguments are validated strictly: symbols must be 1-20 chars of
+  `[A-Za-z0-9._+*-]`, `since_ts` is unix seconds in `[0, 1e10]`, and an
+  unknown argument key is rejected (the schemas say
+  `additionalProperties: false`). Internal errors come back as a generic
+  message, never the raw database or upstream text.
+- A proxied 429 from api-rs is returned as
+  `{"error":"rate_limited","upstream":...,"retry_after_seconds":N}`, the same
+  shape as this server's own limit.
+- The REST-proxy tools are also subject to the api-rs per-IP limit; mcp-ts
+  forwards the caller's IP so each caller has its own upstream bucket.
 
 ## Env
 
-See `.env.example`. Two CAIP-2 networks matter:
+| Variable | Purpose |
+|---|---|
+| `REDIS_URL` | Redis with the `pegana:discount` channel |
+| `DATABASE_URL` | Postgres/TimescaleDB (read-only use) |
+| `SOLANA_NETWORK` | CAIP-2 network id, e.g. `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` (mainnet) |
+| `PEGANA_API` | api-rs base URL for the proxy tools (compose: internal `http://api:8080`) |
+| `PEGANA_PUBLIC_API` | Public API base used in links returned to agents (default `https://api.pegana.xyz`) |
+| `AUDIT_BASE_URL` | Base of the public audit pages in `evidence_url` (default `https://pegana.xyz`) |
+| `HTTP_PORT` | Listen port (default 8090) |
 
-```
-devnet:  solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1
-mainnet: solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp
-```
-
-Every tool is free: there is no payment receiver, no facilitator credential
-and no payer key to configure. The only env the server needs is `REDIS_URL`,
-`DATABASE_URL` and `SOLANA_NETWORK`.
-
-## Quota model (v2)
-
-- **Free tools** (`ping`, `get_assets`, `get_asset_state`, `get_methodology`,
-  `get_loop_exposure`, `simulate_depeg_impact`, `verify_alert`): no per-caller
-  billing. Rate-limited **in-app** to 100 req/min/agent (ADR-0011
-  `withRateLimit`, fingerprinted by source IP), with usage telemetered to
-  `mcp_call_log`. There is **no** Caddy-level rate limit.
-- **Paid tools** (`ping_paid`, `get_asset_history`, `subscribe_peg_events`):
-  metered by x402 per call. **No free tier for paid tools in v2** — the agent
-  always pays. `subscribe_peg_events` carries the same in-app
-  100/min/agent cap on top of payment; `get_asset_history` and
-  `ping_paid` are gated by x402 payment alone.
-
-The originally-specced "1000 free calls/day per payTo" (SPEC decision #6)
-is **descoped to v2.1** once we have telemetry to define a sane default.
-The counter infra (`src/quota.ts`) exists and is unit-tested; wiring
-into a middleware on the paid tools is a v2.1 change.
+There is no payment receiver, facilitator credential or payer key to
+configure.
 
 ## Running
 
 ```
 bun install
-bun dev           # watch mode, port 8090
-bun start         # one-shot
+bun dev              # watch mode, port 8090
+bun start            # one-shot
 bun run typecheck
-bun test          # unit suite (in-memory; mocks @/db, @/redis, fetch)
-bun run test:devnet  # self-skips unless the devnet env is set
+bun run lint
+bun run test         # unit suite (in-memory; mocks Postgres, Redis and fetch)
 ```
 
-Production runs in Docker — see `Dockerfile` and the `mcp-ts` service
-in the repo-root `docker-compose.yml`.
+Production runs in Docker: see `Dockerfile` and the `mcp-ts` service in the
+repo-root `docker-compose.yml`.
 
 ## Architecture
 
 ```
-        ┌─ pegana:discount ─────┐
-engine-rs (publishes)            │ SUBSCRIBE
-        └─ pegana:alerts ───────┘
-                                 ▼
-                         ┌───────────────┐
-                         │  pegana-mcp   │ ── x402 facilitator (x402.org)
-                         │  (this pkg)   │      ▲
-                         └───────────────┘      │ USDC settlement
-                                 ▲              │ on Solana mainnet
-                                 │              │
-                            AI agents ──────────┘
-                            (Claude Desktop, custom)
+engine-rs ── pegana:discount (Redis) ──▶ pegana-mcp ◀── AI agents
+Postgres  ── history, alert_events  ──▶ (this pkg)      (Claude, Cursor, custom)
+api-rs    ── loop, simulate, audit  ──▶
 ```
 
-The MCP server is a stateless read-through layer — it never writes to
-the engine, never publishes back. Failure here cannot corrupt the
+The MCP server is a stateless read-through layer: it never writes to the
+engine and never publishes back, so a failure here cannot corrupt the
 oracle's state.
 
 ## See also
 
-- SPEC: `docs/superpowers/specs/2026-05-26-pegana-v2-a2-oracle-reframe-design.md`
-- Plan 2: `docs/superpowers/plans/2026-05-26-pegana-v2-phase-2-channels.md`
-- Calibration: `docs/CALIBRATION-v2-mcp-spike.md`
+- Verifier (methodology, replay CLI, common-verify):
+  [github.com/PeganaHQ/ReplayCLI](https://github.com/PeganaHQ/ReplayCLI)
+- ADR-0011 (free tools with telemetry), ADR-0036 (loop data boundary) in
+  `docs/adr/`

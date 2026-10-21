@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useAssets } from "@/lib/hooks/use-assets";
 import { holderSignedPct, reconcileBps } from "@/lib/api/format";
 import { stateMeta } from "@/lib/asset/state-meta";

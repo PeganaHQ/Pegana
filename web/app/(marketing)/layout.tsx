@@ -5,6 +5,7 @@ import {
   SiteFooterV2,
 } from "@/components/organisms/v2/site-chrome-v2";
 import { ViewTransitions } from "@/lib/motion/view-transitions";
+import { NO_JS_REVEAL_CSS } from "@/lib/motion/no-js-reveal";
 
 export default function MarketingLayout({
   children,
@@ -13,6 +14,15 @@ export default function MarketingLayout({
 }) {
   return (
     <>
+      {/* Without JavaScript the JS reveals (useRevealV2, the hero board rows)
+          never run, so everything they server-render at opacity 0 stayed
+          invisible: the hero CTAs, the live board and the Sources stats
+          (measured 2026-10-21 with JS disabled). This only applies when
+          scripts are off. It matches `opacity:0` exactly (followed by `;` or
+          at the end), so an intentional `opacity:0.4` is left alone. */}
+      <noscript>
+        <style>{NO_JS_REVEAL_CSS}</style>
+      </noscript>
       <CalibrationBanner />
       <SiteNavV2 />
       <SkipTarget />

@@ -7,31 +7,17 @@ import { describe, it, expect, beforeEach } from "vitest";
 // landed under key `undefined` with every required field missing, so
 // `get_assets` failed Zod validation at the first non-update message.
 //
-// This spec exercises the message handler logic from src/redis.ts in
-// isolation (we inline the filter so it doesn't need a live Redis
-// connection). If src/redis.ts ever loosens the filter again, this
-// breaks.
+// This spec exercises parseDiscountMessage, the pure filter src/redis.ts
+// runs on every message, so it needs no live Redis connection.
 
-import { normalizeDiscountSnapshot, type DiscountSnapshot } from "@/shared/types";
+import { parseDiscountMessage, type DiscountSnapshot } from "@/shared/types";
 
 type CachedSnap = DiscountSnapshot;
 
-/**
- * Mirrors the filter logic in src/redis.ts startCacheWarming(). Kept here
- * so the test doesn't need ioredis; the contract being defended is
- * "non-update kinds and asset-less payloads do not poison the cache".
- */
+/** Same two lines as the subscriber in src/redis.ts startCacheWarming(). */
 function ingest(rawJson: string, cache: Map<string, CachedSnap>): "stored" | "skipped" {
-  let parsed: (CachedSnap & { kind?: string }) | undefined;
-  try {
-    parsed = JSON.parse(rawJson);
-  } catch {
-    return "skipped";
-  }
-  if (!parsed) return "skipped";
-  if (parsed.kind && parsed.kind !== "update") return "skipped";
-  if (typeof parsed.asset !== "string" || parsed.asset.length === 0) return "skipped";
-  const snap = normalizeDiscountSnapshot(parsed);
+  const snap = parseDiscountMessage(rawJson);
+  if (!snap) return "skipped";
   cache.set(snap.asset, snap);
   return "stored";
 }
@@ -56,6 +42,10 @@ describe("discount channel filter", () => {
     expect(ingest(msg, cache)).toBe("stored");
     expect(cache.size).toBe(1);
     expect(cache.get("jitoSOL")?.ts).toBeTypeOf("number");
+    // The engine's `kind` never reaches the cached snapshot.
+    expect(Object.keys(cache.get("jitoSOL")!).sort()).toEqual(
+      ["asset", "discount", "intrinsic_usd", "market_usd", "state", "ts", "updated_at"],
+    );
   });
 
   it("skips heartbeats and never creates an `undefined` key", () => {

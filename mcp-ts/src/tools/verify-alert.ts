@@ -1,19 +1,18 @@
 // Free tool — proxy to GET /v1/audit/:alert_id.
 //
-// No x402 payment required: the receipt data is already public via the
-// web/API audit page, so charging here would just add friction exactly
-// where you want zero (the trust pitch is "anyone can verify"). Usage
-// signal comes from mcp_call_log telemetry (ADR-0011) rather than
-// on-chain settlement.
-//
-// Pricing may evolve per the ADR-0011 escape hatch: if free turns out
-// to be unsustainable, this flips to $0.0001/call (10× cheaper than the
-// paid tools) without any schema change.
+// Free, like every tool: the receipt data is already public via the web/API
+// audit page (the trust pitch is "anyone can verify"). Usage signal comes
+// from mcp_call_log telemetry (ADR-0011).
 
 import { z } from "zod";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import { retryAfterSeconds, upstreamGet } from "@/shared/upstream";
 
 const API_BASE = process.env.PEGANA_API ?? "https://api.pegana.xyz";
+// Links handed to agents must be publicly reachable, so they never use
+// PEGANA_API (which may point at the internal docker network).
+const PUBLIC_API_BASE =
+  process.env.PEGANA_PUBLIC_API ?? "https://api.pegana.xyz";
 
 // Mirrors the /v1/audit/:id ready-response shape (api-rs/src/routes/audit.rs).
 // The nested JSONB fields (inputs_frozen, computed, replay_artifact) are typed
@@ -41,6 +40,13 @@ const evidenceSchema = z.object({
   inputs_frozen: z.record(z.unknown()),
   computed: z.record(z.unknown()),
   has_replay_artifact: z.boolean(),
+  replay_bundle_url: z
+    .string()
+    .url()
+    .optional()
+    .describe(
+      "Public download URL of the replay bundle (GET /v1/audit/{id}/replay-bundle). Present only when has_replay_artifact is true.",
+    ),
   receipt_sha256: z.string(),
   onchain_tx_sig: z.string().nullable().optional(),
   // On-chain anchor status — mirrors AuditEvidence.commit_status in
@@ -69,6 +75,12 @@ const errorSchema = z.object({
   error: z.literal("api_error"),
   status: z.number().int(),
   body: z.string(),
+  retry_after_seconds: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("On a 429: seconds to wait before retrying, from the API's Retry-After."),
 });
 
 // Top-level outputSchema: a single union covering both the ready-receipt
@@ -97,14 +109,39 @@ const failedResponseSchema = z.object({
   evidence_status: z.literal("failed_permanent"),
 });
 
+/**
+ * The api-rs `evidence_missing` 404 carries an operator hint ("... both
+ * failed; check Sentry") meant for Pegana's on-call, not for agents (R2 audit
+ * idx 22). Drop it and keep the public fields (error, message, alert_id).
+ * Any other body is relayed unchanged.
+ */
+export function publicErrorBody(raw: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    (parsed as Record<string, unknown>).error === "evidence_missing"
+  ) {
+    const { hint: _internalHint, ...publicFields } = parsed as Record<string, unknown>;
+    return JSON.stringify(publicFields);
+  }
+  return raw;
+}
+
 export const verifyAlertTool = {
   name: "verify_alert",
   description:
     "Free. Fetches the public audit receipt for a given alert UUID. Returns inputs frozen, " +
-    "methodology version, computed outputs, replay bundle URL, receipt sha256, and on-chain " +
+    "methodology version, computed outputs, receipt sha256, the replay bundle download URL " +
+    "(`evidence.replay_bundle_url`, when `has_replay_artifact` is true), and the on-chain " +
     "tx signature (if committed). Use after `subscribe_peg_events` to verify a specific alert, " +
     "or to investigate any alert URL the user shares. " +
-    "Pricing may evolve — see ADR-0011 (10× cheaper than paid tools if it ever flips off free).",
+    "Not every alert has a receipt: some alerts have no persisted receipt, and a just-created alert can lack one for a moment before its receipt lands. For those, this returns `isError: true` with `structuredContent.result` = `{ error: \"api_error\", status: 404, body }` where `body` carries `\"error\":\"evidence_missing\"` (check `subscribe_peg_events`' `evidence_status` first).",
   inputSchema: {
     alert_id: z
       .string()
@@ -137,15 +174,17 @@ export const verifyAlertTool = {
     idempotentHint: true,
     openWorldHint: true,
   } satisfies ToolAnnotations,
-  async handler(args: { alert_id: string }) {
-    const url = `${API_BASE}/v1/audit/${args.alert_id}`;
-    const resp = await fetch(url, { method: "GET" });
+  async handler(args: { alert_id: string }, extra?: unknown) {
+    const url = `${API_BASE}/v1/audit/${encodeURIComponent(args.alert_id)}`;
+    const resp = await upstreamGet(url, extra);
     if (!resp.ok) {
-      const errBody = await resp.text();
+      const errBody = publicErrorBody(await resp.text());
+      const retry = resp.status === 429 ? retryAfterSeconds(resp) : undefined;
       const errorPayload = {
         error: "api_error" as const,
         status: resp.status,
         body: errBody,
+        ...(retry !== undefined ? { retry_after_seconds: retry } : {}),
       };
       // Audit C P2 #11: also populate structuredContent on the error path
       // so MCP clients don't have to JSON.parse the text payload to
@@ -162,6 +201,10 @@ export const verifyAlertTool = {
       };
     }
     const json = (await resp.json()) as Record<string, unknown>;
+    const evidence = json.evidence as Record<string, unknown> | null | undefined;
+    if (evidence && evidence.has_replay_artifact === true) {
+      evidence.replay_bundle_url = `${PUBLIC_API_BASE}/v1/audit/${encodeURIComponent(args.alert_id)}/replay-bundle`;
+    }
     return {
       content: [{ type: "text" as const, text: JSON.stringify(json) }],
       // Wrap under `result` so the outputSchema's top-level shape stays

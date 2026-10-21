@@ -1,7 +1,9 @@
 "use client";
 
+import { isRateLimited } from "@/lib/api/client";
+import { RATE_LIMITED_BODY, RATE_LIMITED_LABEL } from "@/lib/api/rate-limit-copy";
 import { Suspense, useEffect, useRef } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { IconArrowRight } from "@/components/atoms/icon-arrow-right";
 import { Counter } from "@/components/atoms/counter";
 import { PillTabs } from "@/components/molecules/pill-tabs";
@@ -253,7 +255,10 @@ function AssetsScreener() {
           </div>
         </div>
       ) : backendDown ? (
-        <ScreenerBackendDown onRetry={() => mutate()} />
+        <ScreenerBackendDown
+          onRetry={() => mutate()}
+          rateLimited={isRateLimited(error)}
+        />
       ) : rows.length === 0 ? (
         <div className="py-16 text-center font-mono text-[12px] text-text-muted">
           {search.trim()
@@ -316,15 +321,27 @@ function AssetsScreener() {
   );
 }
 
-function ScreenerBackendDown({ onRetry }: { onRetry: () => void }) {
+function ScreenerBackendDown({
+  onRetry,
+  rateLimited = false,
+}: {
+  onRetry: () => void;
+  rateLimited?: boolean;
+}) {
   return (
     <div className="py-16 text-center">
       <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-st-drift">
-        ● Live feed unreachable
+        ● {rateLimited ? RATE_LIMITED_LABEL : "Live feed unreachable"}
       </p>
       <p className="mx-auto mt-3 max-w-[360px] text-[13px] leading-[1.6] text-text-muted">
-        The Pegana API isn&apos;t responding right now. Assets will reappear
-        automatically as soon as it&apos;s healthy.
+        {rateLimited ? (
+          RATE_LIMITED_BODY
+        ) : (
+          <>
+            The Pegana API isn&apos;t responding right now. Assets will reappear
+            automatically as soon as it&apos;s healthy.
+          </>
+        )}
       </p>
       <div className="mt-5 flex items-center justify-center gap-3">
         <button

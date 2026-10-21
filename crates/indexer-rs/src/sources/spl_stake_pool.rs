@@ -307,6 +307,10 @@ async fn poll_one(
         "pool": p.pool.to_string(),
         "program": p.program.to_string(),
         "nav_sol": nav_sol,
+        // Same key sanctum.rs writes, which /v1/assets reads as `sol_per_lst`
+        // (`meta->>'sol_per_lst'`). Without it jitoSOL and the other SPL
+        // stake-pool LSTs served no sol_per_lst at all.
+        "sol_per_lst": nav_sol,
         "total_lamports": total_lamports.to_string(),
         "pool_token_supply": pool_token_supply.to_string(),
         "last_update_epoch": last_update_epoch.to_string(),

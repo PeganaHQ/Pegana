@@ -45,6 +45,31 @@ describe("MCP Sub-C outputSchema — unified field names", () => {
     expect(schema.safeParse(legacy).success).toBe(false);
   });
 
+  it("get_loop_exposure keeps cascade_coverage and rejects unknown enum values", () => {
+    const schema = z.object(getLoopExposureTool.outputSchema);
+    const base = {
+      asset: "vSOL",
+      loop_exposure_usd: "1000000.00",
+      debt_usd: "500000.00",
+      coverage: "partial",
+      by_protocol: [],
+      advisory_note: "advisory model estimate — not a verifiable receipt",
+    };
+    for (const cc of ["partial", "unknown"]) {
+      const r = schema.safeParse({ ...base, cascade_coverage: cc });
+      expect(r.success).toBe(true);
+      expect(r.data?.cascade_coverage).toBe(cc);
+    }
+    expect(schema.safeParse({ ...base, cascade_coverage: "full" }).success).toBe(false);
+    // Older API builds do not send it.
+    expect(schema.safeParse(base).success).toBe(true);
+  });
+
+  it("get_loop_exposure description no longer promises coverage: full", () => {
+    expect(getLoopExposureTool.description).not.toMatch(/full\|partial\|unknown/);
+    expect(getLoopExposureTool.description).toContain("cascade_coverage");
+  });
+
   it("simulate_depeg_impact validates the current api shape, rejects the old one", () => {
     const schema = z.object(simulateDepegTool.outputSchema);
 

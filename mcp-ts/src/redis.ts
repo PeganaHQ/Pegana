@@ -12,7 +12,7 @@ import Redis from "ioredis";
 import {
   CHANNELS,
   normalizeAlertEvent,
-  normalizeDiscountSnapshot,
+  parseDiscountMessage,
   type AlertEvent,
   type DiscountSnapshot,
 } from "@/shared/types";
@@ -46,24 +46,10 @@ export async function startCacheWarming(): Promise<void> {
   await sub.subscribe(CHANNELS.DISCOUNT);
   sub.on("message", (channel, msg) => {
     if (channel !== CHANNELS.DISCOUNT) return;
-    try {
-      const parsed = JSON.parse(msg) as DiscountSnapshot & { kind?: string };
-      // Engine publishes two kinds on this channel:
-      //   { kind: "update", asset, state, discount, ... } — the real data
-      //   { kind: "heartbeat", ts: ISO }                  — liveness ping
-      // Heartbeats have no `asset`, so caching them creates a poisoned
-      // entry under key `undefined` that breaks the get_assets schema
-      // (asset[index].asset is required). Filter explicitly. Treat
-      // missing `kind` as "update" for back-compat with the historical
-      // payload shape that didn't include it.
-      if (parsed.kind && parsed.kind !== "update") return;
-      if (typeof parsed.asset !== "string" || parsed.asset.length === 0) return;
-      const snap = normalizeDiscountSnapshot(parsed);
-      cache.set(snap.asset, snap);
-    } catch {
-      // ignore malformed events — engine pushes valid JSON, but be
-      // forgiving in case of partial publishes.
-    }
+    // Heartbeats, other kinds and incomplete payloads are dropped by
+    // parseDiscountMessage (see @/shared/types).
+    const snap = parseDiscountMessage(msg);
+    if (snap) cache.set(snap.asset, snap);
   });
 }
 
@@ -74,6 +60,9 @@ export function getCachedState(asset: string): DiscountSnapshot | undefined {
 export function getAllCachedStates(): DiscountSnapshot[] {
   return Array.from(cache.values());
 }
+
+/** Test seam: seed or clear the in-memory snapshot cache. */
+export const __cacheForTests = cache;
 
 // One-off subscription for tools that need raw alert stream access.
 // Returns an unsubscribe function. Each call opens its own Redis

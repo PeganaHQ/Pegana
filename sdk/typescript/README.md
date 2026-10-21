@@ -2,7 +2,7 @@
 
 Typed TypeScript client for the Pegana peg-risk oracle API.
 
-> **v0.3.1** — full OpenAPI-generated coverage of every `/v1` endpoint (typed
+> **v0.4.0**: full OpenAPI-generated coverage of every `/v1` endpoint (typed
 > `data`/`error` per operation via [`openapi-fetch`]), plus the stable v0.1
 > receipt-verification surface. Types are generated from the OpenAPI 3.1 spec —
 > the source of truth: <https://api.pegana.xyz/openapi.json> (regenerate with
@@ -21,6 +21,8 @@ const api = createPeganaApi();
 // hands you the rows.
 const { data } = await api.GET("/v1/assets");
 for (const asset of unwrapList(data)) {
+  // discount = 1 - market/intrinsic: positive = trading below fair value,
+  // negative = premium. It is null until the asset has a snapshot.
   console.log(asset.symbol, asset.state, asset.discount);
 }
 ```
@@ -65,7 +67,7 @@ const one = await api.GET("/v1/assets/{symbol}", {
 // Loop-Intelligence cascade, peg feed, methodology, stats, calibration, audit …
 const feed = await api.GET("/v1/peg/feed");
 
-// Receipts ledger (the former /v1/alerts feed):
+// Receipts ledger (state transitions, cursor-paged):
 const audit = await api.GET("/v1/audit");
 ```
 
@@ -127,6 +129,9 @@ new PeganaClient({
   `openapi-typescript` + `openapi-fetch`, with the ADR-0043 list-envelope helper
   and an optional bearer-token option (unused by the public API). The v0.1 receipt surface is retained.
 - **v0.3.1** ✅ — published to npm under `@peganahq/sdk-ts`.
+- **v0.4.0**: regenerated from the current spec; drops the removed
+  `/v1/alerts`, `/v1/auth/*` and `/v1/me/*` paths (breaking). See
+  [CHANGELOG.md](./CHANGELOG.md).
 - **v1.0.0** — API stability commitment, semver guarantees.
 
 ## Live peg feed (WebSocket)

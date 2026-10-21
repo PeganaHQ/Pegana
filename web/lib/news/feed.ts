@@ -85,11 +85,20 @@ const TOPICS = [
  */
 const PEG_FAMILY = /(^|[^a-z0-9])(de-?|re-?)?peg(s|ged|ging)?([^a-z0-9]|$)/;
 
+/** Remove tags until stable so nested input like `<scr<b>ipt>` cannot reassemble. */
+function stripTags(input: string): string {
+  let prev: string;
+  let out = input;
+  do {
+    prev = out;
+    out = out.replace(/<[a-zA-Z/!?][^>]*>/g, "");
+  } while (out !== prev);
+  return out;
+}
+
 /** Strip XML/HTML entities and tags from a feed field. */
 export function decodeXmlText(raw: string): string {
-  return raw
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/<[^>]+>/g, "")
+  const decoded = stripTags(raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1"))
     .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
     .replace(/&quot;/g, '"')
@@ -98,9 +107,9 @@ export function decodeXmlText(raw: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&nbsp;/g, " ")
     // `&amp;` LAST: decoding it first would let "&amp;lt;" become "<".
-    .replace(/&amp;/g, "&")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/&amp;/g, "&");
+  // Entity decoding can mint new tags (`&lt;script&gt;`); strip again.
+  return stripTags(decoded).replace(/\s+/g, " ").trim();
 }
 
 /**

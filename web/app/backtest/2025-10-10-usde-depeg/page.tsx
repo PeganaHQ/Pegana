@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/seo/page-metadata";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import dynamic from "next/dynamic";
 
 import { cn } from "@/lib/utils/cn";

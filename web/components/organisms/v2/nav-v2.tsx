@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { useAppReducedMotion } from "@/lib/motion/use-reduced-motion";
@@ -22,11 +22,13 @@ import { PillGhost, PillPrimary } from "@/components/organisms/v2/shared";
 // duplicates. (The old nav shipped Portuguese anchor slugs and pointed two
 // labels each at the same section; "Developers" duplicated "Product" and is
 // dropped — devs are served by the persistent "assets api" pill.) The landing
-// has two in-page sections: #product (ProductTabsV2) and #trust (the
-// trust/confidence band); Verify is its own interactive page.
+// has one in-page anchor, #product (ProductTabsV2). Methodology goes to its
+// own page on every route (it used to jump to the #trust replay band on the
+// landing, a different destination under the same label); Verify is its own
+// interactive page.
 const LANDING_LINKS = [
   { href: "#product", label: "Product" },
-  { href: "#trust", label: "Methodology" },
+  { href: "/methodology", label: "Methodology" },
   { href: "/audit", label: "Verify" },
   { href: "https://docs.pegana.xyz", label: "Docs" },
 ];

@@ -63,6 +63,19 @@ describe("AssetHeroV2", () => {
     expect(screen.queryByText("premium to NAV")).toBeNull();
   });
 
+  it("labels a USD-anchored stable's gap against its peg, not a NAV", () => {
+    const usdc: AssetCardData = {
+      ...baseAsset,
+      symbol: "USDC",
+      class: "stable_fiat",
+      anchor: "USD",
+      market_usd: "0.9990",
+    };
+    render(<AssetHeroV2 asset={usdc} bps={10} state="UNKNOWN" history={[]} />);
+    expect(screen.getByText("discount to peg")).toBeInTheDocument();
+    expect(screen.queryByText("discount to NAV")).toBeNull();
+  });
+
   it("renders a graceful '—' for market cap and circulating supply when the backend hasn't backfilled them", () => {
     render(
       <AssetHeroV2 asset={baseAsset} bps={-100} state="UNKNOWN" history={[]} />,

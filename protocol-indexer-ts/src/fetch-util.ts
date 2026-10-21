@@ -4,6 +4,11 @@
 // reach the vulnerable native decoder path. See
 // docs/security/protocol-indexer-bigint-buffer-waiver.md.
 
+/** Strip API keys from any string that may carry a URL (Helius uses ?api-key=). */
+export function redactSecrets(s: string): string {
+  return s.replace(/api-key=[^&\s"')]+/gi, "api-key=REDACTED");
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -28,7 +33,7 @@ export async function fetchWithTimeout(
     return res;
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") {
-      throw new Error(`fetch timeout after ${timeoutMs}ms: ${url}`);
+      throw new Error(redactSecrets(`fetch timeout after ${timeoutMs}ms: ${url}`));
     }
     throw e;
   } finally {
@@ -42,7 +47,7 @@ export async function fetchJsonWithTimeout<T>(
 ): Promise<T> {
   const { maxBytes = DEFAULT_MAX_BYTES, ...rest } = opts;
   const res = await fetchWithTimeout(url, rest);
-  if (!res.ok) throw new Error(`fetch ${url} → HTTP ${res.status}`);
+  if (!res.ok) throw new Error(redactSecrets(`fetch ${url} → HTTP ${res.status}`));
   const contentLength = Number(res.headers.get("content-length") ?? 0);
   if (contentLength > maxBytes) {
     throw new Error(`response too large: ${contentLength} bytes`);

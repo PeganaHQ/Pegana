@@ -25,7 +25,19 @@ const JUPITER_QUOTE_URL = JUP_API_KEY
 // an open GET proxy, so unvalidated passthrough wastes the shared key's budget
 // and widens the abuse surface.
 const BASE58_MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const POSITIVE_INT = /^[1-9][0-9]*$/;
+// Jupiter's `amount` is a u64, at most 20 digits. The ladder's largest ask,
+// $1M of a 9-decimal token, stays within that down to a $0.0001 price (1e19).
+const POSITIVE_INT = /^[1-9][0-9]{0,19}$/;
+
+// The only parameters the exit-liquidity widget sends
+// (components/organisms/exit-liquidity.tsx). Anything else, or a repeated
+// parameter, is a 400 before the upstream call. The CDN keys its cache on the
+// full query string, so `&x=<random>` makes every request an edge miss. A
+// rejected request still runs this function (an invocation on the Hobby
+// quota); what the check saves is the Jupiter call against the shared key.
+// Reordering the four accepted parameters still produces distinct CDN keys;
+// the widget always sends them in one order.
+const ALLOWED_PARAMS = new Set(["inputMint", "outputMint", "amount", "slippageBps"]);
 
 function badRequest(message: string) {
   return NextResponse.json(
@@ -36,6 +48,15 @@ function badRequest(message: string) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const seen = new Set<string>();
+  for (const key of searchParams.keys()) {
+    if (!ALLOWED_PARAMS.has(key) || seen.has(key)) {
+      return badRequest(
+        "only inputMint, outputMint, amount and slippageBps are accepted, once each",
+      );
+    }
+    seen.add(key);
+  }
   const inputMint = searchParams.get("inputMint") ?? "";
   const outputMint = searchParams.get("outputMint") ?? "";
   const amount = searchParams.get("amount") ?? "";
@@ -48,10 +69,10 @@ export async function GET(request: Request) {
   // exit-liquidity widget requests. Rejects enumeration / key-drain abuse
   // without gating logged-out users (the widget is public).
   if (!isAllowedPair(inputMint, outputMint)) {
-    return NextResponse.json({ error: "unsupported_pair" }, { status: 400 });
+    return badRequest("unsupported_pair");
   }
   if (!POSITIVE_INT.test(amount)) {
-    return badRequest("amount must be a positive integer (base units)");
+    return badRequest("amount must be a positive integer of at most 20 digits (base units)");
   }
   if (!/^[0-9]{1,5}$/.test(slippageBps)) {
     return badRequest("slippageBps must be an integer in 0–99999");
@@ -69,17 +90,31 @@ export async function GET(request: Request) {
         Accept: "application/json",
         ...(JUP_API_KEY ? { "x-api-key": JUP_API_KEY } : {}),
       },
-      next: { revalidate: 10 },
+      // no-store: the CDN header below is the only cache. A Data Cache entry
+      // (`next: { revalidate }`) is served even after it expires while it
+      // refreshes in the background, so after an idle period the first
+      // visitor would get a quote of any age, and the CDN would then keep it
+      // for another minute.
+      cache: "no-store",
       signal: AbortSignal.timeout(10_000),
     });
 
     const body = await res.text();
     if (!res.ok) {
+      // Failures are NOT cached. They used to carry the same s-maxage as a
+      // good quote, so a Jupiter 429 (the usual failure: the widget's burst of
+      // sizes) was pinned at the edge and the client's retry read the cached
+      // failure back. A 429 is passed on as 503 + Retry-After so the client
+      // can back off instead of reading a 200.
       return NextResponse.json(
         { error: "Quote unavailable", upstreamStatus: res.status },
         {
+          status: 503,
           headers: {
-            "cache-control": "s-maxage=10, stale-while-revalidate=30",
+            "cache-control": "no-store",
+            ...(res.status === 429
+              ? { "retry-after": res.headers.get("retry-after") ?? "2" }
+              : {}),
           },
         },
       );
@@ -89,17 +124,21 @@ export async function GET(request: Request) {
       status: res.status,
       headers: {
         "content-type": res.headers.get("content-type") ?? "application/json",
-        "cache-control": "s-maxage=10, stale-while-revalidate=30",
+        // Hobby budget: every edge miss is a function invocation (1M a month
+        // on Hobby, shared with every page render). The ladder asks for five
+        // sizes, so with steady traffic one asset cost five invocations per
+        // cache window: 43k a day at 10s, more than the whole daily share of
+        // the quota. At 30s it is a third of that. The upstream fetch is
+        // no-store, so a quote the CDN serves is at most 60s old (30s fresh +
+        // 30s stale while one request refreshes it), up from 40s. The ladder
+        // is an indicative depth read, not peg data.
+        "cache-control": "s-maxage=30, stale-while-revalidate=30",
       },
     });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Quote unavailable" },
-      {
-        headers: {
-          "cache-control": "s-maxage=10, stale-while-revalidate=30",
-        },
-      },
+      { status: 503, headers: { "cache-control": "no-store" } },
     );
   }
 }

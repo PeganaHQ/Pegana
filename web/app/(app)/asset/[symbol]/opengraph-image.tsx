@@ -1,5 +1,7 @@
 import { ImageResponse } from "next/og";
-import { apiBase } from "@/lib/api/base";
+import { lookupAsset } from "@/lib/asset/fetch-asset";
+import { publicSurfaceOf } from "@/lib/asset/public-surface";
+import { OG_CACHE_CONTROL } from "@/lib/og/cache";
 import { WAVE_DATA_URL } from "@/lib/brand/wave";
 import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
 import {
@@ -21,8 +23,6 @@ export const alt = "Pegana: peg status";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const API_BASE = apiBase();
-
 interface AssetData {
   symbol: string;
   name: string | null;
@@ -41,18 +41,13 @@ export default async function Image({
   const { symbol: rawSymbol } = await params;
   const symbol = resolveAliasSymbol(decodeURIComponent(rawSymbol));
 
-  let asset: AssetData | null = null;
-  try {
-    const r = await fetch(
-      `${API_BASE}/v1/assets/${encodeURIComponent(symbol)}`,
-      {
-        cache: "no-store",
-      },
-    );
-    if (r.ok) asset = (await r.json()) as AssetData;
-  } catch {
-    /* fall through to generic card */
-  }
+  // Same lookup (and 60s data cache) as the page. A leveraged synth (xSOL,
+  // no peg) or an unknown symbol gets a neutral "not tracked" card: the page
+  // 404s it, so the unfurl must not publish a peg verdict either.
+  const lookup = await lookupAsset(symbol);
+  const notTracked = publicSurfaceOf(lookup) === "not_tracked";
+  const asset: AssetData | null =
+    lookup.kind === "found" && !notTracked ? lookup.asset : null;
 
   const state = asset?.state ?? "UNKNOWN";
   const stateColor = STATE_COLOR[state] ?? STATE_COLOR.UNKNOWN!;
@@ -148,8 +143,27 @@ export default async function Image({
               letterSpacing: "-0.04em",
             }}
           >
-            {asset ? displaySymbol(asset.symbol) : "pegana.xyz"}
+            {asset
+              ? displaySymbol(asset.symbol)
+              : notTracked
+                ? displaySymbol(symbol)
+                : "pegana.xyz"}
           </div>
+          {notTracked && (
+            <div
+              style={{
+                display: "flex",
+                marginTop: 34,
+                fontFamily: MONO,
+                fontSize: 30,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: SATORI_MUTED,
+              }}
+            >
+              not tracked by Pegana
+            </div>
+          )}
           {asset && (
             <div
               style={{
@@ -227,6 +241,12 @@ export default async function Image({
         <span>pegana.xyz</span>
       </div>
     </div>,
-    { ...size, ...(fonts ? { fonts } : {}) },
+    {
+      ...size,
+      ...(fonts ? { fonts } : {}),
+      // Cached at the CDN: crawlers and unfurlers re-fetch these often, and
+      // each miss is a function invocation plus a satori render.
+      headers: { "Cache-Control": OG_CACHE_CONTROL },
+    },
   );
 }

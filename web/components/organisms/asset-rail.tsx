@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useEffect, useMemo, useState } from "react";
 import type { AssetCardData, HistoryPoint, PegState } from "@/lib/api/types";
 import { formatGap, isPlausibleDiscount, spreadSignClass } from "@/lib/api/format";
-import { thresholdsFor } from "@/lib/alerts/policy";
+import { isCollateralRatioThresholds, thresholdsFor } from "@/lib/alerts/policy";
 import {
   IconArrowRight,
   IconArrowUpRight,
@@ -166,6 +166,7 @@ export function AssetRail({
             thresholds={thresholds}
             state={state}
             klass={asset.class}
+            crBand={isCollateralRatioThresholds(asset.thresholds)}
           />
         </div>
       </div>

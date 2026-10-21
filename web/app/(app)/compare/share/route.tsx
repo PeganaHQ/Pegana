@@ -12,7 +12,7 @@
 // constants across opengraph-image.tsx and compare/share/route.tsx).
 
 import { ImageResponse } from "next/og";
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
 import { WAVE_DATA_URL } from "@/lib/brand/wave";
 import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
 import { reconcileBps } from "@/lib/api/format";
@@ -71,7 +71,10 @@ export async function GET(request: Request) {
     let assets: AssetData[] = [];
     if (symbols.length > 0) {
       try {
-        const r = await fetch(`${API_BASE}/v1/assets`, { cache: "no-store" });
+        const r = await fetch(`${API_BASE}/v1/assets`, {
+          headers: serverApiHeaders(),
+          cache: "no-store",
+        });
         if (r.ok) {
           const body = (await r.json()) as { data: AssetData[] };
           const all = body.data;
@@ -279,7 +282,7 @@ export async function GET(request: Request) {
         width: 1200,
         height: 630,
         ...(fonts ? { fonts } : {}),
-        headers: { "cache-control": "public, max-age=300" },
+        headers: { "cache-control": "public, max-age=300, s-maxage=300, stale-while-revalidate=600" },
       },
     );
   } catch {

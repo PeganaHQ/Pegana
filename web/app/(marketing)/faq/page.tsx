@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { cn } from "@/lib/utils/cn";
 import { switzerV2, geistMonoV2 } from "@/app/fonts/v2-fonts";
 import { PageHeroV2 } from "@/components/organisms/v2/inner/page-hero-v2";

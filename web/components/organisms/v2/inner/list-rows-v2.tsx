@@ -1,5 +1,7 @@
-"use client";
-
+// NOT a client module, on purpose (see the head-detection note below). It has
+// no hooks, no handlers and no browser APIs, so it renders as a Server
+// Component when a server page imports it and is bundled normally when a
+// client component does.
 import {
   Children,
   isValidElement,
@@ -7,7 +9,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { cn } from "@/lib/utils/cn";
 
 // W2 (2026-07-03): the `.lrows` workhorse pattern — canon table, audit
@@ -92,16 +94,18 @@ export function ListRowsV2({
   const items = Children.toArray(children).filter(isValidElement) as Array<
     ReactElement<ColumnsProps>
   >;
-  // Head detection must survive the RSC/SSR module-identity split. When these
-  // rows cross a Server→Client component boundary (every marketing/editorial
-  // call site — /audit, /backtest — is a Server Component passing <ListRowHead>
-  // into this "use client" component), `child.type` can resolve to a different
-  // function *instance* than the `ListRowHead` in this module's scope (the
-  // server-RSC, SSR, and browser bundles each eval the module once). A raw
-  // `===` then disagrees between the SSR HTML pass and browser hydration — the
-  // head lands in <thead> on one and in <tbody> on the other → React error #418
-  // (hydration mismatch), reproduced live on /audit + /backtest. `displayName`
-  // is set on every instance at module eval, so it's stable across the split.
+  // Head detection inspects `child.type`. While this file was "use client",
+  // a Server Component page (/audit, /backtest) passed <ListRowHead> across
+  // the RSC boundary: during SSR the type was the real function, but in the
+  // browser it arrived as a lazy client reference with neither identity nor
+  // displayName. The browser therefore put the head inside <tbody> while the
+  // server HTML had it in <thead>, and every /audit load threw React #418 and
+  // re-rendered the whole document. (The earlier displayName fallback did not
+  // help: verified live, the hydrated table was COLGROUP | TBODY>THEAD.) With
+  // no "use client" directive the introspection runs in one environment only,
+  // so server and client can no longer disagree. Keep this file free of
+  // hooks/handlers; put any interactive cell content in its own client
+  // component (as HashChip is).
   const isHead = (c: ReactElement) =>
     c.type === ListRowHead ||
     (c.type as { displayName?: string } | null | undefined)?.displayName ===

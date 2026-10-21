@@ -54,7 +54,7 @@ describe("AssetsCanon", () => {
     expect(screen.getByText("Jito Liquid Staking")).toBeInTheDocument();
     expect(firstRow.querySelector("img")).toHaveAttribute(
       "src",
-      "/tokens/J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn.webp",
+      "https://api.pegana.xyz/static/tokens/J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn.webp",
     );
     expect(container.querySelector(".v2-in-tokico")).toBeNull();
     const table = screen.getByRole("table", { name: "Canonical tracked assets" });

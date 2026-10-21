@@ -1,10 +1,13 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { forwardRef, type ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
 import { formatValue, reconcileBps } from "@/lib/api/format";
 import { isDirectionSensitiveClass } from "@/lib/asset/chart-thresholds";
+import { bandProximity } from "@/lib/asset/band";
+import { effectiveState } from "@/lib/asset/freshness";
+import { isCollateralRatioThresholds, thresholdsFor } from "@/lib/alerts/policy";
 import { relativeStamp } from "@/lib/asset/relative-stamp";
 import type { AssetCardData, AssetClass, PegState } from "@/lib/api/types";
 
@@ -210,9 +213,12 @@ export function classLabel(klass: AssetClass): string {
 }
 
 // ---------------------------------------------------------------------------
-// Board rows — the hero's live peg board. Real rows come from useAssets();
-// the exact sample set below is the artifact's own fallback, shown with the
-// honest "sample" caption whenever live data isn't available yet.
+// Board rows — the hero's live peg board. Rows come ONLY from useAssets()
+// (/v1/assets). There is deliberately no sample/fallback row set: a peg board
+// that paints invented prices and states under a "live" badge while the API is
+// slow or rate-limited (and in the SSR HTML every crawler reads) is false
+// data. Until real rows arrive the hero renders a neutral skeleton, and on a
+// failed fetch an explicit "live data unavailable" state.
 // ---------------------------------------------------------------------------
 
 export interface BoardRow {
@@ -221,14 +227,22 @@ export interface BoardRow {
   mint: string;
   klass: AssetClass;
   classLabel: string;
-  state: PegState | null;
+  /** Freshness-gated committed state: a KNOWN-stale snapshot reads UNKNOWN
+   *  (H1/H9), and a null state is UNKNOWN. */
+  state: PegState;
   marketLabel: string;
   intrinsicLabel: string;
   spreadLabel: string;
   /** HOLDER-signed bps (positive = premium), already negated from the raw
    *  reconcileBps convention. Feeds `v2SpreadSignClass`. Null when unknown. */
   spreadBps: number | null;
+  /** Whole-percent share of the way from peg to this asset's OWN depeg line
+   *  (0..100, clamped), from its real thresholds. Null when there is no
+   *  trustworthy reading (UNKNOWN / stale / no spread). */
   gaugePct: number | null;
+  /** The asset is banded on collateral ratio (hyUSD), so the spread has no
+   *  proximity reading; the cell says so instead of "-". */
+  crBand: boolean;
   updatedLabel: string;
   amberTint: boolean;
   /** Hourly-averaged discount series for the "Spread · 24h" cell, oldest ->
@@ -244,165 +258,10 @@ export interface BoardRow {
   spark?: number[];
 }
 
-export const SAMPLE_BOARD_ROWS: BoardRow[] = [
-  {
-    symbol: "USDC",
-    mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    klass: "stable_fiat",
-    classLabel: "Stablecoin",
-    state: "PEGGED",
-    marketLabel: "0.9999",
-    intrinsicLabel: "1.0000",
-    // Holder convention: market (0.9999) < intrinsic (1.0000) ⇒ a discount ⇒ "−".
-    spreadLabel: "−0.01%",
-    spreadBps: -1,
-    gaugePct: 2,
-    updatedLabel: "12s",
-    amberTint: false,
-  },
-  {
-    symbol: "USDT",
-    mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-    klass: "stable_fiat",
-    classLabel: "Stablecoin",
-    state: "PEGGED",
-    marketLabel: "1.0001",
-    intrinsicLabel: "1.0000",
-    // Holder convention: market (1.0001) > intrinsic (1.0000) ⇒ a premium ⇒ "+".
-    spreadLabel: "+0.01%",
-    spreadBps: 1,
-    gaugePct: 2,
-    updatedLabel: "12s",
-    amberTint: false,
-  },
-  {
-    symbol: "PYUSD",
-    mint: "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
-    klass: "stable_fiat",
-    classLabel: "Stablecoin",
-    state: "PEGGED",
-    marketLabel: "0.9994",
-    intrinsicLabel: "1.0000",
-    // Holder convention: market (0.9994) < intrinsic (1.0000) ⇒ a discount ⇒ "−".
-    spreadLabel: "−0.06%",
-    spreadBps: -6,
-    gaugePct: 12,
-    updatedLabel: "30s",
-    amberTint: false,
-  },
-  {
-    symbol: "jitoSOL",
-    mint: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
-    klass: "lst",
-    classLabel: "LST · NAV",
-    state: "DRIFT",
-    marketLabel: "176.42",
-    intrinsicLabel: "177.15",
-    // Holder convention: market (176.42) < intrinsic (177.15) ⇒ a discount ⇒
-    // "−" (a real discount on an LST — the risky side, hence DRIFT + amber).
-    spreadLabel: "−0.41%",
-    spreadBps: -41,
-    gaugePct: 58,
-    updatedLabel: "18s",
-    amberTint: true,
-  },
-  {
-    symbol: "mSOL",
-    mint: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
-    klass: "lst",
-    classLabel: "LST · NAV",
-    state: "PEGGED",
-    marketLabel: "189.03",
-    intrinsicLabel: "189.21",
-    // Holder convention: market (189.03) < intrinsic (189.21) ⇒ a discount ⇒ "−".
-    spreadLabel: "−0.10%",
-    spreadBps: -10,
-    gaugePct: 14,
-    updatedLabel: "18s",
-    amberTint: false,
-  },
-  {
-    symbol: "INF",
-    mint: "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm",
-    klass: "lst",
-    classLabel: "LST · NAV",
-    state: "PEGGED",
-    marketLabel: "142.77",
-    intrinsicLabel: "142.88",
-    // Holder convention: market (142.77) < intrinsic (142.88) ⇒ a discount ⇒ "−".
-    spreadLabel: "−0.08%",
-    spreadBps: -8,
-    gaugePct: 9,
-    updatedLabel: "24s",
-    amberTint: false,
-  },
-  {
-    symbol: "sUSD",
-    mint: "susdabGDNbhrnCa6ncrYo81u4s9GM8ecK2UwMyZiq4X",
-    klass: "stable_yield",
-    classLabel: "Yield stable · redemption",
-    state: "DRIFT",
-    marketLabel: "0.9772",
-    intrinsicLabel: "1.0006",
-    // Holder convention: market (0.9772) < intrinsic (1.0006) ⇒ a discount ⇒ "−".
-    spreadLabel: "−2.34%",
-    spreadBps: -234,
-    gaugePct: 78,
-    updatedLabel: "30s",
-    amberTint: true,
-  },
-  {
-    symbol: "sHYUSD",
-    mint: "HnnGv3HrSqjRpgdFmx7vQGjntNEoex1SU4e9Lxcxuihz",
-    klass: "stable_yield",
-    classLabel: "Yield stable",
-    state: "UNKNOWN",
-    marketLabel: "-",
-    intrinsicLabel: "no verified source",
-    spreadLabel: "-",
-    spreadBps: null,
-    gaugePct: null,
-    updatedLabel: "-",
-    amberTint: false,
-  },
-];
-
-/**
- * Deterministic per-symbol sample spread series for the board's "Spread ·
- * 30d" sparkline when the hero is showing sample rows (no live data yet).
- * Verbatim port of the artifact's `series(sym)` (pegana-v5.html) — same LCG
- * seed derivation and per-symbol shape overrides — so the sample sparklines
- * match the approved artifact pixel-for-pixel.
- */
-export function sampleSparkSeries(sym: string): number[] {
-  const n = 48;
-  const out: number[] = [];
-  let seed = 0;
-  for (let i = 0; i < sym.length; i++) seed += sym.charCodeAt(i) * 7;
-  function rnd(): number {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280 - 0.5;
-  }
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    let v = rnd() * 0.16; // flat noise ~ pegged
-    if (sym === "jitoSOL") v += t * 0.75 + Math.sin(t * 9) * 0.06; // rising drift
-    if (sym === "sUSD") v += (t > 0.8 ? (t - 0.8) * 4.6 : 0) + rnd() * 0.05; // spike at end
-    if (sym === "PYUSD") v += Math.sin(t * 5) * 0.1;
-    out.push(v);
-  }
-  return out;
-}
-
-/**
- * Literal hex twins of `--v2-peg` / `--v2-drift` (v2.css). Canvas gradients
- * build `color + alphaHex` strings (`SpreadSparkCanvas`), which only works
- * with a real color literal — `ctx.strokeStyle` doesn't resolve `var(...)`.
- */
 /**
  * V2/marketing twin of `spreadSignClass` (lib/api/format.ts): SAME sign rule,
  * DIFFERENT input contract. This takes an ALREADY HOLDER-SIGNED bps (positive =
- * premium), matching V2's own data layer — `toBoardRow` negates above, and
+ * premium), matching V2's own data layer — `toBoardRow` negates below, and
  * lib/lst/merge.ts's `verdictFrom` stores `spreadBps: -raw`.
  *
  * ⚠️ Do NOT feed this a raw `reconcileBps().bps` — that is the opposite sign
@@ -416,6 +275,11 @@ export function v2SpreadSignClass(holderSignedBps: number | null | undefined): s
   return holderSignedBps > 0 ? "text-[var(--v2-peg)]" : "text-[var(--v2-depeg)]";
 }
 
+/**
+ * Literal hex twins of `--v2-peg` / `--v2-drift` (v2.css). Canvas gradients
+ * build `color + alphaHex` strings (`SpreadSparkCanvas`), which only works
+ * with a real color literal — `ctx.strokeStyle` doesn't resolve `var(...)`.
+ */
 export const SPARK_PEG_HEX = "#5fd3a0";
 export const SPARK_DRIFT_HEX = "#e2a651";
 
@@ -425,46 +289,37 @@ export function sparkColorHex(state: PegState | null): string {
 }
 
 /**
- * Coarse severity bucket for the "band proximity" gauge on LIVE rows. There
- * is no per-asset drift/depeg threshold exposed to the client today (that
- * lives in the engine's calibration config), so this can't reproduce the
- * artifact's exact per-asset percentage honestly — it buckets by the asset's
- * *actual* committed state instead of inventing a number. Sample rows above
- * keep the artifact's real hardcoded percentages.
+ * The "Band proximity" reading for one board row: how far the current spread
+ * sits from peg toward the asset's OWN depeg line, as a whole percent clamped
+ * to 0..100. Same definition, thresholds and carve-outs as the dashboard's
+ * BandGauge (`bandProximity` over `thresholdsFor`, which prefers the
+ * per-asset `thresholds` served by /v1/assets), so the landing and the app
+ * can never disagree about the same asset.
  *
- * Direction-sensitive (ADR-0021 carve-out): pass `opts.bps` (reconcileBps
- * convention — positive = discount, negative = premium) and `opts.klass` to
- * carve out LST / stable_yield. A premium on one of those classes is benign
- * (holders always redeem at the intrinsic rate) and must never read as
- * "close to depeg" — it clamps to the same calm floor as PEGGED regardless
- * of the committed `state` bucket. Symmetric classes (and calls that omit
- * `opts`) keep the plain state-bucketed reading.
+ * `bps` follows the reconcileBps convention (positive = discount). A premium
+ * on a direction-sensitive class (LST / stable_yield, ADR-0021) or on
+ * synth_lev (display carve-out, see BandGauge) is benign and reads 0. An
+ * UNKNOWN state (including a stale snapshot) or a missing spread has no
+ * trustworthy reading and returns null, which the board renders as "-".
  */
-export function bandProximityPct(
-  state: PegState | null,
-  opts?: { bps?: number | null; klass?: AssetClass },
+export function boardGaugePct(
+  asset: Pick<AssetCardData, "symbol" | "class" | "thresholds">,
+  state: PegState,
+  bps: number | null,
 ): number | null {
-  if (
-    opts?.klass &&
-    isDirectionSensitiveClass(opts.klass) &&
-    opts?.bps != null &&
-    opts.bps < 0
-  ) {
-    return 8; // benign premium — same calm floor as PEGGED, never off-scale
-  }
-  switch (state) {
-    case "PEGGED":
-      return 8;
-    case "DRIFT":
-      return 55;
-    case "DEPEG":
-      return 80;
-    case "CRITICAL":
-    case "BLACK_SWAN":
-      return 96;
-    default:
-      return null;
-  }
+  if (state === "UNKNOWN" || bps == null) return null;
+  // Collateral-ratio-banded assets (hyUSD) have no spread depeg line of their
+  // own; a % here would come from the class fallback table.
+  if (isCollateralRatioThresholds(asset.thresholds)) return null;
+  const directionSensitive =
+    isDirectionSensitiveClass(asset.class) || asset.class === "synth_lev";
+  const prox = bandProximity(
+    bps,
+    thresholdsFor(asset.symbol, asset.class, asset.thresholds),
+    directionSensitive,
+  );
+  if (prox == null) return null;
+  return Math.min(Math.round(prox * 100), 100);
 }
 
 /**
@@ -488,8 +343,9 @@ export function timeAgoShort(
 }
 
 function toBoardRow(asset: AssetCardData, nowMs: number): BoardRow {
+  const state = effectiveState(undefined, asset, nowMs);
   const { bps } = reconcileBps(asset);
-  const gaugePct = bandProximityPct(asset.state, { bps, klass: asset.class });
+  const gaugePct = boardGaugePct(asset, state, bps);
   // Direction-sensitive (ADR-0021 carve-out): a premium (bps < 0) on an LST /
   // stable_yield is benign and must never wear the amber "drifting" tint even
   // if the raw committed state briefly reads DRIFT (e.g. a live-override lag) —
@@ -501,7 +357,7 @@ function toBoardRow(asset: AssetCardData, nowMs: number): BoardRow {
     mint: asset.mint,
     klass: asset.class,
     classLabel: classLabel(asset.class),
-    state: asset.state,
+    state,
     marketLabel: dashSafe(formatValue(asset.market_usd)),
     intrinsicLabel: dashSafe(formatValue(asset.intrinsic_usd)),
     // % for end users — "bps" is internal jargon. Holder convention (same as
@@ -517,8 +373,9 @@ function toBoardRow(asset: AssetCardData, nowMs: number): BoardRow {
     // and the label can never be derived from opposite signs.
     spreadBps: bps == null ? null : -bps,
     gaugePct,
+    crBand: isCollateralRatioThresholds(asset.thresholds),
     updatedLabel: timeAgoShort(asset.updated_at, nowMs),
-    amberTint: asset.state === "DRIFT" && !benignPremium,
+    amberTint: state === "DRIFT" && !benignPremium,
     // Same `discount` convention the old per-row fetch used (the API builds it
     // as avg(avg_discount) per hour, ordered oldest -> newest), so the line
     // keeps its orientation. Under two points cannot draw a line; the cell
@@ -530,77 +387,123 @@ function toBoardRow(asset: AssetCardData, nowMs: number): BoardRow {
   };
 }
 
+/** Hero board filter tabs. `all` keeps every class; the others narrow the
+ *  universe BEFORE selection, so each tab shows its own worst-first slice. */
+export type BoardFilter = "all" | "stables" | "lsts" | "yield";
+
+export const BOARD_FILTERS: Array<{ id: BoardFilter; label: string }> = [
+  { id: "all", label: "all" },
+  { id: "stables", label: "stables" },
+  { id: "lsts", label: "LSTs" },
+  { id: "yield", label: "yield" },
+];
+
+const STABLE_CLASSES: ReadonlySet<AssetClass> = new Set<AssetClass>([
+  "stable_fiat",
+  "stable_cdp",
+  "stable_rwa",
+  "stable_dn",
+  "stable_fx",
+]);
+
+export function boardFilterMatches(
+  filter: BoardFilter,
+  klass: AssetClass,
+): boolean {
+  switch (filter) {
+    case "stables":
+      return STABLE_CLASSES.has(klass);
+    case "lsts":
+      return klass === "lst";
+    case "yield":
+      return klass === "stable_yield";
+    default:
+      return true;
+  }
+}
+
+/** Board ordering, most severe first: CRITICAL > DEPEG > DRIFT > UNKNOWN
+ *  (including a null or stale state) > PEGGED. */
+const BOARD_RANK: Record<PegState, number> = {
+  BLACK_SWAN: 0,
+  CRITICAL: 0,
+  DEPEG: 1,
+  DRIFT: 2,
+  UNKNOWN: 3,
+  PEGGED: 4,
+};
+
 /**
- * Pick a representative slice of the live universe for the hero board: a
- * round-robin across asset classes (so the board reads as "class mix", not
- * just the first N rows returned), biased toward whichever asset in each
- * class is currently most interesting (UNKNOWN > CRITICAL/BLACK_SWAN > DEPEG
- * > DRIFT > PEGGED). Always keeps at least one UNKNOWN row visible if the
- * universe has one, even if it wouldn't otherwise make the cut — DESIGN.md
- * requires UNKNOWN stay visible, never hidden.
+ * Pick the hero board's rows, worst first:
+ *  1. every alerting asset (DRIFT and worse), most severe first, tie-broken by
+ *     proximity to its own depeg line;
+ *  2. ONE UNKNOWN row when the universe has one (DESIGN.md: UNKNOWN stays
+ *     visible, never hidden), capped at one so unknowns cannot crowd out real
+ *     risk;
+ *  3. PEGGED assets fill the rest as a round-robin across classes (so the
+ *     board reads as a class mix), each class's closest-to-its-band first;
+ *  4. only if slots are still empty, the remaining UNKNOWN rows.
+ * State is freshness-gated (`effectiveState`): null and stale both read
+ * UNKNOWN, exactly as the row then renders.
  */
 export function selectBoardRows(
   assets: AssetCardData[] | undefined,
   nowMs: number,
   max = 8,
+  filter: BoardFilter = "all",
 ): BoardRow[] {
   if (!assets || assets.length === 0) return [];
 
-  const rank = (s: PegState | null) => {
-    switch (s) {
-      case "UNKNOWN":
-        return 0;
-      case "CRITICAL":
-      case "BLACK_SWAN":
-        return 1;
-      case "DEPEG":
-        return 2;
-      case "DRIFT":
-        return 3;
-      default:
-        return 4;
-    }
-  };
+  const scored = assets
+    .filter((a) => boardFilterMatches(filter, a.class))
+    .map((a) => {
+      const state = effectiveState(undefined, a, nowMs);
+      const prox = boardGaugePct(a, state, reconcileBps(a).bps) ?? 0;
+      return { a, state, prox };
+    });
+  type Scored = (typeof scored)[number];
+  const worstFirst = (x: Scored, y: Scored) =>
+    BOARD_RANK[x.state] - BOARD_RANK[y.state] || y.prox - x.prox;
 
-  const byClass = new Map<string, AssetCardData[]>();
-  for (const a of assets) {
-    const list = byClass.get(a.class) ?? [];
-    list.push(a);
-    byClass.set(a.class, list);
-  }
-  for (const list of byClass.values()) {
-    list.sort((a, b) => rank(a.state) - rank(b.state));
-  }
-  const classes = Array.from(byClass.keys());
+  const alerting = scored
+    .filter((s) => BOARD_RANK[s.state] < BOARD_RANK.UNKNOWN)
+    .sort(worstFirst);
+  const unknown = scored.filter((s) => s.state === "UNKNOWN");
+  const pegged = scored.filter((s) => s.state === "PEGGED");
 
-  const picked: AssetCardData[] = [];
-  const seen = new Set<string>();
-  let round = 0;
-  while (picked.length < max && round < 20) {
-    let addedThisRound = false;
-    for (const c of classes) {
+  const picked: Scored[] = alerting.slice(
+    0,
+    unknown.length > 0 ? Math.max(max - 1, 0) : max,
+  );
+  if (unknown.length > 0 && picked.length < max) picked.push(unknown[0]);
+
+  const byClass = new Map<string, Scored[]>();
+  for (const s of pegged) {
+    const list = byClass.get(s.a.class) ?? [];
+    list.push(s);
+    byClass.set(s.a.class, list);
+  }
+  for (const list of byClass.values()) list.sort(worstFirst);
+  const lists = Array.from(byClass.values());
+  for (let round = 0; picked.length < max; round += 1) {
+    let added = false;
+    for (const list of lists) {
       if (picked.length >= max) break;
-      const candidate = byClass.get(c)?.[round];
-      if (candidate && !seen.has(candidate.symbol)) {
-        picked.push(candidate);
-        seen.add(candidate.symbol);
-        addedThisRound = true;
+      const s = list[round];
+      if (s) {
+        picked.push(s);
+        added = true;
       }
     }
-    if (!addedThisRound) break;
-    round += 1;
+    if (!added) break;
   }
 
-  if (!picked.some((a) => a.state === "UNKNOWN")) {
-    const unknown = assets.find((a) => a.state === "UNKNOWN");
-    if (unknown && picked.length > 0) {
-      picked[picked.length - 1] = unknown;
-    } else if (unknown) {
-      picked.push(unknown);
-    }
+  for (const s of unknown.slice(1)) {
+    if (picked.length >= max) break;
+    picked.push(s);
   }
 
-  return picked.map((a) => toBoardRow(a, nowMs));
+  return picked.map((s) => toBoardRow(s.a, nowMs));
 }
 
 // ---------------------------------------------------------------------------

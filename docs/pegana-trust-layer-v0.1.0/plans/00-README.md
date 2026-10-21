@@ -150,7 +150,7 @@ If any item is missing on 06-10, deploy slips. No exceptions.
 ### File paths
 All paths in plan files are **relative to repo root** unless absolute (which they shouldn't be).
 - ✅ `crates/methodology/Cargo.toml`
-- ❌ `/Users/rafazaum/Desktop/Projetos/pegana/crates/methodology/Cargo.toml`
+- ❌ `<repo>/crates/methodology/Cargo.toml`
 
 ### Commit messages
 Standard Conventional Commits:

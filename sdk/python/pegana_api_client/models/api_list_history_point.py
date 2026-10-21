@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.api_list_history_point_data_item import ApiListHistoryPointDataItem
@@ -22,12 +24,17 @@ class ApiListHistoryPoint:
         data (list[ApiListHistoryPointDataItem]):
         generated_at (str): RFC3339 (UTC, millisecond, `Z`) build time of this response.
         ok (bool): Always `true` on a 2xx; errors use the `{error, message}` envelope instead.
+        history_start (None | str | Unset): Time-series lists only (`/v1/assets/{symbol}/history`): RFC3339 of the
+            earliest snapshot Pegana has stored for the asset. Nothing exists before
+            it, so an empty or short window ending earlier is a data floor, not an
+            absence of events. Omitted elsewhere.
     """
 
     count: int
     data: list[ApiListHistoryPointDataItem]
     generated_at: str
     ok: bool
+    history_start: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -42,6 +49,12 @@ class ApiListHistoryPoint:
 
         ok = self.ok
 
+        history_start: None | str | Unset
+        if isinstance(self.history_start, Unset):
+            history_start = UNSET
+        else:
+            history_start = self.history_start
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -52,6 +65,8 @@ class ApiListHistoryPoint:
                 "ok": ok,
             }
         )
+        if history_start is not UNSET:
+            field_dict["history_start"] = history_start
 
         return field_dict
 
@@ -75,11 +90,21 @@ class ApiListHistoryPoint:
 
         ok = d.pop("ok")
 
+        def _parse_history_start(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        history_start = _parse_history_start(d.pop("history_start", UNSET))
+
         api_list_history_point = cls(
             count=count,
             data=data,
             generated_at=generated_at,
             ok=ok,
+            history_start=history_start,
         )
 
         api_list_history_point.additional_properties = d

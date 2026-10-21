@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useReducedMotionGsap } from "@/lib/motion/use-reduced-motion-gsap";
 import { getScrollTrigger } from "@/lib/motion/gsap";
 import { formatDayUS } from "@/lib/api/format";

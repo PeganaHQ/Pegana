@@ -65,11 +65,22 @@ class PegSignal:
             name (str):
             peg_target (str):
             receipt_url (str): Human/agent verify pointer for this asset.
-            stale (bool): True when `updated_at` is older than the 15-min freshness bound, or absent.
+            stale (bool): True whenever there is no trustworthy fresh discount: `state` is
+                UNKNOWN or absent, OR `updated_at` is older than the 15-min freshness
+                bound or absent. `updated_at` can be fresh while `stale` is true (it may
+                be the intrinsic leg's time when the market leg is missing; see
+                `state_reason` `market_unavailable` on `/v1/assets`).
             symbol (str):
             confidence (Confidence | None | Unset):
-            discount (None | str | Unset): Signed discount fraction (serialized as a string).
-            discount_bps (float | None | Unset): Convenience `discount × 10000` as a number (consumer rounds). Raw.
+            discount (None | str | Unset): Signed discount fraction (serialized as a string): the smoothed value
+                the state machine classifies, in SOL terms for LSTs. Do not recompute it
+                from `intrinsic_usd` / `market_usd`; the USD legs use separate SOL/USD
+                reads and can differ by a few bps, near zero even in sign.
+            discount_bps (float | None | Unset): Convenience `discount × 10000` in basis points, a JSON number rounded
+                to 4 dp. The only ratio field serialized as a number, not a string.
+            discount_raw (None | str | Unset): Unsmoothed discount for the same tick (before the EWMA), same basis as
+                `discount`. Omitted when there is no fresh snapshot. `discount` (and
+                `state`) remain the values to act on; see `AssetCard.discount_raw`.
             intrinsic_usd (None | str | Unset):
             jitter_bps_24h (None | str | Unset):
             market_cap (None | str | Unset): Circulating market cap in USD (circulating supply × market price, mig 0065).
@@ -98,6 +109,7 @@ class PegSignal:
     confidence: Confidence | None | Unset = UNSET
     discount: None | str | Unset = UNSET
     discount_bps: float | None | Unset = UNSET
+    discount_raw: None | str | Unset = UNSET
     intrinsic_usd: None | str | Unset = UNSET
     jitter_bps_24h: None | str | Unset = UNSET
     market_cap: None | str | Unset = UNSET
@@ -153,6 +165,12 @@ class PegSignal:
             discount_bps = UNSET
         else:
             discount_bps = self.discount_bps
+
+        discount_raw: None | str | Unset
+        if isinstance(self.discount_raw, Unset):
+            discount_raw = UNSET
+        else:
+            discount_raw = self.discount_raw
 
         intrinsic_usd: None | str | Unset
         if isinstance(self.intrinsic_usd, Unset):
@@ -235,6 +253,8 @@ class PegSignal:
             field_dict["discount"] = discount
         if discount_bps is not UNSET:
             field_dict["discount_bps"] = discount_bps
+        if discount_raw is not UNSET:
+            field_dict["discount_raw"] = discount_raw
         if intrinsic_usd is not UNSET:
             field_dict["intrinsic_usd"] = intrinsic_usd
         if jitter_bps_24h is not UNSET:
@@ -317,6 +337,15 @@ class PegSignal:
             return cast(float | None | Unset, data)
 
         discount_bps = _parse_discount_bps(d.pop("discount_bps", UNSET))
+
+        def _parse_discount_raw(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        discount_raw = _parse_discount_raw(d.pop("discount_raw", UNSET))
 
         def _parse_intrinsic_usd(data: object) -> None | str | Unset:
             if data is None:
@@ -430,6 +459,7 @@ class PegSignal:
             confidence=confidence,
             discount=discount,
             discount_bps=discount_bps,
+            discount_raw=discount_raw,
             intrinsic_usd=intrinsic_usd,
             jitter_bps_24h=jitter_bps_24h,
             market_cap=market_cap,

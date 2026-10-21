@@ -18,7 +18,7 @@ describe("ReceiptObjectV2", () => {
     expect(container.querySelector(".v2-in-tokico")).toBeNull();
     expect(container.querySelector("img")).toHaveAttribute(
       "src",
-      "/tokens/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.webp",
+      "https://api.pegana.xyz/static/tokens/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.webp",
     );
   });
 });

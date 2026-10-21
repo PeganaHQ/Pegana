@@ -7,46 +7,52 @@
 import { z } from "zod";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getAllCachedStates } from "@/redis";
-
-const PEG_STATES = [
-  "PEGGED",
-  "DRIFT",
-  "DEPEG",
-  "CRITICAL",
-  "BLACK_SWAN",
-  "UNKNOWN",
-] as const;
+import { isNonPublicSymbol } from "@/shared/asset-registry";
+import {
+  ageSeconds,
+  snapshotShape,
+  STALE_AFTER_SEC,
+} from "@/shared/snapshot-schema";
 
 const assetSnapshot = z.object({
-  asset: z.string(),
-  state: z.enum(PEG_STATES),
-  discount: z
-    .string()
+  ...snapshotShape,
+  stale: z
+    .boolean()
     .describe(
-      "Signed decimal as string: negative = ABOVE intrinsic (a premium), positive = BELOW (a discount). E.g. `-0.0042` = 42bps above intrinsic (a premium). String preserves Postgres NUMERIC precision.",
+      `True when the snapshot is older than ${STALE_AFTER_SEC}s: the engine has not recomputed this asset recently, so treat state and discount as last-known, not live.`,
     ),
-  intrinsic_usd: z.string(),
-  market_usd: z.string(),
-  ts: z.number().int().describe("Unix seconds at the snapshot timestamp."),
 });
+
+/**
+ * True for assets left out of the public list, mirroring REST /v1/assets
+ * (crates/api-rs/src/routes/assets.rs, `a.class::text <> 'synth_lev'`).
+ * Leveraged synthetics (xSOL) have no peg: a leveraged junior tranche trades
+ * far from its NAV by design, so its "discount" is a leverage premium, and
+ * listing it as `PEGGED` with a -36% discount reads as broken (R2 audit idx 19).
+ * REST now 404s them on every /v1/assets route, and so do the per-symbol MCP tools.
+ */
+function excludedFromList(symbol: string): boolean {
+  return isNonPublicSymbol(symbol);
+}
 
 export const getAssetsTool = {
   name: "get_assets",
   description:
     "Free. Lists every asset currently tracked by Pegana with its real-time peg state. " +
-    "Returns `{ count, assets: [{ asset, state, discount, intrinsic_usd, market_usd, ts }, ...] }` " +
+    "Returns `{ count, assets: [{ asset, state, discount, intrinsic_usd, market_usd, ts, updated_at, stale }, ...] }` " +
     "where `state` is one of `PEGGED | DRIFT | DEPEG | CRITICAL | BLACK_SWAN | UNKNOWN`, " +
-    "`discount` = 1 − market/intrinsic, a signed decimal string: negative = ABOVE intrinsic (a premium), positive = BELOW (a discount) — e.g. `-0.0042` = 42bps above intrinsic (a premium); `ts` is unix seconds. " +
+    "`discount` = 1 − market/intrinsic, a signed decimal string: negative = ABOVE intrinsic (a premium), positive = BELOW (a discount), e.g. `-0.0042` = 42bps above intrinsic (a premium); `ts` is unix seconds, `updated_at` the same instant in ISO-8601; `stale` is true when the snapshot is older than 5 minutes. " +
     "Call this once at session start to discover the live supported symbols across LSTs, fiat stablecoins, " +
-    "yield-bearing tokens, CDPs, FX-pegged, and synthetics. " +
-    "Use `get_asset_state` for a single symbol if you already know it — that path is cheaper.",
+    "yield-bearing tokens, CDPs, FX-pegged, and delta-neutral synthetics. " +
+    "Leveraged synthetics (class `synth_lev`, e.g. xSOL) are left out, exactly as in REST `/v1/assets`: they have no peg, so their market-vs-NAV gap is a leverage premium, not a peg deviation. Per-symbol tools report them as not tracked, as REST answers 404. " +
+    "Use `get_asset_state` for a single symbol if you already know it; it returns just that snapshot.",
   inputSchema: {},
   outputSchema: {
     count: z
       .number()
       .int()
       .nonnegative()
-      .describe("Number of assets currently in the cache."),
+      .describe("Number of assets returned (live cache entries, leveraged synthetics excluded)."),
     assets: z.array(assetSnapshot),
   },
   annotations: {
@@ -57,7 +63,13 @@ export const getAssetsTool = {
     openWorldHint: false,
   } satisfies ToolAnnotations,
   async handler() {
-    const assets = getAllCachedStates();
+    const now = Date.now();
+    const assets = getAllCachedStates()
+      .filter((snap) => !excludedFromList(snap.asset))
+      .map((snap) => ({
+        ...snap,
+        stale: ageSeconds(snap.ts, now) > STALE_AFTER_SEC,
+      }));
     const structured = { count: assets.length, assets };
     return {
       content: [

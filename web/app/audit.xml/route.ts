@@ -14,12 +14,13 @@
 // follow-up once that endpoint exists. See the TODO below.
 
 import { NextResponse } from "next/server";
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
+import { siteOrigin } from "@/lib/seo/site-origin";
 
 export const revalidate = 60;
 
 const API_BASE = apiBase();
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
+const SITE_URL = siteOrigin();
 
 interface AuditIndexRow {
   id: string;
@@ -86,7 +87,7 @@ export async function GET() {
 
   try {
     const resp = await fetch(`${API_BASE}/v1/audit?limit=50`, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...serverApiHeaders() },
       next: { revalidate: 60 },
     });
     if (resp.ok) {

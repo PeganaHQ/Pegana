@@ -29,6 +29,20 @@ const STATUS = {
   },
 } as const;
 
+/**
+ * True when the row already carries the BETA badge for this asset: BETA is
+ * shown for monitoring-only assets and its text is "Provisional calibration",
+ * so a PROVISIONAL gauge beside it repeats the same fact. On the dashboard the
+ * two together (plus SUSTAINED on eHYUSD) overflowed the badge slot, which
+ * clips, and the gauge was cut off at every desktop width (measured
+ * 2026-10-21). Rows drop the duplicate instead of clipping it.
+ */
+export function calibrationShownByBetaBadge(
+  asset: Pick<AssetCardData, "monitoring_only" | "calibration">,
+): boolean {
+  return asset.monitoring_only === true && asset.calibration === "provisional";
+}
+
 export function CalibrationGauge({
   asset,
   className,

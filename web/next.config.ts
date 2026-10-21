@@ -14,6 +14,30 @@ const nextConfig: NextConfig = {
     root: path.join(process.cwd(), ".."),
   },
 
+  // Fewer, larger client chunks. On the Hobby plan every request that reaches
+  // Vercel counts against 1M CDN requests a month, and a project that crosses
+  // the quota is paused. Measured 2026-10-21 on production, a first visit to
+  // the landing page made 68 requests, 39 of them /_next/static (32 JS chunks
+  // under the default `maxChunkCountPerGroup: 40`, `minChunkSize: 50_000`,
+  // `requestCost: 200_000`). The same code ships either way: merging changes
+  // only how it is split into files. Cost: a navigation can re-download code
+  // already held in another merged chunk, which is bytes (100 GB of Fast Data
+  // Transfer on Hobby) rather than requests.
+  //
+  // Measured on two previews: 10 / 100 KB / 600 KB cut 6-7 JS files per first
+  // visit; these values cut 9-10 (landing 32 -> 22, asset 29 -> 19, status
+  // 23 -> 14) with first-load JS bytes unchanged (463 KB vs 467 KB on the
+  // landing) and one client navigation re-fetching about 20 KB more. The
+  // remaining files sit above `maxMergeChunkSize` or belong to separate chunk
+  // groups, so pushing further buys little.
+  experimental: {
+    turbopackChunking: {
+      maxChunkCountPerGroup: 4,
+      minChunkSize: 200_000,
+      requestCost: 2_000_000,
+    },
+  },
+
   // NO `experimental.viewTransition`. It is accepted by the config schema and
   // documented in this package's own bundled docs, but in 16.2.11 it turns on
   // the config flag WITHOUT switching to the React build that implements
@@ -27,8 +51,76 @@ const nextConfig: NextConfig = {
   // the browser's own `document.startViewTransition`, which needs no React
   // feature and no experimental reconciler.
 
+  // News thumbnails (components/organisms/market-feed.tsx): CoinGecko only
+  // publishes full-size article images (up to ~440 KB) for a 48px tile, so
+  // those go through the optimizer. Scoped to the one path, no query string.
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "assets.coingecko.com",
+        port: "",
+        pathname: "/articles/images/**",
+        search: "",
+      },
+    ],
+  },
+
+  // Do not advertise the framework (X-Powered-By: Next.js).
+  poweredByHeader: false,
+
   async headers() {
     return [
+      // Vendored token and partner logos outside /_next were served with
+      // max-age=0, so every page view revalidated dozens of icons. They are
+      // keyed by mint/name and change rarely, so a day of freshness plus a
+      // week of stale-while-revalidate is safe without content hashes.
+      //
+      // The root icons and the brand art were still max-age=0, so every full
+      // page load revalidated favicon.svg, favicon.ico and the brand wave: two
+      // of the three or four requests a returning visitor makes per page, each
+      // one billed as a CDN request on Hobby. A favicon or brand-art swap under
+      // the same file name can now show stale for up to about 8 days in a
+      // browser that already has the old one (1 day max-age + 7 days
+      // stale-while-revalidate). For a real rebrand, rename the files.
+      ...[
+        "/tokens/:path*",
+        "/logos/:path*",
+        "/brand/:path*",
+        "/favicon.ico",
+        "/favicon.svg",
+        "/favicon-16x16.png",
+        "/favicon-32x32.png",
+        "/apple-touch-icon.png",
+        "/android-chrome-192x192.png",
+        "/android-chrome-512x512.png",
+        "/icon-maskable-512x512.png",
+      ].map((source) => ({
+        source,
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, stale-while-revalidate=604800",
+          },
+        ],
+      })),
+      // HSTS for the apex and every subdomain. Vercel's default is
+      // `max-age=63072000` with no includeSubDomains. Checked 2026-10-21:
+      // every pegana.xyz name answers over HTTPS (www, app, releases and the
+      // wildcard on Vercel, api on Caddy, docs on Mintlify), so
+      // includeSubDomains cannot strand a plain-HTTP host. No `preload`: with
+      // it the apex becomes eligible for hstspreload.org, anyone can submit
+      // it, and removal from the browser list takes months. Adding it is an
+      // owner decision.
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains",
+          },
+        ],
+      },
       {
         source: "/((?!embed).*)",
         headers: [

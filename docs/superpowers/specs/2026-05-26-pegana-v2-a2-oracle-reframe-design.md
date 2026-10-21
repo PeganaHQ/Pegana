@@ -705,7 +705,7 @@ language. Only copy + page hierarchy.
    launch but not Phase 2 work. **Also fixes** the `/oracle` 404
    currently in production (memory `project_vercel_root_404`).
 3. 14-day dogfood with `FEATURE_PUBLIC_ALERTS=false` and
-   `DOGFOOD_TELEGRAM_CHAT_ID=6647651772`. Produce
+   `DOGFOOD_TELEGRAM_CHAT_ID=<dogfood-chat-id>`. Produce
    `docs/CALIBRATION-v1.md` artifact at end of period.
 3b. **Accessibility sweep** during the dogfood window: run axe-core on
     `/`, `/oracle`, `/methodology`, `/dashboard`, `/developers`,

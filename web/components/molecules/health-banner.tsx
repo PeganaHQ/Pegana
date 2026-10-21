@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useSWRConfig } from "swr";
 import { IconArrowRight } from "@/components/atoms/icon-arrow-right";
 import { useStats } from "@/lib/hooks/use-stats";
@@ -29,6 +29,9 @@ export function HealthBanner() {
 
   const status = (error as { status?: number } | undefined)?.status;
   const isHttpError = typeof status === "number";
+  // 429 means the API is healthy and this IP spent its 60/min budget. Say so,
+  // instead of a line that reads like an outage.
+  const rateLimited = status === 429;
   const mins = downSince
     ? Math.max(0, Math.round((Date.now() - downSince) / 60_000))
     : 0;
@@ -58,8 +61,12 @@ export function HealthBanner() {
         <span className="uppercase">live feed</span>
         <span className="text-text-muted">·</span>
         <span className="text-text">
-          {isHttpError ? `API responded ${status}` : "API unreachable"}
-          {mins > 0 ? ` for ${mins} min` : ""}
+          {rateLimited
+            ? "Rate limited (60 requests a minute per IP), retrying automatically"
+            : isHttpError
+              ? `API responded ${status}`
+              : "API unreachable"}
+          {!rateLimited && mins > 0 ? ` for ${mins} min` : ""}
           {/* Conditional on there actually BEING last-known data. The sentence
               used to be unconditional, so on a first visit during an outage —
               empty SWR cache, nothing ever fetched — the banner promised a
@@ -68,7 +75,10 @@ export function HealthBanner() {
               in one viewport, and the reassuring one was the false one. For a
               peg oracle, asserting you are showing data you do not have is the
               exact failure the product exists to prevent. */}
-          {data ? ". Showing last known data." : ". No data loaded."}
+          {/* "No data loaded" is gone: this banner only knows about /v1/stats,
+              not the page beneath it, and on a rate-limited asset page it
+              sat on top of fully rendered server data (2026-10-21). */}
+          {data ? ". Showing last known data." : "."}
         </span>
         <div className="ml-auto flex items-center gap-3">
           <button

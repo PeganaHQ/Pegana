@@ -184,10 +184,11 @@ run_watch() {
     alerts+=("🔑 *backup encryption key missing or unreadable* (\`~/.pegana-backup-key\`) — pg-backup cron will fail until restored")
   fi
 
-  # Same fast check for R2 creds. Both files are 0600 deploy-owned; if either
-  # disappears (rm typo, disk issue) backups stop silently.
+  # Same fast check for R2 creds. Both files are 0600 deploy-owned. Without
+  # the creds file pg-backup still keeps verified LOCAL copies but every run
+  # exits 4 (offsite upload failed) until it is restored.
   if [[ ! -r "$HOME/.pegana-r2-creds.env" ]]; then
-    alerts+=("🔑 *R2 credentials missing or unreadable* (\`~/.pegana-r2-creds.env\`) — pg-backup cron will fail until restored")
+    alerts+=("🔑 *R2 credentials missing or unreadable* (\`~/.pegana-r2-creds.env\`): backups are local-only until restored")
   fi
 
   # alert_evidence_commit_failures uses `last_error` (not `error_message`) +
@@ -307,6 +308,14 @@ WHERE a.is_active = true \
         backup_alerted=false
       fi
     fi
+  else
+    # No state file means no backup has EVER succeeded on this box (pg-backup
+    # writes it only after a verified local copy exists). This branch used to
+    # be missing, so a box whose every run failed never raised this alert.
+    if [[ "$backup_alerted" != "True" ]]; then
+      alerts+=("💾 no successful backup recorded (\`${BACKUP_STATE}\` missing). Check \`~/.pg-backup.log\`")
+    fi
+    backup_alerted=true
   fi
 
   # ─── Waiver expiry countdown ──────────────────────────────────────────────

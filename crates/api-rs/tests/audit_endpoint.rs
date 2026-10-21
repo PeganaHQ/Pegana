@@ -476,13 +476,34 @@ async fn no_replay_artifact_returns_404_with_hint() {
         body.get("error").and_then(|v| v.as_str()),
         Some("no_replay_artifact")
     );
+    // The hint used to blame DRIFT, but DRIFT receipts do carry bundles; it now
+    // points at the receipt instead, and the envelope carries `message`.
     let hint = body.get("hint").and_then(|v| v.as_str()).unwrap_or("");
     assert!(
-        hint.contains("DRIFT"),
-        "hint must mention DRIFT, got: {hint}"
+        hint.contains(&format!("/v1/audit/{id}")),
+        "hint must point at the receipt, got: {hint}"
     );
+    assert!(body.get("message").and_then(|v| v.as_str()).is_some());
 
     cleanup(&pool, id).await;
+}
+
+#[tokio::test]
+async fn replay_bundle_for_unknown_alert_is_alert_not_found() {
+    let Some(base) = base() else { return };
+    let id = Uuid::new_v4();
+    let resp = client()
+        .get(format!("{base}/v1/audit/{id}/replay-bundle"))
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.expect("json");
+    assert_eq!(
+        body.get("error").and_then(|v| v.as_str()),
+        Some("alert_not_found"),
+        "got: {body:?}"
+    );
 }
 
 // ─── B-005: /onchain discriminates WHY a receipt is not anchored ─────────

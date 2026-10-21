@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { VerdictChip } from "@/components/molecules/verdict-chip";
 import { VerdictStat } from "@/components/molecules/verdict-stat";
 import { verdictHeadline } from "@/lib/asset/digest";

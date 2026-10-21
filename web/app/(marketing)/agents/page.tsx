@@ -47,7 +47,9 @@ const VERIFY_CODE = `const receipt = await mcp.callTool("verify_alert", {
   alert_id: alertUuid,
 });
 
-const { evidence } = receipt.structuredContent;
+// verify_alert wraps its output: { result: { alert, evidence, evidence_status } }
+const { evidence, evidence_status } = receipt.structuredContent.result;
+if (!evidence) throw new Error(\`receipt not ready: \${evidence_status}\`);
 console.log("methodology:", evidence.methodology_version);
 console.log("receipt sha256:", evidence.receipt_sha256);
 console.log("on-chain:", evidence.onchain_tx_sig ?? "pending");`;
@@ -69,10 +71,11 @@ const REST_CODE = `curl -s ${REST_BASE}/v1/audit/<UUID> | jq .
 # Atom feed of recent alerts
 curl -s ${PUBLIC_FEED}`;
 
+// /metrics is internal (blocked at the edge, 403 publicly), so only the
+// public liveness probe is advertised here.
 const MCP_CODE = `${MCP_URL}
 
-# liveness  GET ${MCP_URL}/health
-# metrics   GET ${MCP_URL}/metrics`;
+# liveness  GET ${MCP_URL}/health`;
 
 export default async function AgentsPage() {
   const version = await loadMethodologyVersion();

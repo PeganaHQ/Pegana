@@ -38,3 +38,48 @@ describe("GET /embed.js, Content-Type + headers", () => {
     expect(res.headers.get("Content-Security-Policy")).toBeNull();
   });
 });
+
+describe("GET /embed.js, display alias", () => {
+  async function runWith(dataAsset: string) {
+    const body = await (await GET()).text();
+    const fetched: string[] = [];
+    const mount = { id: "", innerHTML: "", setAttribute() {} };
+    const script = {
+      src: "https://www.pegana.xyz/embed.js",
+      getAttribute: (k: string) => (k === "data-asset" ? dataAsset : null),
+      parentNode: { insertBefore() {} },
+      nextSibling: null,
+    };
+    const doc = {
+      currentScript: script,
+      getElementById: () => null,
+      createElement: () => mount,
+    };
+    const fakeFetch = (url: string) => {
+      fetched.push(url);
+      return new Promise(() => {});
+    };
+    const win = { location: { href: "https://host.example/" }, parent: null, postMessage() {} };
+    new Function("document", "fetch", "window", "setInterval", "console", body)(
+      doc,
+      fakeFetch,
+      win,
+      () => 0,
+      { warn() {} },
+    );
+    return { fetched, mount };
+  }
+
+  it("queries the canonical symbol for data-asset=eHYUSD and prints eHYUSD", async () => {
+    const { fetched, mount } = await runWith("eHYUSD");
+    expect(fetched[0]).toMatch(/\/v1\/assets\/sHYUSD$/);
+    expect(mount.innerHTML).toContain("<span>eHYUSD</span>");
+  });
+
+  it("leaves other symbols alone, including prototype names", async () => {
+    expect((await runWith("USDC")).fetched[0]).toMatch(/\/v1\/assets\/USDC$/);
+    expect((await runWith("constructor")).fetched[0]).toMatch(
+      /\/v1\/assets\/constructor$/,
+    );
+  });
+});

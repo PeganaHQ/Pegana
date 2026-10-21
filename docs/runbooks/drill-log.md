@@ -1,25 +1,21 @@
 # Disaster-recovery drill log
 
-Validates the encrypted-R2 → Postgres restore path (`scripts/pg-restore.sh`). Each
-drill restores the latest backup into a **throwaway** database (`--into
-pegana_restore_drill`), validates decryption + row counts, then drops it — prod is
-never touched.
+Validates the backup → restore path (`scripts/pg-backup.sh` → `scripts/pg-restore.sh`).
+Each drill restores a backup into a **throwaway** database (`--into
+pegana_restore_drill`), checks the smoke counts and the TimescaleDB version,
+then drops it. Prod is never touched.
 
-To run a drill (on Hetzner as `deploy`):
+The procedure and the pass criteria live in [`restore.md`](restore.md#restore-drill-procedure).
+Record for every drill: date, host, backup name and size, source (local or
+R2), TimescaleDB version (dump and restored DB), smoke counts, wall-clock
+restore time, and verdict.
 
-```sh
-cd ~/pegana
-LATEST=$(./scripts/pg-restore.sh list | head -1 | awk '{print $NF}')
-./scripts/pg-restore.sh restore "$LATEST" --into pegana_restore_drill
-PGU=$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2- | tr -d '"')
-docker compose exec -T postgres psql -U "$PGU" -d pegana_restore_drill -c \
-  "SELECT (SELECT count(*) FROM discount_snapshots) AS discount_snapshots,
-          (SELECT count(*) FROM alerts) AS alerts,
-          (SELECT count(*) FROM alert_evidence) AS alert_evidence,
-          (SELECT max(ts) FROM discount_snapshots) AS latest_snapshot;"
-docker compose exec -T postgres psql -U "$PGU" -d postgres -c \
-  "DROP DATABASE pegana_restore_drill;"
-```
+## Status
+
+- **No drill has run on the current Hostinger stack** (rebuilt 2026-10-16).
+  The 2026-06-22 entry below was on the previous Hetzner box with the aws-CLI
+  version of pg-restore.sh. A drill is due as soon as pg-backup.sh produces a
+  backup on this box.
 
 ---
 

@@ -43,14 +43,16 @@ describe("sortByDateDesc — newest first", () => {
 
 describe("userFacingCount — the honest headline metric", () => {
   it("counts only entries that actually reached users (degraded/outage), not internal catches", () => {
-    // The 2026-06-14 freeze-detector false-alarm on public JupSOL is a real
-    // user-facing degradation; the JupUSD + egress-gap entries were caught
-    // internally (userImpact: none).
+    // The 2026-06-14 freeze-detector false-alarm on public JupSOL and the
+    // 2026-10-20 stale-NAV LST history are real user-facing degradations; the
+    // JupUSD + egress-gap entries were caught internally (userImpact: none).
     const expected = RELIABILITY_LOG.filter(
       (e) => e.userImpact !== "none",
     ).length;
     expect(userFacingCount(RELIABILITY_LOG)).toBe(expected);
-    expect(userFacingCount(RELIABILITY_LOG)).toBe(1);
+    // + the three 2026-10-17..21 entries (rebuild history gap, Sanctum stale
+    // NAV, frozen health-factor bands), all user-facing.
+    expect(userFacingCount(RELIABILITY_LOG)).toBe(4);
   });
 });
 
@@ -66,5 +68,16 @@ describe("RELIABILITY_LOG — published post-mortems", () => {
       expect(e.resolution).toBeTruthy();
       expect(["none", "degraded", "outage"]).toContain(e.userImpact);
     }
+  });
+
+  it("logs the stale-NAV LST incident exactly once, as resolved", () => {
+    const entries = RELIABILITY_LOG.filter((e) => /stale-nav/i.test(e.id));
+    expect(entries).toHaveLength(1);
+    const e = entries[0]!;
+    expect(e.durationLabel).toMatch(/resolved 2026-10-21/);
+    expect(e.resolution).toMatch(/removed the affected history/);
+    expect(e.resolution).toMatch(/734,446/);
+    expect(e.resolution).toMatch(/665,456/);
+    expect(e.resolution).not.toMatch(/will delete|still in stored history/i);
   });
 });

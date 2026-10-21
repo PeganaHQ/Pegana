@@ -1,11 +1,15 @@
 import type { NextRequest } from "next/server";
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
 import { displaySymbol, resolveAliasSymbol } from "@/lib/asset/display-symbol";
 import { reconcileBps } from "@/lib/api/format";
 import { isStale } from "@/lib/asset/freshness";
+import { siteOrigin } from "@/lib/seo/site-origin";
+import { lookupAsset } from "@/lib/asset/fetch-asset";
+import { publicSurfaceOf } from "@/lib/asset/public-surface";
+import { notTrackedResponse } from "@/lib/embed/not-tracked";
 
 const API_BASE = apiBase();
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
+const SITE_URL = siteOrigin();
 
 interface AssetCardData {
   symbol: string;
@@ -249,18 +253,7 @@ export async function GET(
   // Kick off the asset + 24h-history fetches CONCURRENTLY — they are independent,
   // and serializing them doubled the embed's cold-render latency (two upstream
   // round-trips back-to-back). Each still fails soft on its own.
-  const assetPromise: Promise<AssetCardData | null> = (async () => {
-    try {
-      const r = await fetch(
-        `${API_BASE}/v1/assets/${encodeURIComponent(symbol)}`,
-        { headers: { Accept: "application/json" }, next: { revalidate: 60 } },
-      );
-      return r.ok ? ((await r.json()) as AssetCardData) : null;
-    } catch {
-      // Render an UNKNOWN badge so the embed never breaks the host page layout.
-      return null;
-    }
-  })();
+  const lookupPromise = lookupAsset(symbol);
 
   const sparkPromise: Promise<number[]> = showSpark
     ? (async () => {
@@ -269,7 +262,7 @@ export async function GET(
           const r = await fetch(
             `${API_BASE}/v1/assets/${encodeURIComponent(symbol)}/history?bucket=1m&from=${encodeURIComponent(from)}&limit=200`,
             {
-              headers: { Accept: "application/json" },
+              headers: { Accept: "application/json", ...serverApiHeaders() },
               next: { revalidate: 60 },
             },
           );
@@ -290,7 +283,16 @@ export async function GET(
       })()
     : Promise.resolve([]);
 
-  const [asset, sparkPoints] = await Promise.all([assetPromise, sparkPromise]);
+  const [lookup, sparkPoints] = await Promise.all([lookupPromise, sparkPromise]);
+
+  // Unknown symbols and leveraged synths (xSOL) get a neutral "not tracked"
+  // badge with a 404, never a peg verdict. xSOL has no peg, so the badge used
+  // to publish a false "Pegged" on any site that embedded it.
+  if (publicSurfaceOf(lookup) === "not_tracked") {
+    return notTrackedResponse(displaySymbol(symbol), format === "svg");
+  }
+  const asset: AssetCardData | null =
+    lookup.kind === "found" ? lookup.asset : null;
 
   // App-level 2-minute freshness gate (STALE_AFTER_MS via isStale). The API's
   // own collapse is a looser 15-minute bound, so a badge on a partner's deposit

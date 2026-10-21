@@ -16,7 +16,12 @@ class CascadeRung:
     consumer gets the whole escalation ($0 → $Nm as the depeg deepens) in one read.
 
         Attributes:
-            liquidatable_usd (str): Collateral (USD) whose bands cross their liquidation threshold at this shock.
+            liquidatable_usd (str): Collateral (USD) of this asset, summed over every borrowing position whose
+                health-factor band crosses 1 at this shock. Basis: ALL positions that post
+                the asset as collateral and carry any debt (Kamino obligations, Jupiter
+                Lend vault positions), not only the leverage loops counted in
+                `loop_exposure_usd`. It can therefore be larger than `loop_exposure_usd`;
+                the comparable denominator is `collateral_usd`.
             positions (str): Bucketed range of affected positions (ADR-0036 inv.8 — never a raw count).
             shock_bps (int):
     """

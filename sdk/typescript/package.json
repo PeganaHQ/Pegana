@@ -1,6 +1,6 @@
 {
   "name": "@peganahq/sdk-ts",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Typed TypeScript client for the Pegana peg-risk oracle API \u2014 full OpenAPI-generated coverage of all /v1 endpoints, plus the stable v0.1 receipt-verification surface.",
   "type": "module",
   "//entrypoints": "These MUST point at the built dist/, not src/*.ts. 0.3.0 shipped broken because it declared the dist paths under `publishConfig`, which npm no longer honours for main/types/exports \u2014 it warns `Unknown publishConfig config` and publishes the src/*.ts paths verbatim, so `import` from node_modules throws ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING. `prepack` builds dist/ before packing. Repo-local development imports ../src/index.ts by relative path (see test/), so nothing here depends on these fields.",
@@ -16,13 +16,18 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "license": "MIT",
-  "//repository": "Deliberately omitted. This client is generated from the PUBLIC OpenAPI spec at https://api.pegana.xyz/openapi.json, but its source lives in a private repo \u2014 PeganaHQ/ReplayCLI mirrors only the three verifier crates, so a repository/directory pointer there would resolve to nothing. Issues go to the public tracker below.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeganaHQ/Pegana.git",
+    "directory": "sdk/typescript"
+  },
   "homepage": "https://docs.pegana.xyz",
   "bugs": {
-    "url": "https://github.com/PeganaHQ/ReplayCLI/issues"
+    "url": "https://github.com/PeganaHQ/Pegana/issues"
   },
   "engines": {
     "node": ">=20"

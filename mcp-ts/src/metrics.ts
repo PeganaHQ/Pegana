@@ -78,13 +78,15 @@ import * as Sentry from "@sentry/node";
 
 export function withMetrics<TArgs, TRes>(
   toolName: string,
-  handler: (args: TArgs) => Promise<TRes>,
-): (args: TArgs) => Promise<TRes> {
-  return async (args: TArgs) => {
+  handler: (args: TArgs, extra?: unknown) => Promise<TRes>,
+): (args: TArgs, extra?: unknown) => Promise<TRes> {
+  // `extra` (the SDK's RequestHandlerExtra) is passed through so handlers can
+  // read the request headers (e.g. to forward the caller IP upstream).
+  return async (args: TArgs, extra?: unknown) => {
     const start = Date.now();
     let status = "success";
     try {
-      return await handler(args);
+      return await handler(args, extra);
     } catch (e) {
       status = "error";
       Sentry.captureException(e, { tags: { tool: toolName } });

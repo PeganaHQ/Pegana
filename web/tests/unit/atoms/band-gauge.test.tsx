@@ -137,3 +137,19 @@ describe("BandGauge — direction-sensitive premium carve-out (ADR-0021, klass p
     expect(gauge.getAttribute("aria-label")).toMatch(/off-scale \/ depegged/i);
   });
 });
+
+describe("BandGauge on a collateral-ratio-banded asset", () => {
+  it("says CR band instead of a spread percentage", () => {
+    render(
+      <BandGauge
+        bps={17}
+        thresholds={USDC}
+        state="PEGGED"
+        klass="stable_cdp"
+        crBand
+      />,
+    );
+    expect(screen.getByText("CR band")).toBeInTheDocument();
+    expect(screen.queryByText(/%$/)).toBeNull();
+  });
+});

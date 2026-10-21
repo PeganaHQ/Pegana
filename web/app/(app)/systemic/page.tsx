@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { TokenIcon } from "@/components/atoms/token-icon";
@@ -235,10 +235,13 @@ function Simulator({
   const sym = displaySymbol(entry.symbol);
   const noCascade = maxLiq === 0;
   // Two honest reasons a token has no modelled cascade, distinguished by the
-  // feed's `coverage`: "full" = both venues fully enumerated but nothing
-  // liquidates even at the deepest shock (deeply/only-collateralised — a benign,
-  // resolved state, NOT pending); anything else = HF coverage is still thin.
-  const coverageFull = entry.systemic.coverage === "full";
+  // feed's `cascade_coverage` (the API never reports `coverage: "full"` any
+  // more): fresh health-factor bands exist (partial: k-floored) but nothing in
+  // them liquidates even at the deepest shock, or there are no fresh bands and
+  // the cascade is simply not modelled yet. Older API builds only send
+  // `coverage`, where "full" meant the former.
+  const cascadeCoverage = entry.systemic.cascade_coverage ?? entry.systemic.coverage;
+  const coverageFull = cascadeCoverage === "partial" || cascadeCoverage === "full";
 
   return (
     <div className="overflow-hidden rounded-[20px] border border-hairline bg-surface-1">
@@ -271,8 +274,8 @@ function Simulator({
                   <span className="text-text">
                     {protoList(entry.systemic.protocols)}
                   </span>
-                  . No tracked position liquidates even at a {shockLabel(2000)}{" "}
-                  depeg. No cascade risk today.
+                  . No position in the health-factor bands we track liquidates even
+                  at a {shockLabel(2000)} depeg.
                   <span className="ml-1.5 inline-flex items-center rounded-full border border-hairline px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-text-caption">
                     no cascade
                   </span>
@@ -299,11 +302,14 @@ function Simulator({
               <p className="mt-3 max-w-[36ch] text-[14px] leading-relaxed text-text-muted">
                 {sel.liq > 0 ? (
                   <>
-                    of leveraged collateral crosses its liquidation threshold
-                    across{" "}
+                    {/* "of collateral", not "of leveraged collateral": the
+                        cascade runs over every position the health-factor
+                        bands cover, which can exceed the leveraged total
+                        above it (see lib/asset/loop-impact.ts). */}
+                    of collateral crosses its liquidation threshold across{" "}
                     <span className="text-text">
                       {protoList(entry.systemic.protocols)}
-                    </span>{" "}
+                    </span>
                     , {sel.positions} positions.
                   </>
                 ) : (

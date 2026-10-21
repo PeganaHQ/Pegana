@@ -32,7 +32,9 @@ export function useAlerts(opts?: {
     ? () => api.alerts({ limit: SHARED_LIMIT })
     : () => api.alerts(query);
 
-  const swr = useSWR(key, fetcher, { refreshInterval: 30_000 });
+  // 60s: receipts are written on state transitions, minutes to days apart,
+  // and the live state itself arrives over the WebSocket.
+  const swr = useSWR(key, fetcher, { refreshInterval: 60_000 });
 
   if (shared && swr.data) {
     return { ...swr, data: swr.data.slice(0, limit) };

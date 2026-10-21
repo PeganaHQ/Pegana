@@ -2,13 +2,14 @@
 
 Typed Python client for the Pegana peg-risk oracle API.
 
-> **v0.3.0** — full OpenAPI-generated coverage of every `/v1` endpoint (typed
+> **v0.4.0**: full OpenAPI-generated coverage of every `/v1` endpoint (typed
 > models + a sync/async httpx client via `openapi-python-client`, in the
 > `pegana_api_client` package), plus the stable v0.1 receipt-verification
 > surface (`pegana_sdk`). Types come from the OpenAPI 3.1 spec — the source of
 > truth: <https://api.pegana.xyz/openapi.json>.
 
-> Published on PyPI as `pegana-sdk 0.3.0`. Install with `pip install pegana-sdk`.
+> Install with `pip install pegana-sdk`. The latest release on PyPI may lag this
+> source; see [CHANGELOG.md](./CHANGELOG.md) for what each version contains.
 
 ```sh
 # from a checkout of this repo
@@ -22,6 +23,8 @@ from pegana_api_client.api.assets import list_assets
 with Client(base_url="https://api.pegana.xyz") as client:
     envelope = list_assets.sync(client=client)
     for asset in envelope.data:
+        # discount = 1 - market/intrinsic: positive = trading below fair value,
+        # negative = premium. It is None until the asset has a snapshot.
         print(asset.symbol, asset.state, asset.discount)
 ```
 
@@ -48,7 +51,7 @@ The API is **public and keyless** — no key needed for reads. Full docs:
 pip install ./sdk/python
 ```
 
-## Full typed client (v0.3.0)
+## Full typed client
 
 ```python
 from pegana_api_client import Client
@@ -148,4 +151,7 @@ The server pushes `{"op":"update", "asset", "payload"}` and `{"op":"heartbeat",
 - **v0.3.0** ✅ — version sync (pegana_sdk + pegana_api_client unified under
   one package), classifier cleanup. Published on PyPI as `pegana-sdk 0.3.0`.
   Install with `pip install pegana-sdk`.
+- **v0.4.0**: regenerated from the current spec; drops the removed
+  `/v1/alerts`, `/v1/auth/*` and `/v1/me/*` modules (breaking). See
+  [CHANGELOG.md](./CHANGELOG.md).
 - **v1.0.0** — API stability commitment and semver guarantees.

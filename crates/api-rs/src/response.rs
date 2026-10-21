@@ -24,6 +24,12 @@ pub struct ApiList<T> {
     /// Number of items in `data`.
     pub count: usize,
     pub data: Vec<T>,
+    /// Time-series lists only (`/v1/assets/{symbol}/history`): RFC3339 of the
+    /// earliest snapshot Pegana has stored for the asset. Nothing exists before
+    /// it, so an empty or short window ending earlier is a data floor, not an
+    /// absence of events. Omitted elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_start: Option<String>,
 }
 
 impl<T> ApiList<T> {
@@ -33,7 +39,14 @@ impl<T> ApiList<T> {
             generated_at: crate::serde_fmt::rfc3339_millis_z(&Utc::now()),
             count: data.len(),
             data,
+            history_start: None,
         }
+    }
+
+    /// Attach the asset's stored-history floor (see `history_start`).
+    pub fn with_history_start(mut self, start: Option<String>) -> Self {
+        self.history_start = start;
+        self
     }
 
     /// Same envelope, but stamped with WHEN THE DATA WAS COMPUTED rather than
@@ -51,6 +64,7 @@ impl<T> ApiList<T> {
             generated_at,
             count: data.len(),
             data,
+            history_start: None,
         }
     }
 }

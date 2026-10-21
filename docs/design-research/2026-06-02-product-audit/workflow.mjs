@@ -15,7 +15,8 @@ export const meta = {
 // + LSTs. The 2026-06-01 audit redesigned ONLY the marketing pages; this
 // product app (the signed-in surfaces) was NOT touched — expect a visual seam.
 // ---------------------------------------------------------------------------
-const ROOT = '/Users/rafazaum/Desktop/Projetos/pegana'
+// Repo root: set PEGANA_ROOT, or run from the repo root.
+const ROOT = (typeof process !== 'undefined' && (process.env.PEGANA_ROOT || process.cwd())) || '.'
 const EVID = ROOT + '/docs/design-research/2026-06-02-product-audit'
 const SHOTS = EVID + '/shots'
 

@@ -40,7 +40,7 @@ Branch: `V2` (pushed). Commits ahead of `main`: 22. Vercel: `dpl_14rhDC6qE3R7xAW
 | # | Task | Blocker | Effort | Blocks Phase 2/3? |
 |---|---|---|---|---|
 | D2 | Hetzner CAX21 deploy per `docs/superpowers/specs/2026-05-25-production-deploy.md` | Operator session, separate spec | ~half day | No |
-| E1 | Enable dogfood routing (`FEATURE_PUBLIC_ALERTS=false` + `DOGFOOD_TELEGRAM_CHAT_ID=6647651772`) | Stable backend infra (does not require D2 strictly) | ~10 min | No |
+| E1 | Enable dogfood routing (`FEATURE_PUBLIC_ALERTS=false` + `DOGFOOD_TELEGRAM_CHAT_ID=<dogfood-chat-id>`) | Stable backend infra (does not require D2 strictly) | ~10 min | No |
 | E2 | 14-day passive observation (capture true/noise per asset, threshold deltas) | Time (14 days from E1) | passive | No |
 | E3 | Write `docs/CALIBRATION-v1.md` (per-asset p50/p95/p99 + threshold tuning) | E2 complete | ~2 h | **Yes — Phase 3 launch gate** |
 | ⬆ Perf follow-up | Landing bundle-split / hero motion lazy-load / PPR | — | ~half day | No (cosmetic Lighthouse gate, not user-facing block) |
@@ -1099,7 +1099,7 @@ In whatever env file the dispatcher reads:
 
 ```
 FEATURE_PUBLIC_ALERTS=false
-DOGFOOD_TELEGRAM_CHAT_ID=6647651772
+DOGFOOD_TELEGRAM_CHAT_ID=<dogfood-chat-id>
 ```
 
 - [ ] **Step 2: Restart the dispatcher**
@@ -1110,7 +1110,7 @@ docker compose -f docker-compose.yml restart dispatcher-rs
 
 - [ ] **Step 3: Verify alerts route only to dogfood chat**
 
-Trigger a synthetic alert (any test mechanism the project supports — likely a small change to `alert_events` row state in psql followed by `NOTIFY`). Confirm the Telegram message lands only in chat `6647651772`.
+Trigger a synthetic alert (any test mechanism the project supports — likely a small change to `alert_events` row state in psql followed by `NOTIFY`). Confirm the Telegram message lands only in chat `<dogfood-chat-id>`.
 
 - [ ] **Step 4: Note the start date in the calibration draft (see Task E3)**
 

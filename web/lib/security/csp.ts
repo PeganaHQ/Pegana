@@ -1,3 +1,5 @@
+import { staticOrigin } from "@/lib/static-assets";
+
 /**
  * Content Security Policy builder for Pegana web.
  *
@@ -12,6 +14,10 @@
  *   <Analytics /> component in app/layout.tsx (@vercel/analytics/next)
  * - https://api.pegana.xyz, wss://api.pegana.xyz — the production REST + WebSocket
  *   API that every data-fetch hook calls (lib/api/base.ts uses NEXT_PUBLIC_API_BASE)
+ * - img-src https://api.pegana.xyz — vendored token and partner logos, served by
+ *   the API box's Caddy at /static/ to keep them off Vercel's CDN quota. The
+ *   origin comes from lib/static-assets.ts, so an override of
+ *   NEXT_PUBLIC_STATIC_BASE moves the allowlist with it.
  * - https://*.sentry.io — Sentry event ingest endpoint; DSN host is
  *   o<orgid>.ingest.sentry.io. Note: Sentry browser requests are also tunneled
  *   through /monitoring (same-origin, see next.config.ts tunnelRoute), so the
@@ -19,7 +25,8 @@
  *   that bypass the tunnel (e.g. user-feedback endpoints, sourcemap uploads are
  *   server-only and don't need this)
  * - blob: in worker-src — Sentry Replay runs its session recorder in a Web Worker
- *   spawned from a blob: URL (instrumentation-client.ts uses replayIntegration)
+ *   spawned from a blob: URL. Replay is currently not registered (see
+ *   instrumentation-client.ts); the allowance is kept for when it returns.
  */
 
 /**
@@ -29,6 +36,7 @@
  * @returns Flat single-line CSP policy string (semicolon-delimited directives)
  */
 export function buildCsp(nonce: string): string {
+  const staticImg = staticOrigin();
   const directives = [
     "default-src 'self'",
 
@@ -65,7 +73,10 @@ export function buildCsp(nonce: string): string {
     // img-src into a wildcard on a product that sells verifiability. Anything
     // outside these hosts is blocked by CSP and the feed falls back to its
     // placeholder tile via the <img> onError handler, so it degrades quietly.
-    "img-src 'self' data: blob: https://*.coingecko.com https://*.twimg.com",
+    //
+    // The static asset origin (token and partner logos, lib/static-assets.ts)
+    // is the API box by default; it is omitted when the files are same-origin.
+    `img-src 'self' data: blob:${staticImg ? ` ${staticImg}` : ""} https://*.coingecko.com https://*.twimg.com`,
 
     // Google Fonts are self-hosted via next/font (Geist + Geist Mono)
     "font-src 'self'",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import type { AssetCardData, HistoryPoint, PegState } from "@/lib/api/types";
 import {
   formatMarketCapUsd,
@@ -179,8 +179,13 @@ export function AssetHeroV2({
     if (reason) detailItems.push(reason);
   }
   if (navSide && navSide !== "at-nav") {
+    // Only NAV-anchored assets (LSTs, yield stables) trade against a NAV. A
+    // fiat/CDP/delta-neutral stable is measured against its $1 peg, and USDC
+    // was labelled "discount to NAV".
+    const ref =
+      asset.anchor && asset.anchor.toUpperCase() !== "NAV" ? "peg" : "NAV";
     detailItems.push(
-      navSide === "premium" ? "premium to NAV" : "discount to NAV",
+      navSide === "premium" ? `premium to ${ref}` : `discount to ${ref}`,
     );
   }
   // "drift floor" is a peg concept — meaningless for a leveraged token (no peg).

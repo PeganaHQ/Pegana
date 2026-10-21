@@ -8,8 +8,9 @@
 //! shared "no snapshots for X" message conflated.
 //!
 //! Codes: `unknown_asset` (404) · `no_data` (404) · `invalid_bucket` (400) ·
-//! `invalid_query` (400) · `bad_request` (400) · `internal` (500). Every error
-//! across the public API is JSON.
+//! `invalid_query` (400) · `bad_request` (400) · `invalid_asset` (400) ·
+//! `invalid_range` (400) · `internal` (500). Every error across the public API
+//! is JSON and carries `error` + `message` (some codes add fields).
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -39,13 +40,72 @@ impl ApiError {
         }
     }
 
-    /// 404 — the symbol IS tracked but has no snapshot yet (distinct from unknown).
+    /// 404 `unknown_asset` — the asset is tracked internally but is not part of
+    /// the public peg surface: a leveraged synthetic (`synth_lev`, e.g. xSOL)
+    /// has no peg, so it is excluded from every public asset route, the feed,
+    /// stats and the WebSocket stream. Same code as an untracked symbol, so
+    /// clients branch identically; the message says why.
+    pub fn not_public(symbol: impl Into<String>) -> Self {
+        let symbol = symbol.into();
+        Self {
+            message: format!(
+                "asset '{symbol}' is a leveraged synthetic (class synth_lev) with no peg, so it is not served on the public peg surface"
+            ),
+            error: "unknown_asset".into(),
+            asset: Some(symbol),
+        }
+    }
+
+    /// 404 — the symbol IS tracked but no discount snapshot is stored for it
+    /// (distinct from unknown). This happens both before the first reading and
+    /// when the asset's sources have produced nothing for the whole retention
+    /// window, so the message must not promise one is coming ("yet"). List
+    /// endpoints report the same asset as `state: "UNKNOWN"`,
+    /// `state_reason: "stale_source"`.
     pub fn no_data(symbol: impl Into<String>) -> Self {
         let symbol = symbol.into();
         Self {
-            message: format!("asset '{symbol}' is tracked but has no snapshot yet"),
+            message: format!(
+                "asset '{symbol}' is tracked but has no stored snapshot: its sources have not produced a usable reading anywhere in Pegana's stored history, so its state is UNKNOWN (the same asset reads state UNKNOWN, state_reason stale_source on /v1/assets)"
+            ),
             error: "no_data".into(),
             asset: Some(symbol),
+        }
+    }
+
+    /// 404 `no_data` — tracked, no stored discount snapshot, and the cause is the
+    /// MARKET leg: the intrinsic (NAV) is fresh but there is no reliable market
+    /// tick. List endpoints report it as UNKNOWN with `state_reason`
+    /// `market_unavailable`.
+    pub fn no_data_market(symbol: impl Into<String>) -> Self {
+        let symbol = symbol.into();
+        Self {
+            message: format!(
+                "asset '{symbol}' is tracked but has no stored snapshot: its intrinsic value is fresh, but there is no reliable market price, so no discount can be computed and its state is UNKNOWN"
+            ),
+            error: "no_data".into(),
+            asset: Some(symbol),
+        }
+    }
+
+    /// 400 — a symbol or mint path/query parameter that cannot name any asset
+    /// (bad characters, a NUL byte, wrong length). Rejected before it reaches
+    /// Postgres, which answers a NUL byte with an error (was an HTTP 500).
+    /// The input is not echoed back.
+    pub fn invalid_asset(message: impl Into<String>) -> Self {
+        Self {
+            error: "invalid_asset".into(),
+            message: message.into(),
+            asset: None,
+        }
+    }
+
+    /// 400 — an inverted or empty time window (`from` after `to`).
+    pub fn invalid_range(message: impl Into<String>) -> Self {
+        Self {
+            error: "invalid_range".into(),
+            message: message.into(),
+            asset: None,
         }
     }
 
@@ -108,9 +168,8 @@ impl ApiError {
     /// the serialized body.
     fn status(&self) -> StatusCode {
         match self.error.as_str() {
-            "invalid_bucket" | "invalid_limit" | "invalid_query" | "bad_request" => {
-                StatusCode::BAD_REQUEST
-            }
+            "invalid_bucket" | "invalid_limit" | "invalid_query" | "bad_request"
+            | "invalid_asset" | "invalid_range" => StatusCode::BAD_REQUEST,
             "unauthorized" => StatusCode::UNAUTHORIZED,
             "internal" => StatusCode::INTERNAL_SERVER_ERROR,
             // unknown_asset | no_data | not_found
@@ -148,6 +207,11 @@ mod tests {
         let ndv = serde_json::to_value(&nd).unwrap();
         assert_eq!(ndv.get("error").and_then(|x| x.as_str()), Some("no_data"));
         assert_eq!(ndv.get("asset").and_then(|x| x.as_str()), Some("BAR"));
+
+        for e in [ApiError::invalid_asset("x"), ApiError::invalid_range("y")] {
+            assert_eq!(e.status(), StatusCode::BAD_REQUEST);
+            assert!(serde_json::to_value(&e).unwrap().get("asset").is_none());
+        }
 
         let ib = ApiError::invalid_bucket("5m", &["raw", "1m"]);
         assert_eq!(ib.status(), StatusCode::BAD_REQUEST);

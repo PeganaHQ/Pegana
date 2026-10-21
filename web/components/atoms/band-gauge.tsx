@@ -30,6 +30,7 @@ export function BandGauge({
   thresholds,
   state,
   klass,
+  crBand = false,
   showValue = true,
   className,
 }: {
@@ -38,6 +39,10 @@ export function BandGauge({
   state: PegState;
   /** Asset class — enables the direction-sensitive premium carve-out. */
   klass?: AssetClass;
+  /** The asset is banded on collateral ratio (hyUSD: `cr_*` thresholds), so
+   *  a spread proximity would come from a fallback table, not its own bands.
+   *  See `isCollateralRatioThresholds`. */
+  crBand?: boolean;
   showValue?: boolean;
   className?: string;
 }) {
@@ -53,6 +58,27 @@ export function BandGauge({
       >
         -
       </span>
+    );
+  }
+  if (crBand) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            className={cn(
+              "block text-right font-mono text-[11px] text-text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text",
+              className,
+            )}
+          >
+            CR band
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          This asset is banded on its collateral ratio, not on the spread, so
+          there is no spread proximity to show.
+        </TooltipContent>
+      </Tooltip>
     );
   }
   // `synth_lev` (xSOL) is direction-sensitive FOR DISPLAY too: a premium (market

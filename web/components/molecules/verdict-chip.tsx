@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { StatePip } from "@/components/atoms/state-pip";
 import { stateMeta } from "@/lib/asset/state-meta";
 import { holderSignedPct } from "@/lib/api/format";

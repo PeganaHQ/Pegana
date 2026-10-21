@@ -29,6 +29,8 @@ import { subscribePegEventsTool } from "@/tools/subscribe-peg-events";
 import { verifyAlertTool } from "@/tools/verify-alert";
 import { withMetrics } from "@/metrics";
 import { withRateLimit, withCallLog } from "@/middleware";
+import { withConformedOutput } from "@/middleware/conform-output";
+import { withSafeErrors } from "@/middleware/safe-errors";
 
 interface SharedMcpState {
   /** Kept for the Bazaar discovery extension registration (see @/x402). */
@@ -51,8 +53,102 @@ export async function initSharedState(): Promise<SharedMcpState> {
   return cachedState;
 }
 
+// Everything registerTool needs from a tool module.
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: z.ZodRawShape;
+  outputSchema: z.ZodRawShape;
+  annotations: ToolAnnotations & { title: string };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handler: (args: any, extra?: unknown) => Promise<any>;
+}
+
 /**
- * Per-request McpServer factory. Cheap — every tool is free, so there is
+ * The published JSON Schema for a raw shape says `additionalProperties: false`,
+ * but the SDK parses arguments with a default (stripping) zod object, so an
+ * unknown argument was silently dropped instead of rejected (R2 audit idx
+ * 23b). A strict object makes validation match the published contract: an
+ * extra key is an "Input validation error". Zero-argument tools keep the raw
+ * empty shape (published as the SDK's plain empty-object schema).
+ */
+export function strictInput(shape: z.ZodRawShape): z.ZodRawShape | z.AnyZodObject {
+  return Object.keys(shape).length > 0 ? z.object(shape).strict() : shape;
+}
+
+/**
+ * Register one free tool with the shared middleware stack, outermost first:
+ * rate limit (100/min per caller IP) -> safe errors (a thrown error becomes a
+ * generic isError result, never the raw driver text; see
+ * @/middleware/safe-errors) -> call log -> metrics -> output conformance
+ * (structuredContent stripped to exactly the published schema, see
+ * @/middleware/conform-output).
+ */
+function registerFreeTool(mcp: McpServer, tool: ToolDefinition): void {
+  mcp.registerTool(
+    tool.name,
+    {
+      title: tool.annotations.title,
+      description: tool.description,
+      inputSchema: strictInput(tool.inputSchema),
+      outputSchema: tool.outputSchema,
+      annotations: tool.annotations,
+    },
+    withRateLimit(
+      tool.name,
+      withSafeErrors(
+        tool.name,
+        withCallLog(
+          tool.name,
+          withMetrics(
+            tool.name,
+            withConformedOutput(tool.outputSchema, tool.handler),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+// `ping_paid` predates the free tier. The name and its `paid pong` reply are
+// kept so existing agents and docs keep working; it is free like every tool.
+const pingPaidTool: ToolDefinition = {
+  name: "ping_paid",
+  description:
+    "Legacy alias of `ping`, kept so existing agents keep working. Returns `paid pong` in both `content` and `structuredContent.message`; free, no payment involved. For plain liveness use `ping`.",
+  inputSchema: {},
+  outputSchema: {
+    message: z.string().describe("Always `paid pong`."),
+  },
+  annotations: {
+    title: "Ping (legacy alias)",
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  handler: async () => ({
+    content: [{ type: "text" as const, text: "paid pong" }],
+    structuredContent: { message: "paid pong" },
+  }),
+};
+
+/** Every registered tool, in tools/list order. */
+export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
+  pingTool,
+  getAssetsTool,
+  getAssetStateTool,
+  getMethodologyTool,
+  getLoopExposureTool,
+  simulateDepegTool,
+  verifyAlertTool,
+  pingPaidTool,
+  getAssetHistoryTool,
+  subscribePegEventsTool,
+];
+
+/**
+ * Per-request McpServer factory. Cheap: every tool is free, so there is
  * nothing per-request to build beyond the registrations themselves. Call
  * `initSharedState()` once at boot.
  */
@@ -63,205 +159,6 @@ export async function createMcpServer(): Promise<McpServer> {
     name: "pegana-oracle",
     version: "0.1.0",
   });
-
-  // ── Free tools ────────────────────────────────────────────────────
-  // All free tools are rate-limited (100/min/agent — fingerprinted by
-  // source IP since no x402 payment header is present) so the unmetered
-  // free surface can't be abused. withCallLog telemeters usage to
-  // mcp_call_log; same `withRateLimit(withCallLog(...))` composition as
-  // verify_alert below.
-  mcp.registerTool(
-    pingTool.name,
-    {
-      title: pingTool.annotations.title,
-      description: pingTool.description,
-      inputSchema: pingTool.inputSchema,
-      outputSchema: pingTool.outputSchema,
-      annotations: pingTool.annotations,
-    },
-    withRateLimit(
-      pingTool.name,
-      withCallLog(pingTool.name, withMetrics(pingTool.name, pingTool.handler)),
-    ),
-  );
-  mcp.registerTool(
-    getAssetsTool.name,
-    {
-      title: getAssetsTool.annotations.title,
-      description: getAssetsTool.description,
-      inputSchema: getAssetsTool.inputSchema,
-      outputSchema: getAssetsTool.outputSchema,
-      annotations: getAssetsTool.annotations,
-    },
-    withRateLimit(
-      getAssetsTool.name,
-      withCallLog(
-        getAssetsTool.name,
-        withMetrics(getAssetsTool.name, getAssetsTool.handler),
-      ),
-    ),
-  );
-  mcp.registerTool(
-    getAssetStateTool.name,
-    {
-      title: getAssetStateTool.annotations.title,
-      description: getAssetStateTool.description,
-      inputSchema: getAssetStateTool.inputSchema,
-      outputSchema: getAssetStateTool.outputSchema,
-      annotations: getAssetStateTool.annotations,
-    },
-    withRateLimit(
-      getAssetStateTool.name,
-      withCallLog(
-        getAssetStateTool.name,
-        withMetrics(getAssetStateTool.name, getAssetStateTool.handler),
-      ),
-    ),
-  );
-  mcp.registerTool(
-    getMethodologyTool.name,
-    {
-      title: getMethodologyTool.annotations.title,
-      description: getMethodologyTool.description,
-      inputSchema: getMethodologyTool.inputSchema,
-      outputSchema: getMethodologyTool.outputSchema,
-      annotations: getMethodologyTool.annotations,
-    },
-    withRateLimit(
-      getMethodologyTool.name,
-      withCallLog(
-        getMethodologyTool.name,
-        withMetrics(getMethodologyTool.name, getMethodologyTool.handler),
-      ),
-    ),
-  );
-  mcp.registerTool(
-    getLoopExposureTool.name,
-    {
-      title: getLoopExposureTool.annotations.title,
-      description: getLoopExposureTool.description,
-      inputSchema: getLoopExposureTool.inputSchema,
-      outputSchema: getLoopExposureTool.outputSchema,
-      annotations: getLoopExposureTool.annotations,
-    },
-    withRateLimit(
-      getLoopExposureTool.name,
-      withCallLog(
-        getLoopExposureTool.name,
-        withMetrics(getLoopExposureTool.name, getLoopExposureTool.handler),
-      ),
-    ),
-  );
-  mcp.registerTool(
-    simulateDepegTool.name,
-    {
-      title: simulateDepegTool.annotations.title,
-      description: simulateDepegTool.description,
-      inputSchema: simulateDepegTool.inputSchema,
-      outputSchema: simulateDepegTool.outputSchema,
-      annotations: simulateDepegTool.annotations,
-    },
-    withRateLimit(
-      simulateDepegTool.name,
-      withCallLog(
-        simulateDepegTool.name,
-        withMetrics(simulateDepegTool.name, simulateDepegTool.handler),
-      ),
-    ),
-  );
-  // verify_alert is free per ADR-0011 but rate-limited (100/min/agent)
-  // and telemetered to mcp_call_log so we still get a usage signal.
-  mcp.registerTool(
-    verifyAlertTool.name,
-    {
-      title: verifyAlertTool.annotations.title,
-      description: verifyAlertTool.description,
-      inputSchema: verifyAlertTool.inputSchema,
-      // Audit C P1: declared so MCP clients can rely on structuredContent.
-      // Without this, the SDK silently drops/warns on structuredContent.
-      outputSchema: verifyAlertTool.outputSchema,
-      annotations: verifyAlertTool.annotations,
-    },
-    withRateLimit(
-      verifyAlertTool.name,
-      withCallLog(
-        verifyAlertTool.name,
-        withMetrics(verifyAlertTool.name, verifyAlertTool.handler),
-      ),
-    ),
-  );
-
-  // ── Formerly-paid tools (now free) ────────────────────────────────
-  // The tool names are unchanged so existing agents keep working; only the
-  // payment wrapper is gone. All three get the same rate-limit + call-log +
-  // metrics composition as every other tool.
-  const pingPaidAnnotations = {
-    title: "Ping (MCP smoke test)",
-    readOnlyHint: true,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: false,
-  } satisfies ToolAnnotations;
-  mcp.registerTool(
-    "ping_paid",
-    {
-      title: pingPaidAnnotations.title,
-      description:
-        "Returns `paid pong` in both `content` and `structuredContent.message`. Smoke test for the MCP call path. Free; for plain liveness use `ping`.",
-      inputSchema: {},
-      outputSchema: {
-        message: z.string().describe("Always `paid pong`."),
-      },
-      annotations: pingPaidAnnotations,
-    },
-    withRateLimit(
-      "ping_paid",
-      withCallLog(
-        "ping_paid",
-        withMetrics("ping_paid", async () => ({
-          content: [{ type: "text" as const, text: "paid pong" }],
-          structuredContent: { message: "paid pong" },
-        })),
-      ),
-    ),
-  );
-  mcp.registerTool(
-    getAssetHistoryTool.name,
-    {
-      title: getAssetHistoryTool.annotations.title,
-      description: getAssetHistoryTool.description,
-      inputSchema: getAssetHistoryTool.inputSchema,
-      outputSchema: getAssetHistoryTool.outputSchema,
-      annotations: getAssetHistoryTool.annotations,
-    },
-    withRateLimit(
-      getAssetHistoryTool.name,
-      withCallLog(
-        getAssetHistoryTool.name,
-        withMetrics(getAssetHistoryTool.name, getAssetHistoryTool.handler),
-      ),
-    ),
-  );
-  mcp.registerTool(
-    subscribePegEventsTool.name,
-    {
-      title: subscribePegEventsTool.annotations.title,
-      description: subscribePegEventsTool.description,
-      inputSchema: subscribePegEventsTool.inputSchema,
-      outputSchema: subscribePegEventsTool.outputSchema,
-      annotations: subscribePegEventsTool.annotations,
-    },
-    withRateLimit(
-      subscribePegEventsTool.name,
-      withCallLog(
-        subscribePegEventsTool.name,
-        withMetrics(
-          subscribePegEventsTool.name,
-          subscribePegEventsTool.handler,
-        ),
-      ),
-    ),
-  );
-
+  for (const tool of TOOL_DEFINITIONS) registerFreeTool(mcp, tool);
   return mcp;
 }

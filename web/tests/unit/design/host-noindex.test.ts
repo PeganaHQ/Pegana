@@ -33,18 +33,17 @@ beforeEach(() => {
   hdr.host = APP;
 });
 
-describe("proxy — X-Robots-Tag on the console host", () => {
-  it("marks console pages noindex", () => {
-    for (const path of [
-      "/dashboard",
-      "/assets",
-      "/compare",
-      "/events",
-      "/systemic",
-    ]) {
-      const res = proxy(request(APP, path));
-      expect(res.status, path).toBe(200);
-      expect(res.headers.get("x-robots-tag"), path).toBe("noindex");
+describe("proxy — the app host redirects to www", () => {
+  // app.pegana.xyz used to serve a full noindex duplicate of the site. Every
+  // surface is public on www now, so the app host 308s to the same path there.
+  it("308s every app-host document to the same path on www", () => {
+    for (const path of ["/", "/dashboard", "/assets", "/lst", "/asset/USDC"]) {
+      const res = proxy(request(APP, `${path}?tab=history`));
+      expect(res.status, path).toBe(308);
+      const loc = new URL(res.headers.get("location")!);
+      expect(loc.host, path).toBe(WWW);
+      expect(loc.pathname, path).toBe(path);
+      expect(loc.search, path).toBe("?tab=history");
     }
   });
 
@@ -63,18 +62,10 @@ describe("proxy — X-Robots-Tag on the console host", () => {
   });
 });
 
-describe("proxy — no cross-host redirects", () => {
+describe("proxy — no cross-host redirects on www", () => {
   it("serves console paths on www instead of redirecting them", () => {
     for (const path of ["/dashboard", "/assets", "/compare", "/events"]) {
       const res = proxy(request(WWW, path));
-      expect(res.status, path).toBe(200);
-      expect(res.headers.get("location"), path).toBeNull();
-    }
-  });
-
-  it("serves marketing paths on the app host instead of redirecting", () => {
-    for (const path of ["/", "/lst", "/methodology"]) {
-      const res = proxy(request(APP, path));
       expect(res.status, path).toBe(200);
       expect(res.headers.get("location"), path).toBeNull();
     }

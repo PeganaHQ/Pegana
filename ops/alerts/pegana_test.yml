@@ -2,9 +2,9 @@
 #
 # Run with: promtool test rules ops/alerts/pegana_test.yml
 #
-# Currently covers PeganaAssetMiscalibrated — the api-rs periodic export of
+# Covers PeganaAssetMiscalibrated, the api-rs periodic export of
 # the /v1/calibration self-monitor (pegana_calibration_health_code) turned
-# into a paging alert. See the group comment in pegana.yml for the code
+# into a paging alert, plus the rules tested further down. See the group comment in pegana.yml for the code
 # mapping (ok=0, watch=1, miscalibrated=2, no_data=-1, na=-2, inactive=-3).
 
 rule_files:
@@ -153,7 +153,7 @@ tests:
 
   - interval: 1m
     input_series:
-      - series: 'alertmanager_notifications_failed_total{integration="telegram",receiver="telegram-critical"}'
+      - series: 'alertmanager_notifications_failed_total{integration="discord",receiver="discord-critical"}'
         values: "0 0 1 1 1 1"
     alert_rule_test:
       - eval_time: 3m
@@ -162,11 +162,265 @@ tests:
           - exp_labels:
               severity: critical
               service: alertmanager
-              integration: telegram
-              receiver: telegram-critical
+              integration: discord
+              receiver: discord-critical
             exp_annotations:
               summary: "Alertmanager notification delivery failing"
               description: |
                 `increase(alertmanager_notifications_failed_total[5m]) > 0`.
-                Alertmanager failed to deliver at least one notification; inspect its logs,
-                Telegram credentials, receiver configuration, and network reachability.
+                Alertmanager failed to deliver at least one notification; inspect its logs
+                (the `integration` label says telegram or discord), the channel inputs
+                (ALERTMANAGER_TELEGRAM_BOT_TOKEN / ALERTMANAGER_TELEGRAM_CHAT_ID, or
+                ALERTMANAGER_DISCORD_WEBHOOK_URL), and network reachability. This alert
+                may not get through while delivery is broken: check the Prometheus alerts
+                page or `docker compose logs alertmanager`.
+
+  # ── pegana.backups + PeganaDeadAssets baseline (r1-ops) ──
+  - interval: 1m
+    input_series:
+    - series: pegana_backup_local_last_success_timestamp_seconds
+      values: '0x600'
+    - series: pegana_backup_offsite_last_success_timestamp_seconds
+      values: '0x600'
+    - series: pegana_backup_offsite_enabled
+      values: 1x600
+    - series: pegana_backup_last_exit_code
+      values: 4x600
+    - series: pegana_backup_last_run_timestamp_seconds
+      values: 0+60x600
+    alert_rule_test:
+    - eval_time: 9h
+      alertname: PeganaBackupLocalStale
+      exp_alerts:
+      - exp_labels:
+          severity: critical
+          service: backup
+        exp_annotations:
+          summary: No verified Postgres backup in the last 8h
+          description: '`time() - pegana_backup_local_last_success_timestamp_seconds > 8h`.
+
+            pg-backup.sh has not produced a verified local dump (cron runs every
+
+            6h). Check `tail -50 ~/.pg-backup.log` and
+
+            `~/.pegana-metrics/pegana_backup.prom` (pegana_backup_last_exit_code:
+
+            2 config, 3 dump/verify, 5 disk). See docs/runbooks/restore.md.
+
+            '
+    - eval_time: 9h
+      alertname: PeganaBackupOffsiteStale
+      exp_alerts:
+      - exp_labels:
+          severity: warning
+          service: backup
+        exp_annotations:
+          summary: No backup has reached R2 in the last 8h (local copies only)
+          description: '`time() - pegana_backup_offsite_last_success_timestamp_seconds > 8h`
+
+            with offsite enabled. Local copies in ~/backups are being kept, but
+
+            losing the box would lose the data. Usual cause: the R2 token behind
+
+            the `r2:` rclone remote lacks Object Read & Write (403 AccessDenied
+
+            in ~/.pg-backup.log).
+
+            '
+    - eval_time: 9h
+      alertname: PeganaBackupLastRunFailed
+      exp_alerts:
+      - exp_labels:
+          severity: warning
+          service: backup
+        exp_annotations:
+          summary: Last pg-backup.sh run failed (exit 4)
+          description: '`pegana_backup_last_exit_code != 0`. Exit 4 = verified local copy
+
+            kept but the R2 upload failed; 3 = dump or verification failed;
+
+            2 = configuration; 5 = not enough disk. Check ~/.pg-backup.log.
+
+            '
+    - eval_time: 9h
+      alertname: PeganaBackupNotRunning
+      exp_alerts: []
+  - interval: 1m
+    input_series:
+    - series: pegana_backup_local_last_success_timestamp_seconds
+      values: 0+60x600
+    - series: pegana_backup_offsite_last_success_timestamp_seconds
+      values: '0x600'
+    - series: pegana_backup_offsite_enabled
+      values: '0x600'
+    - series: pegana_backup_last_exit_code
+      values: '0x600'
+    - series: pegana_backup_last_run_timestamp_seconds
+      values: 0+60x600
+    alert_rule_test:
+    - eval_time: 9h
+      alertname: PeganaBackupLocalStale
+      exp_alerts: []
+    - eval_time: 9h
+      alertname: PeganaBackupOffsiteStale
+      exp_alerts: []
+    - eval_time: 9h
+      alertname: PeganaBackupLastRunFailed
+      exp_alerts: []
+    - eval_time: 9h
+      alertname: PeganaBackupNotRunning
+      exp_alerts: []
+  - interval: 1m
+    input_series:
+    - series: up{job="prometheus-self"}
+      values: 1x60
+    alert_rule_test:
+    - eval_time: 45m
+      alertname: PeganaBackupNotRunning
+      exp_alerts:
+      - exp_labels:
+          severity: warning
+          service: backup
+        exp_annotations:
+          summary: pg-backup.sh has not run in 7h, or its metrics are missing
+          description: 'No pg-backup.sh run finished in the last 7h (cron is every 6h), or
+
+            the textfile metric is absent (cron entry missing, ~/.pegana-metrics
+
+            not mounted into node-exporter, or node-exporter down). Check
+
+            `crontab -l | grep pg-backup` and `docker compose ps node-exporter`.
+
+            '
+  - interval: 1m
+    input_series:
+    - series: pegana_engine_dead_assets{service="engine"}
+      values: 10x120 67 67 10x60 11x30
+    alert_rule_test:
+    - eval_time: 120m
+      alertname: PeganaDeadAssets
+      exp_alerts: []
+    - eval_time: 150m
+      alertname: PeganaDeadAssets
+      exp_alerts: []
+    - eval_time: 200m
+      alertname: PeganaDeadAssets
+      exp_alerts:
+      - exp_labels:
+          severity: warning
+          service: engine
+        exp_annotations:
+          summary: 11 active assets are not publishing, more than the 7-day baseline
+          description: '`pegana_engine_dead_assets > min_over_time(pegana_engine_dead_assets[7d])`
+
+            for >15m. At least one active asset that published during the last
+
+            7 days has not published since the engine started. The known
+
+            never-publishing (UNKNOWN by design) set is the baseline and does
+
+            not fire this. Find the newcomer in the engine `H12b freshness
+
+            sweep` log line (`dead=` list) and compare with the previous list.
+
+            '
+
+  # Shared WS fan-out: disconnected for the full 2m window fires.
+  - interval: 30s
+    input_series:
+      - series: 'pegana_ws_fanout_connected{service="api"}'
+        values: "1 0x10"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PeganaWsFanoutDisconnected
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PeganaWsFanoutDisconnected
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: api
+            exp_annotations:
+              summary: "API WebSocket fan-out is disconnected from Redis"
+              description: |
+                `pegana_ws_fanout_connected == 0` for 2m. The shared Redis
+                subscription that feeds /v1/ws is down, so live frames are not
+                reaching clients. Check the api logs for the fan-out reconnect loop
+                and Redis health.
+
+  # Fan-out stalls: the counter climbs by 1 per minute, so by 10m the 15m
+  # increase is above 3 and the rule fires; at 3m only ~3 or fewer stalls are
+  # in the window (3 is not > 3), so it must not.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_ws_fanout_stalls_total{service="api"}'
+        values: "0+1x20"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PeganaWsFanoutStalling
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: PeganaWsFanoutStalling
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: api
+            exp_annotations:
+              summary: "API WebSocket fan-out stalled more than 3 times in 15m"
+              description: |
+                `increase(pegana_ws_fanout_stalls_total[15m]) > 3`. The shared
+                fan-out keeps stalling and reconnecting: its Redis subscription was
+                silent for 30s each time. Either the engine heartbeat (every 5s) is
+                absent, or Redis is wedged. Check the engine is publishing, the api
+                logs for "stall" lines, and Redis health.
+
+  # fd usage: 90% held past 5m fires; 50% does not.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_api_open_fds{service="api"}'
+        values: "900x10"
+      - series: 'pegana_api_fd_limit{service="api"}'
+        values: "1000x10"
+      - series: 'pegana_api_open_fds{service="low"}'
+        values: "500x10"
+      - series: 'pegana_api_fd_limit{service="low"}'
+        values: "1000x10"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: PeganaApiFdsNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: api
+            exp_annotations:
+              summary: "API process is using more than 80% of its file descriptor limit"
+              description: |
+                `pegana_api_open_fds / pegana_api_fd_limit > 0.8` for 5m. The api
+                is approaching EMFILE; new connections will fail once the soft
+                limit is hit. Look for a connection or socket leak, then raise the
+                container nofile limit if the load is legitimate.
+
+  # NAV-sanity UNKNOWN: a counter that keeps rising fires only after the
+  # `for: 15m` hold; a single bump does not page.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_engine_nav_sanity_unknown_total{service="engine"}'
+        values: "0+1x40"
+      - series: 'pegana_engine_nav_sanity_unknown_total{service="engine",asset="once"}'
+        values: "0 1 1x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PeganaNavSanityUnknownSpike
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PeganaNavSanityUnknownSpike
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: engine
+            exp_annotations:
+              summary: "NAV-sanity forced an asset to UNKNOWN"
+              description: |
+                `increase(pegana_engine_nav_sanity_unknown_total[15m]) > 0` for
+                15m. The methodology caught a broken NAV anchor (sHYUSD-class);
+                expected occasionally, investigate if sustained.

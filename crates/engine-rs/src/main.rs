@@ -220,6 +220,7 @@ async fn main() -> Result<()> {
 
     let engine = Arc::new(
         EngineState::new(&assets, assets_canonical, cfg.pyth_staleness_secs)
+            .with_pyth_onchain_staleness(cfg.pyth_onchain_staleness_secs)
             .with_depth_gate(depth_gate_floor_usd, depth_gate_freshness_secs)
             .with_intrinsic_liveness_gate(
                 intrinsic_liveness_gate_enabled,
@@ -386,7 +387,7 @@ async fn main() -> Result<()> {
 
 async fn publish_heartbeat(redis: &mut redis::aio::ConnectionManager) -> Result<()> {
     use redis::AsyncCommands;
-    let payload = serde_json::json!({ "kind": "heartbeat", "ts": Utc::now() });
+    let payload = serde_json::json!({ "kind": "heartbeat", "ts": wire_ts(&Utc::now()) });
     let json = serde_json::to_string(&payload)?;
     let _: redis::Value = redis.publish(channels::DISCOUNT, json).await?;
     metrics::counter!("pegana_engine_publishes_total", "kind" => "heartbeat").increment(1);
@@ -404,6 +405,11 @@ struct EngineConfig {
     /// stale prices for FX-cross intrinsics like BRZ.
     #[serde(default = "default_pyth_staleness")]
     pub pyth_staleness_secs: i64,
+    /// Max age (s) for Pyth prints the indexer read from on-chain push-oracle
+    /// accounts (`PYTH_ONCHAIN_STALENESS_SECS`, default 120). Those step at the
+    /// push-feed heartbeat (about 60s), not Hermes' ~1 Hz.
+    #[serde(default = "default_pyth_onchain_staleness")]
+    pub pyth_onchain_staleness_secs: i64,
     /// Postgres pool ceiling. Default 10 (sqlx's default) — engine runs a
     /// single-consumer recompute loop + a few low-concurrency workers, so the
     /// ceiling isn't the risk here. Override via DB_MAX_CONNECTIONS.
@@ -420,6 +426,9 @@ fn default_assets_path() -> PathBuf {
 }
 fn default_pyth_staleness() -> i64 {
     30
+}
+fn default_pyth_onchain_staleness() -> i64 {
+    state::DEFAULT_PYTH_ONCHAIN_STALENESS_SECS
 }
 fn default_db_max_connections() -> u32 {
     10
@@ -502,7 +511,11 @@ async fn handle_message(
                     .map(|d| d.with_timezone(&Utc)),
             ) {
                 let conf = parse_decimal_opt(&value, "confidence").unwrap_or(Decimal::ZERO);
-                engine.set_pyth(feed, price, publish_time, conf).await;
+                // `origin` is additive: absent (older indexers) means Hermes.
+                let onchain = value.get("origin").and_then(|v| v.as_str()) == Some("onchain");
+                engine
+                    .set_pyth_with_origin(feed, price, publish_time, conf, onchain)
+                    .await;
             }
             // Secondary envelope: when the Pyth source fans out an
             // asset-specific update, it includes an `asset` field. There are
@@ -1691,6 +1704,48 @@ async fn persist_discount(
     Ok(())
 }
 
+/// Wire timestamp shared with REST (`api-rs::serde_fmt::rfc3339_millis_z`):
+/// RFC3339, millisecond precision, `Z` suffix. The WS used to emit chrono's
+/// default nanosecond form, so the same tick read differently on WS and REST.
+fn wire_ts(t: &chrono::DateTime<Utc>) -> String {
+    t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// Round to the scale of the `discount_snapshots` column REST serves from,
+/// with Postgres' NUMERIC rounding (half away from zero), then strip trailing
+/// zeros like REST's `dec_norm`. So a WS frame and `/v1/assets` agree on the
+/// same tick's value.
+fn wire_decimal(v: Decimal, column_scale: u32) -> String {
+    v.round_dp_with_strategy(
+        column_scale,
+        rust_decimal::RoundingStrategy::MidpointAwayFromZero,
+    )
+    .normalize()
+    .to_string()
+}
+
+/// The `kind: "update"` frame fanned out to WebSocket clients. Same wire
+/// format as REST: `discount` at NUMERIC(10,6), the USD legs at
+/// NUMERIC(30,18), trailing zeros trimmed, millisecond timestamps.
+fn ws_update_payload(
+    asset: &str,
+    state: PegState,
+    discount: Decimal,
+    intrinsic_usd: Decimal,
+    market_usd: Decimal,
+    ts: chrono::DateTime<Utc>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "update",
+        "asset": asset,
+        "state": peg_state_label(state),
+        "discount": wire_decimal(discount, 6),
+        "intrinsic_usd": wire_decimal(intrinsic_usd, 18),
+        "market_usd": wire_decimal(market_usd, 18),
+        "updated_at": wire_ts(&ts),
+    })
+}
+
 async fn publish_discount(
     redis: &mut redis::aio::ConnectionManager,
     asset: &str,
@@ -1701,15 +1756,7 @@ async fn publish_discount(
     ts: chrono::DateTime<Utc>,
 ) -> Result<()> {
     use redis::AsyncCommands;
-    let payload = serde_json::json!({
-        "kind": "update",
-        "asset": asset,
-        "state": peg_state_label(state),
-        "discount": discount.to_string(),
-        "intrinsic_usd": intrinsic_usd.to_string(),
-        "market_usd": market_usd.to_string(),
-        "updated_at": ts,
-    });
+    let payload = ws_update_payload(asset, state, discount, intrinsic_usd, market_usd, ts);
     let json = serde_json::to_string(&payload)?;
     let _: redis::Value = redis.publish(channels::DISCOUNT, json).await?;
     metrics::counter!("pegana_engine_publishes_total", "kind" => "update").increment(1);
@@ -2056,6 +2103,42 @@ mod tests {
     use pegana_common::AssetsFile;
     use rust_decimal::Decimal;
     use serde_json::json;
+
+    /// WS frames use the REST wire format: discount at 6 dp (Postgres
+    /// half-away-from-zero rounding), trimmed decimals, millisecond `Z`
+    /// timestamps. Regression for the live frame
+    /// `0.0012916058955691941916418750` / `...01:18:32.629700188Z`.
+    #[test]
+    fn ws_update_frame_matches_the_rest_wire_format() {
+        use std::str::FromStr;
+        let ts = "2026-10-21T01:18:32.629700188Z"
+            .parse::<DateTime<Utc>>()
+            .unwrap();
+        let v = super::ws_update_payload(
+            "mSOL",
+            pegana_common::PegState::Pegged,
+            Decimal::from_str("0.0012916058955691941916418750").unwrap(),
+            Decimal::from_str("150.17513665320654301904141903").unwrap(),
+            Decimal::from_str("149.98").unwrap(),
+            ts,
+        );
+        assert_eq!(v["kind"], "update");
+        assert_eq!(v["state"], "PEGGED");
+        assert_eq!(v["discount"], "0.001292");
+        assert_eq!(v["intrinsic_usd"], "150.175136653206543019");
+        assert_eq!(v["market_usd"], "149.98");
+        assert_eq!(v["updated_at"], "2026-10-21T01:18:32.629Z");
+        // Postgres NUMERIC rounds a midpoint away from zero, not to even.
+        assert_eq!(
+            super::wire_decimal(Decimal::from_str("0.0000025").unwrap(), 6),
+            "0.000003"
+        );
+        assert_eq!(
+            super::wire_decimal(Decimal::from_str("-0.0000025").unwrap(), 6),
+            "-0.000003"
+        );
+        assert_eq!(super::wire_ts(&ts), "2026-10-21T01:18:32.629Z");
+    }
 
     fn fresh_engine() -> EngineState {
         let raw = include_str!("../../../assets.toml");

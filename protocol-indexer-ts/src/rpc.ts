@@ -3,7 +3,7 @@
 // `pegana_protocol_rpc_primary_failed_total{op}` and retry the fallback.
 
 import { incr } from "./metrics";
-import { fetchWithTimeout } from "./fetch-util";
+import { fetchWithTimeout, redactSecrets } from "./fetch-util";
 
 const PRIMARY = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
 const FALLBACK =
@@ -31,7 +31,7 @@ export async function rpcWithFallback(
     return await rpcCall(PRIMARY, method, params);
   } catch (e) {
     incr("pegana_protocol_rpc_primary_failed_total", { method });
-    console.warn(`[rpc] primary ${method} failed, trying fallback:`, String(e));
+    console.warn(`[rpc] primary ${method} failed, trying fallback:`, redactSecrets(String(e)));
     return rpcCall(FALLBACK, method, params);
   }
 }
@@ -46,7 +46,7 @@ export async function withRpcFallback<T>(
     return await fn(PRIMARY);
   } catch (e) {
     incr("pegana_protocol_rpc_primary_failed_total", { op });
-    console.warn(`[rpc] primary ${op} failed, trying fallback:`, String(e));
+    console.warn(`[rpc] primary ${op} failed, trying fallback:`, redactSecrets(String(e)));
     return fn(FALLBACK);
   }
 }

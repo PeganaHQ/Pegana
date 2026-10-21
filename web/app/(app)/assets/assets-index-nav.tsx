@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import type { ServerAsset } from "@/lib/asset/fetch-asset";
 import { displaySymbol } from "@/lib/asset/display-symbol";
 

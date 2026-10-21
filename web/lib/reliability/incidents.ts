@@ -51,6 +51,60 @@ export function userFacingCount(entries: ReliabilityEntry[]): number {
 
 export const RELIABILITY_LOG: ReliabilityEntry[] = [
   {
+    id: "loop-hf-bands-frozen-2026-10-21",
+    date: "2026-10-21",
+    title: "Leverage cascade figures used health-factor bands frozen for four days",
+    userImpact: "degraded",
+    impactNote:
+      "From 2026-10-17 09:20 UTC (when recorded history begins) to 2026-10-21 12:35 UTC, the Kamino and Jupiter Lend health-factor bands behind the Loop impact panel, the cascade estimate and /systemic stopped updating, while the exposure totals beside them stayed fresh. The cascade figures were therefore computed from stale positions. These figures are advisory: no peg state, alert or receipt depends on them.",
+    durationLabel: "~4 days · cascade and loop figures only",
+    summary:
+      "After the 2026-10-17 rebuild, the protocol indexer that reads lending positions stopped producing health-factor bands. Once its sources were re-enabled, the Kamino reader loaded every obligation in one unpaginated RPC response and ran its 1 GB container out of memory in a loop. Meanwhile the API kept serving the last bands it had, with no age limit, next to fresh exposure rows, so the panel looked current.",
+    detection:
+      "Found on 2026-10-20, not by an alert: there was no alert for a failing or stale health-factor source.",
+    rootCause:
+      "Two gaps together: an unbounded read in the Kamino source, and an API query that took the latest band per asset with no time bound, so a dead source could not show up as stale.",
+    resolution:
+      "The Kamino reader now streams obligations in pages of 1000 and keeps running on a stray error, and the poll runs hourly. The API drops bands older than three hours and reports the cascade's own age (cascade_updated_at). Alert rules now cover a failing or stale health-factor source. Bands were fresh again from 2026-10-21 12:35 UTC.",
+    commits: ["72658234", "59827dc8", "cb2925b5"],
+  },
+  {
+    id: "sanctum-lst-stale-nav-2026-10-20",
+    date: "2026-10-20",
+    title: "38 liquid-staking tokens showed a false 1.8-3.6% premium for about 3 days",
+    userImpact: "degraded",
+    impactNote:
+      "From 2026-10-17 09:20 UTC to 2026-10-20 10:46 UTC (about 3.06 days), the stored intrinsic value of 38 liquid-staking tokens was 1.8-3.6% too low (average 2.5%), so their discount, 24h range, jitter and worst-spread figures were wrong. No peg state was affected (all stayed Pegged) and no alert or receipt was issued. We have no evidence of any real depeg in that period.",
+    durationLabel: "~3.06 days · 38 LSTs, display and history only · resolved 2026-10-21",
+    summary:
+      "After the 2026-10-17 infrastructure rebuild, the indexer priced Sanctum-path LSTs from the Sanctum API NAV, which lagged the on-chain NAV. The market leg was correct, so each token showed a uniform fake premium. The engine's 10 percent premium-sanity mask never fired because the error was far below it, and a premium alone does not move a token out of Pegged. Affected: all active LSTs except jitoSOL, STKESOL, corvusSOL, rkuSOL and hyloSOL+.",
+    detection:
+      "The NAV fix shipped on 2026-10-20 (commits 7ee50c2c and ae0f014b). The contamination that remained in stored history, charts and 24h statistics was found afterwards by the 2026-10-21 launch audit, not by our own monitoring.",
+    rootCause:
+      "The Sanctum API NAV was the sole intrinsic source for these tokens with no cross-check against the on-chain exchange rate, and the only premium sanity bound (10 percent) was far wider than this error. A tighter LST premium bound, or a mandatory on-chain cross-check, would have turned the stale anchor into Unknown instead of a confident Pegged.",
+    resolution:
+      "Resolved 2026-10-21. The indexer now uses the on-chain NAV with an API-versus-on-chain drift guard, so live values have been correct since 2026-10-20 10:46 UTC. At about 15:25 UTC on 2026-10-21 we removed the affected history instead of keeping or estimating it: 734,446 discount rows and 665,456 intrinsic rows for these 38 tokens, then refreshed the 1-minute aggregate. The post-check found no remaining bad rows and no LST with a premium above 1% in the last 24 hours. Discount and intrinsic_usd history (including MCP get_asset_history) for these tokens now starts at 2026-10-20 10:50 UTC. The 30-day state strip shows no data for the removed days, and a token's /state since can predate its first history point. A backup of the removed rows is kept for audit. Follow-up: a tighter premium-sanity bound for LSTs.",
+    commits: ["7ee50c2c", "ae0f014b"],
+  },
+  {
+    id: "production-rebuild-history-gap-2026-10-17",
+    date: "2026-10-17",
+    title: "Production was rebuilt on a fresh database: history begins 2026-10-17",
+    userImpact: "degraded",
+    impactNote:
+      "Peg history (spreads, charts, the 30-day strip, exports and MCP history) begins 2026-10-17 09:20 UTC. Nothing earlier was recovered. The receipt ledger has receipts from 2026-05-27 to 2026-08-26 and from 2026-10-17 on; nothing exists for 2026-08-26 to 2026-10-17.",
+    durationLabel: "history gap · ledger gap 2026-08-26 to 2026-10-17",
+    summary:
+      "The production server was rebuilt on 2026-10-17 and started on an empty database. On 2026-10-20 the receipt ledger was restored from an offsite backup taken 2026-09-30. That backup held no receipts after 2026-08-26, so the ledger runs to 2026-08-26 and resumes on 2026-10-17. The price and discount history could not be restored from it: the time-series tables were written by an older TimescaleDB version than the rebuilt server runs.",
+    detection:
+      "Known at the rebuild. The restore was planned and checked against a scratch database before the import.",
+    rootCause:
+      "Recovery depended on one backup, 17 days old at the rebuild, that could only be partly restored into the current database version. As of 2026-10-21 the offsite backup job is not yet running again; it is waiting on a storage credential.",
+    resolution:
+      "Receipts from 2026-05-27 to 2026-08-26 were imported into the ledger (they keep their original hashes and replay bundles). Charts now say where their data starts. Backups keep a verified local copy and fail loudly when the offsite upload fails, and restores are gated on the dump's TimescaleDB version. We are not backfilling the missing period with estimates.",
+    commits: ["6aed65fe", "6f4b6fdb", "4944c5d7"],
+  },
+  {
     id: "freeze-detector-false-jupsol-2026-06-14",
     date: "2026-06-14",
     title: "A new freeze detector briefly mislabelled JupSOL as Unknown",

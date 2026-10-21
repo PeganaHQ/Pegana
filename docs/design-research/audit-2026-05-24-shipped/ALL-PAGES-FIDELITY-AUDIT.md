@@ -313,10 +313,10 @@ Given fidelity is 97.3% average and shipped EXCEEDS mock in 9 areas, the questio
 - **Mocks rendered:** `docs/design-research/audit-2026-05-24-shipped/MOCKS/0[1-4]-*.jpeg`
 - **Shipped current:** `docs/design-research/audit-2026-05-24-shipped/AFTER-v2/0[1-14]-*.jpeg`
 - **Approved mock sources:**
-  - `/Users/rafazaum/Desktop/Projetos/pegana/.superpowers/brainstorm/22296-1779488900/content/mock-01-landing.html`
-  - `/Users/rafazaum/Desktop/Projetos/pegana/.superpowers/brainstorm/42854-1779652136/content/mock-02-dashboard.html`
-  - `/Users/rafazaum/Desktop/Projetos/pegana/.superpowers/brainstorm/52885-1779654553/content/mock-03-asset.html`
-  - `/Users/rafazaum/Desktop/Projetos/pegana/.superpowers/brainstorm/52885-1779654553/content/mock-04-inner-pages.html`
+  - `<repo>/.superpowers/brainstorm/22296-1779488900/content/mock-01-landing.html`
+  - `<repo>/.superpowers/brainstorm/42854-1779652136/content/mock-02-dashboard.html`
+  - `<repo>/.superpowers/brainstorm/52885-1779654553/content/mock-03-asset.html`
+  - `<repo>/.superpowers/brainstorm/52885-1779654553/content/mock-04-inner-pages.html`
 
 ---
 

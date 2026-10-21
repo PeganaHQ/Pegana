@@ -1,10 +1,11 @@
 ---
 title: "WebSocket stream"
-description: "Sub-second push for every peg-state change on Solana mainnet. No polling, no per-message throttling (5 connections/IP)."
+description: "Live push of every peg reading on Solana mainnet, as the engine recomputes it. No polling, no per-message throttling (20 connections/IP)."
 ---
 
 When you need state updates faster than 15-second polling allows, open a WebSocket.
-The server pushes every state transition and a heartbeat every 5 seconds.
+The server pushes a fresh reading for each asset every time the engine recomputes it (not
+only when the state changes), plus a heartbeat every 5 seconds.
 
 **Endpoint:** `wss://api.pegana.xyz/v1/ws`
 
@@ -47,27 +48,39 @@ All messages are JSON, single-line per frame. The `op` field discriminates.
   "asset": "jitoSOL",
   "payload": {
     "state": "DRIFT",
-    "discount": "-0.0034",
+    "discount": "0.0034",
     "intrinsic_usd": "213.42",
     "market_usd": "212.69",
-    "updated_at": "2026-05-26T14:32:11Z"
+    "updated_at": "2026-05-26T14:32:11.204Z"
   }
 }
 ```
 
-Pushed on every peg-state change for the asset. The envelope carries the `asset`
-symbol; `payload` carries the new `state`, the `discount`, the two underlying
-values (`intrinsic_usd`, `market_usd`), and `updated_at`. There is no
+Pushed on **every engine recompute** for the asset, typically several times a minute per
+asset, whether or not the state changed. Most frames repeat the previous `state`; to react
+only to transitions, compare `payload.state` with the last value you saw for that `asset`.
+The envelope carries the `asset` symbol; `payload` carries the current `state`, the
+smoothed `discount` (raw sign: `1 − market / intrinsic`, positive = below fair value), the
+two underlying values (`intrinsic_usd`, `market_usd`), and `updated_at`. There is no
 `previous_state` or `confidence` field on this frame — fetch the prior state from
 your own last-seen value, and use [`/v1/assets/{symbol}/state`](/guides/rest-api)
 for the confidence score.
+
+Values use the same wire format as REST: decimals are strings with trailing zeros
+trimmed, `discount` has the same 6-decimal precision `/v1/assets` serves, and
+timestamps are RFC 3339 UTC with millisecond precision.
+
+The stream covers every asset the engine computes, which can include assets that are not
+listed on `GET /v1/assets` (for example `xSOL`, which is computed but kept off the peg
+surface). If you only care about listed assets, filter frames against the symbols you got
+from `GET /v1/assets`.
 
 ### Server → client: heartbeat
 
 ```json
 {
   "op": "heartbeat",
-  "ts": "2026-05-26T14:32:16Z"
+  "ts": "2026-05-26T14:32:16.009Z"
 }
 ```
 
@@ -79,7 +92,7 @@ frame (update or heartbeat), drop and reconnect.
 ```json
 {
   "op": "error",
-  "msg": "malformed subscribe message"
+  "msg": "malformed: unknown variant `subscribe_all`, expected one of …"
 }
 ```
 
@@ -100,15 +113,44 @@ connection alive on most NAT/proxy configurations.
 { "op": "subscribe", "assets": ["USDC", "jitoSOL"] }
 ```
 
-In v1 these are **no-ops** — the server broadcasts updates for every asset to every
-connection. Filter client-side by inspecting `msg.asset`. Per-asset subscription is
+In v1 these do **not filter anything**: the server broadcasts updates for every asset to
+every connection. Filter client-side by inspecting `msg.asset`. Per-asset subscription is
 planned for v2.
+
+What the server answers today, so your parser is not surprised:
+
+- `subscribe` is acknowledged with an `update` frame whose `asset` is the literal string
+  `"system"` and whose `payload` has no `state`:
+
+  ```json
+  {
+    "op": "update",
+    "asset": "system",
+    "payload": {
+      "msg": "subscribed",
+      "assets": ["USDC", "jitoSOL"],
+      "note": "v1 broadcasts all updates; client-side filter recommended"
+    }
+  }
+  ```
+
+  Skip frames with `asset === "system"` (or without `payload.state`) before treating a frame
+  as a peg reading, otherwise you will record a phantom asset named `system`.
+- `unsubscribe` is answered with `{ "op": "pong" }`.
+- A frame that is not valid JSON or has an unknown `op` gets an `error` frame
+  (`"msg": "malformed: …"`); the connection stays open.
 
 ## Connection limits
 
-- **Per-IP cap:** 5 concurrent connections. Beyond that, handshakes return `429`.
-- **Idle timeout:** None. If both server heartbeat and client ping flow normally, the
-  connection stays open indefinitely.
+- **Per-IP cap:** 20 concurrent connections. Beyond that, handshakes return `429`.
+- **Idle timeout:** if the server receives nothing from your client for 120 seconds, it
+  sends a WebSocket protocol ping and closes the connection if no frame arrives within the
+  next 30 seconds. Standard clients (browser `WebSocket`, `ws`, `websockets`) answer protocol
+  pings automatically, so they stay connected indefinitely; a hand-rolled client must reply
+  to the ping or send its own `{ "op": "ping" }` at least every two minutes.
+- **Shared IPs:** the cap is per source IP, so every open Pegana dashboard tab, script and
+  notebook behind the same NAT or office network counts toward the same 20. If you get `429`
+  while developing, close other tabs or connections on that network first.
 
 ## Reconnect strategy
 

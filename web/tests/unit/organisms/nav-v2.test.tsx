@@ -167,7 +167,7 @@ describe("NavV2 fallback is pixel-identical to the previous nav", () => {
     stubRects();
     await scrollTo(700);
     const st = norm(style());
-    for (const o of OLD) expect(st).toContain(o.replace(/rgba\(12,12,14,\.62\)/, "rgba(12,12,14,.62)"));
+    for (const o of OLD) expect(st).toContain(o);
     expect(st).not.toContain("saturate");
     expect(st).not.toContain("calc(");
   });
@@ -245,4 +245,15 @@ describe("NavV2 backdrop root", () => {
     expect(screen.getByTestId("nav-pill").style.getPropertyValue("view-transition-name")).toBe("marketing-nav");
     expect(document.querySelector("nav")!.getAttribute("style") ?? "").not.toContain("view-transition-name");
   });
+});
+
+describe("NavV2 Methodology link", () => {
+  for (const variant of ["landing", "site"] as const) {
+    it(`goes to the methodology page, never an in-page anchor (${variant})`, () => {
+      mount(variant);
+      const links = screen.getAllByRole("link", { name: /Methodology/ });
+      expect(links.length).toBeGreaterThan(0);
+      for (const a of links) expect(a).toHaveAttribute("href", "/methodology");
+    });
+  }
 });

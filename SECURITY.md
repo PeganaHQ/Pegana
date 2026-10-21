@@ -10,18 +10,28 @@ verdicts and the safety of our infrastructure seriously.
 Report privately, and we'll acknowledge within 72 hours:
 
 - **Preferred:** open a draft
-  [GitHub security advisory](https://github.com/lrafasouza/pegana/security/advisories/new)
-  on this repository. The advisory is private between you and the maintainers until it
-  is published.
-- Include: a description, the affected surface (API / web / CLI / on-chain), and steps
-  to reproduce. A minimal PoC helps.
+  [GitHub security advisory](https://github.com/PeganaHQ/Pegana/security/advisories/new)
+  on this repository (GitHub private vulnerability reporting). The advisory is private
+  between you and the maintainers until it is published, and it is the route to a CVE if
+  one is warranted.
+- **Email:** [rafael@pegana.xyz](mailto:rafael@pegana.xyz). Use this if you cannot use
+  GitHub, or if you have not heard back on an advisory within a week.
+- Include: a description, the affected surface (API / web / MCP / CLI / on-chain), and
+  steps to reproduce. A minimal PoC helps.
+
+For the receipt verifier itself, the mirrored
+[PeganaHQ/ReplayCLI](https://github.com/PeganaHQ/ReplayCLI/security/advisories/new) repository
+accepts advisories too; either repository reaches the same maintainer.
 
 We support coordinated disclosure and will credit reporters who want it.
 
 ## Scope
 
-In scope: `pegana.xyz` and `api.pegana.xyz`, the public `pegana-replay` CLI, the
-webhook egress path, and the on-chain receipt/anchor mechanism.
+In scope: `www.pegana.xyz` (and `pegana.xyz`), `api.pegana.xyz`, `mcp.pegana.xyz`,
+`docs.pegana.xyz`, the source in this repository (engine, API, indexers, MCP server, web
+app), the public `pegana-replay` CLI, and the on-chain receipt/anchor mechanism. The
+webhook egress path in `dispatcher-rs` is in scope for self-hosted deployments (the hosted
+service does not offer webhook registration).
 
 Out of scope: third-party dependencies' own advisories (report upstream), volumetric
 DoS, and social engineering.

@@ -46,6 +46,21 @@ pub fn opt_dec_norm<S: Serializer>(v: &Option<Decimal>, s: S) -> Result<S::Ok, S
     }
 }
 
+/// `Option<Decimal>` rounded to 18 decimal places (half away from zero, the
+/// NUMERIC rounding Postgres applies to the NUMERIC(30,18) legs), then
+/// normalized. For values read from JSON metadata (e.g. `sol_per_lst`), which
+/// carry no column scale and arrived with up to 28 dp.
+pub fn opt_dec_18<S: Serializer>(v: &Option<Decimal>, s: S) -> Result<S::Ok, S::Error> {
+    match v {
+        Some(d) => s.serialize_str(
+            &d.round_dp_with_strategy(18, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
+                .normalize()
+                .to_string(),
+        ),
+        None => s.serialize_none(),
+    }
+}
+
 /// USD-aggregate `Decimal` → decimal string rounded to the cent, then
 /// normalized so whole amounts stay clean (`1000000` not `1000000.00`).
 /// For `market_cap`, `loop_exposure_usd`, `liquidatable_usd`, `collateral_usd`,

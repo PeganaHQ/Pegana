@@ -17,10 +17,11 @@ import { NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execSync } from "node:child_process";
+import { siteOrigin } from "@/lib/seo/site-origin";
 
 export const revalidate = 3600;
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pegana.xyz";
+const SITE_URL = siteOrigin();
 const REPO_ROOT = path.join(process.cwd(), "..");
 
 function xmlEscape(s: string): string {

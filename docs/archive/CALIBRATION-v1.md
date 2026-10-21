@@ -9,7 +9,7 @@
 **EVIDENCE LIVE FROM:** 2026-05-29 03:55 UTC (3 days ahead of ADR-0005 calendar — deploy was healthy, no reason to wait). Verdict per ADR-0015 computed against post-2026-05-29 alerts only.
 
 > Dogfood mode confirmed live on Hetzner dispatcher:
-> `FEATURE_PUBLIC_ALERTS=false` + `DOGFOOD_TELEGRAM_CHAT_ID=6647651772`.
+> `FEATURE_PUBLIC_ALERTS=false` + `DOGFOOD_TELEGRAM_CHAT_ID=<dogfood-chat-id>`.
 > All alert events route only to Rafael's Telegram chat. Daily notes below
 > capture per-asset behavior; the final report (per-asset p50/p95/p99,
 > true/noise classification, threshold deltas) lands on 2026-06-10.
@@ -22,7 +22,7 @@ the dogfood window is complete and this document contains real measurements.
 | Field | Value |
 |---|---|
 | Public alerts | `FEATURE_PUBLIC_ALERTS=false` during calibration |
-| Dogfood chat | `DOGFOOD_TELEGRAM_CHAT_ID=6647651772` |
+| Dogfood chat | `DOGFOOD_TELEGRAM_CHAT_ID=<dogfood-chat-id>` |
 | Required duration | 14 continuous days |
 | Required outputs | p50 / p95 / p99 per asset, alert count, false positives, threshold deltas |
 

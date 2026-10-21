@@ -10,7 +10,7 @@ import type {
   SimulateDepegData,
   PegFeedResponse,
 } from "./types";
-import { apiBase } from "./base";
+import { apiBase, serverApiHeaders } from "./base";
 import {
   AUDIT_MAX_LIMIT,
   auditRowsToAlerts,
@@ -23,12 +23,42 @@ import {
 export class ApiError extends Error {
   status?: number;
   path: string;
-  constructor(message: string, path: string, status?: number) {
+  /** Seconds from the `Retry-After` header on a 429 (exposed via CORS). */
+  retryAfterSec?: number;
+  constructor(
+    message: string,
+    path: string,
+    status?: number,
+    retryAfterSec?: number,
+  ) {
     super(message);
     this.name = "ApiError";
     this.path = path;
     this.status = status;
+    this.retryAfterSec = retryAfterSec;
   }
+}
+
+/** Parse a `Retry-After` header: delta-seconds or an HTTP date. */
+export function parseRetryAfter(
+  value: string | null | undefined,
+  now: number = Date.now(),
+): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return undefined;
+  return Math.max(0, Math.ceil((at - now) / 1000));
+}
+
+/**
+ * True when the API refused the request because this client IP used up its
+ * public budget (60/min). That is NOT an outage and must never be worded as
+ * one: the API is healthy, this browser just has to wait.
+ */
+export function isRateLimited(err: unknown): boolean {
+  return (err as { status?: number } | null | undefined)?.status === 429;
 }
 
 // Hard per-request deadline. Without it, a slow/hung endpoint keeps the SWR
@@ -43,7 +73,11 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${apiBase()}${path}`, {
       ...init,
-      headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+      headers: {
+        Accept: "application/json",
+        ...serverApiHeaders(),
+        ...(init?.headers ?? {}),
+      },
       cache: "no-store",
       // A caller-supplied signal (none today) still wins; otherwise apply the
       // timeout. `AbortSignal.timeout` is Baseline-2022 / Node 18+.
@@ -57,7 +91,14 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(`API unreachable on ${path}`, path);
   }
   if (!res.ok)
-    throw new ApiError(`API ${res.status} on ${path}`, path, res.status);
+    throw new ApiError(
+      `API ${res.status} on ${path}`,
+      path,
+      res.status,
+      res.status === 429
+        ? parseRetryAfter(res.headers?.get?.("retry-after"))
+        : undefined,
+    );
   return res.json() as Promise<T>;
 }
 
@@ -77,7 +118,9 @@ export const api = {
     if (opts?.class) q.set("class", opts.class);
     if (opts?.peg) q.set("peg", opts.peg);
     const s = q.toString();
-    return fetchList<AssetCardData>(`/v1/assets${s ? `?${s}` : ""}`);
+    return s
+      ? fetchList<AssetCardData>(`/v1/assets?${s}`)
+      : fetchAssetUniverse();
   },
   asset: (symbol: string) =>
     fetchJson<AssetCardData>(`/v1/assets/${encodeURIComponent(symbol)}`),
@@ -196,9 +239,47 @@ function fetchAuditPage(opts?: AlertsQuery): Promise<AuditIndexRow[]> {
   return fetchJson<AuditIndexRow[]>(`/v1/audit?${q.toString()}`);
 }
 
+// ── Shared asset universe ────────────────────────────────────────────────
+//
+// `api.alerts` joins each receipt's class from /v1/assets. It used to fetch
+// the full list itself on every call, next to the useAssets() poll that was
+// already fetching the same list: on /dashboard that was 2 x /v1/assets at load
+// and again on every 30s alerts refresh (measured 2026-10-21, about 2 extra
+// requests a minute per tab against a 60/min per-IP budget).
+//
+// Now one in-flight request is shared, and the class map reuses the most
+// recent list for CLASS_MAP_TTL_MS. A class changes only when an asset is
+// reclassified, which is rare and harmless to pick up a few minutes late.
+const CLASS_MAP_TTL_MS = 10 * 60_000;
+let universeInflight: Promise<AssetCardData[]> | null = null;
+let universeLast: { at: number; data: AssetCardData[] } | null = null;
+
+function fetchAssetUniverse(): Promise<AssetCardData[]> {
+  if (universeInflight) return universeInflight;
+  const p = fetchList<AssetCardData>("/v1/assets")
+    .then((data) => {
+      universeLast = { at: Date.now(), data };
+      return data;
+    })
+    .finally(() => {
+      universeInflight = null;
+    });
+  universeInflight = p;
+  return p;
+}
+
+/** Test hook: forget the shared universe between tests. */
+export function __resetAssetUniverseForTests(): void {
+  universeInflight = null;
+  universeLast = null;
+}
+
 async function fetchClassMap(): Promise<Record<string, AssetClass>> {
   try {
-    const assets = await fetchList<AssetCardData>("/v1/assets");
+    const assets =
+      universeLast && Date.now() - universeLast.at < CLASS_MAP_TTL_MS
+        ? universeLast.data
+        : await fetchAssetUniverse();
     const out: Record<string, AssetClass> = {};
     for (const a of assets) out[a.symbol] = a.class;
     return out;

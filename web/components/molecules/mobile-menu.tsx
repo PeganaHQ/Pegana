@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { useGlossary } from "@/lib/store/glossary-context";

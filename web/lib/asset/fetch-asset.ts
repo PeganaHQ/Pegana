@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
 import type { AssetCardData } from "@/lib/api/types";
 
 /**
@@ -44,7 +44,7 @@ export type ServerAsset = {
 export const getAssetsList = cache(async (): Promise<ServerAsset[]> => {
   try {
     const res = await fetch(`${apiBase()}/v1/assets`, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...serverApiHeaders() },
       next: { revalidate: 60 },
       signal: AbortSignal.timeout(8_000),
     });
@@ -56,25 +56,41 @@ export const getAssetsList = cache(async (): Promise<ServerAsset[]> => {
   }
 });
 
-export const getAsset = cache(
-  async (symbol: string): Promise<(AssetCardData & ServerAsset) | null> => {
+export type AssetLookup =
+  | { kind: "found"; asset: AssetCardData & ServerAsset }
+  /** The API answered 404: the symbol is positively not tracked. */
+  | { kind: "not_found" }
+  /** 5xx, 429, timeout or network: we do not know, so never claim a 404. */
+  | { kind: "unavailable" };
+
+export const lookupAsset = cache(
+  async (symbol: string): Promise<AssetLookup> => {
     try {
       const res = await fetch(
         `${apiBase()}/v1/assets/${encodeURIComponent(symbol)}`,
         {
-          headers: { Accept: "application/json" },
+          headers: { Accept: "application/json", ...serverApiHeaders() },
           next: { revalidate: 60 },
-          // Bounded: HTML-limited unfurl crawlers block on generateMetadata, and
-          // a hung upstream must never hold a page render open.
           signal: AbortSignal.timeout(5_000),
         },
       );
-      if (!res.ok) return null;
-      return (await res.json()) as AssetCardData & ServerAsset;
+      if (res.status === 404) return { kind: "not_found" };
+      if (!res.ok) return { kind: "unavailable" };
+      return {
+        kind: "found",
+        asset: (await res.json()) as AssetCardData & ServerAsset,
+      };
     } catch {
-      // Degrade, never throw: a dead API should render the page without its
-      // server prose, not a 500. Same contract as fetch-pegana-lst.ts.
-      return null;
+      return { kind: "unavailable" };
     }
+  },
+);
+
+export const getAsset = cache(
+  async (symbol: string): Promise<(AssetCardData & ServerAsset) | null> => {
+    // Degrade, never throw: a dead API should render the page without its
+    // server prose, not a 500. Same contract as fetch-pegana-lst.ts.
+    const r = await lookupAsset(symbol);
+    return r.kind === "found" ? r.asset : null;
   },
 );

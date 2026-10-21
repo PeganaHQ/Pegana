@@ -1,4 +1,4 @@
-import { apiBase } from "@/lib/api/base";
+import { apiBase, serverApiHeaders } from "@/lib/api/base";
 import type { AssetCardData } from "@/lib/api/types";
 
 /**
@@ -23,7 +23,7 @@ export type PeganaLstResult =
 export async function fetchPeganaLstAssets(): Promise<PeganaLstResult> {
   try {
     const res = await fetch(`${apiBase()}/v1/assets?class=lst`, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...serverApiHeaders() },
       next: { revalidate: 60 },
       signal: AbortSignal.timeout(8_000),
     });

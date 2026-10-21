@@ -72,9 +72,13 @@ pub fn risk_score(
     }
 
     let disc = discount.to_f64()?;
-    // Direction-sensitive classes carve out a benign premium (market above NAV):
-    // it is not risk, so it scores ~0. Symmetric classes score |discount|.
-    let direction_sensitive = matches!(class, "lst" | "stable_yield");
+    // Classes whose premium the engine treats as informational (ADR-0021:
+    // lst, stable_yield, synth_lev) carve out a benign premium (market above
+    // NAV): it is not risk, so it scores ~0. Same rule the engine classifies
+    // with, so the score never disagrees with `risk_side`. Others score
+    // |discount|.
+    let direction_sensitive = pegana_common::AssetClass::from_db_str(class)
+        .is_some_and(pegana_methodology::thresholds::premium_is_informational);
     let eff_bps = if direction_sensitive {
         disc.max(0.0) * 10_000.0
     } else {
@@ -106,6 +110,24 @@ mod tests {
     fn d(bps: i64) -> Option<Decimal> {
         // bps → signed fraction (100 bps = 0.01)
         Some(Decimal::from(bps) / Decimal::from(10_000))
+    }
+
+    /// A premium (negative discount) on a premium-informational class scores 0,
+    /// including synth_lev (xSOL), matching the engine's PEGGED verdict.
+    #[test]
+    fn premium_scores_zero_on_premium_informational_classes() {
+        for class in ["lst", "stable_yield", "synth_lev"] {
+            assert_eq!(
+                risk_score(Some("PEGGED"), d(-300), class, Some(&bands())),
+                Some(0),
+                "{class}"
+            );
+        }
+        // A fiat stable's premium is still deviation.
+        assert_eq!(
+            risk_score(Some("PEGGED"), d(-200), "stable_fiat", Some(&bands())),
+            Some(24)
+        );
     }
 
     #[test]

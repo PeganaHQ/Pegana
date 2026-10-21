@@ -65,15 +65,20 @@ class ApiListAssetCardDataItem:
             health state: an asset can be `PEGGED` and `monitoring_only=true`.
         name (str):
         peg_target (str):
-        risk_side (RiskSide): Which direction of the signed `discount` is the risk signal for this
-            asset's anchor type.
+        risk_side (RiskSide): Which direction of the signed `discount` can move this asset's published
+            `state`.
 
-            - `"below"` — a discount BELOW the peg/anchor is the risk (USD and FX
-              anchors: the asset is worth less than the target, which is bad).
-            - `"either"` — BOTH a discount and a premium are meaningful risk signals
-              (NAV anchors: LSTs, yield-bearing stables, synthetic leverage — the
-              intrinsic value moves, so deviation in either direction from NAV signals
-              mispricing or liquidity stress).
+            - `"below"` — only a discount (market BELOW the peg/anchor) is a risk
+              signal. A premium never escalates the state. This covers USD and FX
+              anchors, and also every NAV class today (LSTs, yield-bearing stables,
+              synthetic leverage): for those the engine treats a premium as
+              informational and classifies it PEGGED (ADR-0021), so a large negative
+              `discount` on them is NOT a missed alert. An implausibly large premium on
+              an LST or yield stable is reported as `UNKNOWN` (`state_reason:
+              premium_sanity`), not as a depeg.
+            - `"either"` — both a discount and a premium can escalate the state.
+              Reserved for a NAV-anchored class without the premium carve-out; no
+              tracked class uses it today.
         symbol (str):
         circulating_supply (None | str | Unset): Circulating supply of the mint (`rust_decimal`, serialized as a JSON
             string), scaled by `decimals`. This is a SIZE/CONTEXT signal — NOT a
@@ -89,13 +94,39 @@ class ApiListAssetCardDataItem:
             band (engine
             `band_since`). Omitted until the engine has stamped it. Read with `state`;
             `sustained` is the thresholded view (Spec 03).
-        discount (None | str | Unset):
+        discount (None | str | Unset): Signed discount fraction the state machine classifies: `1 - market /
+            intrinsic` (positive = below NAV/peg, negative = premium), the
+            EWMA-smoothed value. This is the number to use. Do NOT recompute it from
+            `intrinsic_usd` / `market_usd`: for LSTs it is computed in SOL terms
+            (market SOL per LST vs intrinsic SOL per LST), while each USD leg is
+            converted with its own SOL/USD read, so the legs can differ from it by a
+            few bps and, near zero, even in sign. `null` when there is no fresh
+            snapshot.
+
+            Worked example (live, 2026-10-21): cgntSOL published `discount`
+            0.0001 while `1 - market_usd / intrinsic_usd` was -0.000051. Both are
+            correct: the published value is the smoothed SOL-terms discount; the
+            USD ratio mixes two SOL/USD reads. Branch on `discount` and `state`.
+
+            Illiquid LSTs: the market leg is a Jupiter exact-in quote of one token
+            to SOL (precision about 1e-9; the published value is NUMERIC(10,6)).
+            When the only route is a pool that itself prices the LST at its stake
+            pool NAV, the quote is NAV minus that pool's fee, so several LSTs can
+            publish the same round value (e.g. exactly 0.0011). That value then
+            reflects the route's fee, not an independent market price, and moves
+            only if the pool's NAV or fee moves.
+        discount_raw (None | str | Unset): The same tick's UNSMOOTHED discount (before the EWMA), same sign
+            convention and same basis as `discount` (SOL terms for LSTs). Shown
+            for transparency: `discount` is `discount_raw` after smoothing, so the
+            two differ by the smoothing lag, never by basis. Omitted when there is
+            no fresh snapshot.
         holder_count (int | None | Unset): Unique holder addresses, same source and same caveats as
             `liquidity_usd`. A distribution/context signal; never a peg signal.
         intrinsic_usd (None | str | Unset):
         jitter_bps_24h (None | str | Unset): Peg-jitter scalar over the trailing 24h (BSRV-03): peak-to-trough
             dispersion of the discount, `max(max_discount) - min(min_discount)`,
-            in the same signed-fraction units as `discount`. A cheap stability
+            in the same fraction units as `discount` (NOT basis points, despite the
+            name, which is kept for v1 compatibility: multiply by 10000 for bps). A cheap stability
             measure (always >= 0) computed server-side once per scan instead of
             every client recomputing it from the averaged `series_24h`. Trailing
             24h, independent of the current-snapshot freshness bound. Omitted when
@@ -135,10 +166,11 @@ class ApiListAssetCardDataItem:
             the other published fields; NOT part of any receipt hash. See
             `crates/api-rs/src/risk_score.rs`.
         series_24h (list[float] | None | Unset):
-        sol_per_lst (None | str | Unset): Stake-pool SOL per share for Sanctum LSTs (`rust_decimal`, serialized as
-            a JSON string). Omitted for non-LST assets. Reflects the LATEST intrinsic
-            snapshot — read together with `updated_at` for freshness. NAV decomposition
-            is `intrinsic_usd = sol_per_lst × SOL/USD`.
+        sol_per_lst (None | str | Unset): Stake-pool SOL per share for LSTs (decimal string, at most 18 decimal
+            places like the USD legs, trailing zeros trimmed). Omitted for non-LST
+            assets. Reflects the LATEST intrinsic snapshot — read together with
+            `updated_at` for freshness. NAV decomposition is
+            `intrinsic_usd = sol_per_lst × SOL/USD`.
         state (None | PegState | Unset):
         state_reason (None | str | Unset): Advisory machine-readable reason for the snapshot's state. Explanatory
             only — never a verdict input and not part of any receipt hash.
@@ -147,8 +179,12 @@ class ApiListAssetCardDataItem:
             - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
               the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
               suspect).
-            - `stale_source` — API layer: feed is >15 min stale, state collapsed to
-              UNKNOWN; no fresh discount snapshot exists.
+            - `stale_source` — API layer: no discount snapshot in the last 15 min
+              (sources or engine dark), state collapsed to UNKNOWN.
+            - `market_unavailable` — API layer: no discount snapshot in the last 15
+              min, but the intrinsic leg IS fresh and no market tick exists in that
+              window (thin market, no reliable quote). State UNKNOWN; `intrinsic_usd`
+              and `updated_at` are the fresh intrinsic reading, `market_usd` is null.
 
             **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
             work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
@@ -195,6 +231,7 @@ class ApiListAssetCardDataItem:
     confidence: Confidence | None | Unset = UNSET
     current_state_duration_secs: int | None | Unset = UNSET
     discount: None | str | Unset = UNSET
+    discount_raw: None | str | Unset = UNSET
     holder_count: int | None | Unset = UNSET
     intrinsic_usd: None | str | Unset = UNSET
     jitter_bps_24h: None | str | Unset = UNSET
@@ -267,6 +304,12 @@ class ApiListAssetCardDataItem:
             discount = UNSET
         else:
             discount = self.discount
+
+        discount_raw: None | str | Unset
+        if isinstance(self.discount_raw, Unset):
+            discount_raw = UNSET
+        else:
+            discount_raw = self.discount_raw
 
         holder_count: int | None | Unset
         if isinstance(self.holder_count, Unset):
@@ -427,6 +470,8 @@ class ApiListAssetCardDataItem:
             field_dict["current_state_duration_secs"] = current_state_duration_secs
         if discount is not UNSET:
             field_dict["discount"] = discount
+        if discount_raw is not UNSET:
+            field_dict["discount_raw"] = discount_raw
         if holder_count is not UNSET:
             field_dict["holder_count"] = holder_count
         if intrinsic_usd is not UNSET:
@@ -545,6 +590,15 @@ class ApiListAssetCardDataItem:
             return cast(None | str | Unset, data)
 
         discount = _parse_discount(d.pop("discount", UNSET))
+
+        def _parse_discount_raw(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        discount_raw = _parse_discount_raw(d.pop("discount_raw", UNSET))
 
         def _parse_holder_count(data: object) -> int | None | Unset:
             if data is None:
@@ -791,6 +845,7 @@ class ApiListAssetCardDataItem:
             confidence=confidence,
             current_state_duration_secs=current_state_duration_secs,
             discount=discount,
+            discount_raw=discount_raw,
             holder_count=holder_count,
             intrinsic_usd=intrinsic_usd,
             jitter_bps_24h=jitter_bps_24h,

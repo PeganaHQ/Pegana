@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { BrandLockupV2 } from "@/components/organisms/v2/shared";
 
 // DESIGN.md §5.7 - footer: logo + tagline, link columns, hairline, copyright +
@@ -70,8 +70,10 @@ export function FooterV2() {
           <div className="max-[759px]:col-span-2 min-[760px]:max-[999px]:col-span-3 min-[1000px]:col-span-1">
             <BrandLockupV2 gradientId="v2-footer-wave" chroma />
             <p className="mt-3 max-w-[32ch] text-[14px] leading-[1.6] text-[var(--v2-dim)]">
-              Verifiable peg-risk infrastructure for Solana. Every verdict
-              explainable, replayable, inspectable.
+              {/* Receipts exist for state changes, and pre-0.4.0 receipts are
+                  hash-check only, so "every verdict replayable" overclaimed. */}
+              Verifiable peg-risk infrastructure for Solana. Every state
+              change ships a receipt you can check.
             </p>
           </div>
           {COLUMNS.map((col) => (

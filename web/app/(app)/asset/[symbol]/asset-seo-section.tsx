@@ -1,9 +1,9 @@
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import type { ServerAsset } from "@/lib/asset/fetch-asset";
 import { displaySymbol } from "@/lib/asset/display-symbol";
 import { holderSignedPct, formatUsdValue } from "@/lib/api/format";
 import { stateMeta } from "@/lib/asset/state-meta";
-import type { PegState } from "@/lib/api/types";
+import type { AssetCardData, PegState } from "@/lib/api/types";
 
 /**
  * Server-rendered editorial for one asset.
@@ -61,8 +61,24 @@ function formatUtcDate(iso: string): string {
   );
 }
 
+/**
+ * Per-symbol mechanism copy for assets whose API class is a poor description.
+ * JLP is served as `stable_yield` with a NAV anchor, but it is a perps LP
+ * basket token trading in the dollars, not a yield stable expected above $1.
+ */
+const MECHANISM_OVERRIDES: Record<string, (sym: string) => string> = {
+  JLP: (sym) =>
+    `${sym} is the Jupiter Perpetuals liquidity-pool token. It has no $1 peg: each token is a share of the pool that backs perps traders, so its intrinsic value is the pool's NAV per token and Pegana measures it against that NAV.`,
+};
+
 /** Plain-English mechanism sentence, keyed off the asset's own class. */
-function mechanismSentence(sym: string, klass: string): string {
+export function mechanismSentence(
+  sym: string,
+  klass: string,
+  apiSymbol?: string,
+): string {
+  const override = MECHANISM_OVERRIDES[apiSymbol ?? sym];
+  if (override) return override(sym);
   switch (klass) {
     case "lst":
       return `${sym} is a Solana liquid staking token. It has no fixed $1 peg. Its intrinsic value is the underlying stake pool's SOL-per-share rate, so Pegana measures it against that NAV rather than against a dollar.`;
@@ -84,13 +100,21 @@ function mechanismSentence(sym: string, klass: string): string {
 }
 
 /** The direct answer to the literal query, with live numbers. */
-function verdictSentence(
+export function verdictSentence(
   sym: string,
   state: string | null,
   gap: string,
+  /** |raw spread| in bps and the asset's drift band, when both are known. */
+  band?: { absBps: number; driftBps: number },
 ): string {
   switch (state) {
     case "PEGGED":
+      // PEGGED outside the drift band happens on the side the methodology does
+      // not score (e.g. a premium on a discount-side asset). Never claim "inside
+      // its calibrated drift band" there: that was false, and indexed.
+      if (band && band.absBps > band.driftBps) {
+        return `Not by Pegana's classification: ${sym} is Pegged, though its latest read of ${gap} from intrinsic value sits outside its drift band. The state only changes once the smoothed spread confirms the move on the side its methodology scores.`;
+      }
       return `No. ${sym} is holding its peg. Pegana's current read is ${gap} from intrinsic value, inside its calibrated drift band.`;
     case "DRIFT":
       return `Not yet, but it is drifting. ${sym} is currently ${gap} from intrinsic value. Outside its drift band but short of its depeg threshold.`;
@@ -102,6 +126,10 @@ function verdictSentence(
       return `Yes. ${sym} is in a black-swan dislocation at ${gap} from intrinsic value.`;
     case "UNKNOWN":
       return `Pegana cannot currently answer for ${sym}: one or more inputs are missing or failed a sanity check, so the state is reported as Unknown rather than guessed.`;
+    case null:
+      // No reading at all (no market quote and no intrinsic yet). The app
+      // shows these as Unknown; the brief must not read as if it had a verdict.
+      return `Pegana has no current reading for ${sym}: there is no live market quote and intrinsic value to compare yet, so the state is shown as Unknown rather than guessed.`;
     default:
       return `Pegana tracks ${sym}'s peg continuously and publishes a verifiable receipt for every state change.`;
   }
@@ -115,6 +143,11 @@ export function AssetSeoSection({ asset }: { asset: ServerAsset }) {
     Number.isFinite(rawBps as number) ? rawBps : null,
   );
   const state = asset.state;
+  const driftBps = (asset as Partial<AssetCardData>).thresholds?.drift_bps;
+  const band =
+    rawBps != null && Number.isFinite(rawBps) && typeof driftBps === "number"
+      ? { absBps: Math.abs(rawBps), driftBps }
+      : undefined;
 
   return (
     <section
@@ -141,27 +174,36 @@ export function AssetSeoSection({ asset }: { asset: ServerAsset }) {
         </h2>
 
         <p className="mt-2.5 max-w-[68ch] text-[14.5px] leading-[1.65] text-text-muted">
-          {verdictSentence(sym, state, gap)} {asset.name ? `${asset.name} (${sym})` : sym} last traded at{" "}
-          <strong className="text-text">
-            {formatUsdValue(asset.market_usd)}
-          </strong>{" "}
-          against an intrinsic value of{" "}
-          <strong className="text-text">
-            {formatUsdValue(asset.intrinsic_usd)}
-          </strong>
-          {asset.updated_at ? (
+          {verdictSentence(sym, state, gap, band)}
+          {/* The price sentence only when both sides exist: "last traded at -
+              against an intrinsic value of -" is not a sentence a reader can
+              use, and it is what EURC/JLP/USD* printed with no reading. */}
+          {asset.market_usd != null && asset.intrinsic_usd != null ? (
             <>
-              , as of{" "}
-              <time dateTime={asset.updated_at}>
-                {formatUtcDate(asset.updated_at)}
-              </time>
+              {" "}
+              {asset.name ? `${asset.name} (${sym})` : sym} last traded at{" "}
+              <strong className="text-text">
+                {formatUsdValue(asset.market_usd)}
+              </strong>{" "}
+              against an intrinsic value of{" "}
+              <strong className="text-text">
+                {formatUsdValue(asset.intrinsic_usd)}
+              </strong>
+              {asset.updated_at ? (
+                <>
+                  , as of{" "}
+                  <time dateTime={asset.updated_at}>
+                    {formatUtcDate(asset.updated_at)}
+                  </time>
+                </>
+              ) : null}
+              .
             </>
           ) : null}
-          .
         </p>
 
         <p className="mt-4 max-w-[68ch] text-[14.5px] leading-[1.65] text-text-muted">
-          {mechanismSentence(sym, asset.class)} Pegana computes {sym}
+          {mechanismSentence(sym, asset.class, asset.symbol)} Pegana computes {sym}
           &rsquo;s intrinsic value from its peg mechanism and compares it against
           the best executable market quote. The spread is smoothed, classified
           against {sym}&rsquo;s own calibrated thresholds with hysteresis, and

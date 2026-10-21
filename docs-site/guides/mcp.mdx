@@ -55,29 +55,31 @@ inspect the result, and refuse a swap if state is `DRIFT` or worse.
 | --- | --- |
 | `ping` | Server liveness check |
 | `get_assets` | List all active assets with latest snapshot |
-| `get_asset_state` | Current state, intrinsic, market, spread for one asset |
-| `get_methodology` | Formula, sources, FSM thresholds — for the model to reason from |
+| `get_asset_state` | Current state, discount, intrinsic and market price for one asset |
+| `get_methodology` | This asset's intrinsic and market sources plus the state machine, for the model to reason from |
 | `get_loop_exposure` | Anonymous aggregate leverage/health-factor exposure for Kamino & Jupiter Lend (k-anonymity k≥5) |
-| `simulate_depeg_impact` | Simulate a hypothetical depeg shock on an asset and see the projected state + spread |
+| `simulate_depeg_impact` | Estimated liquidatable collateral (`liquidatable_usd`, `positions`) across Kamino and Jupiter Lend for a preset depeg shock |
 | `verify_alert` | Verify an alert receipt (hash + optional on-chain anchor) — proxies `GET /v1/audit/:alert_id`, data already public |
-| `ping_paid` | Smoke test of the MCP call path (free; returns `paid pong`) |
+| `ping_paid` | Legacy alias of `ping` (free; returns `paid pong`) |
 | `get_asset_history` | Bucketed discount history (1m/5m/15m/1h), up to 30 days |
 | `subscribe_peg_events` | Pull state transitions since a cursor timestamp |
 
 ## Hosted — no clone needed
 
-The server is hosted at `mcp.pegana.xyz` — no clone needed; see
-[pegana.xyz/developers](https://pegana.xyz/developers). Just point your MCP host at
-the URL — no install, no API key. The runtime is `mcp-ts/` (TypeScript on Bun + Hono),
-configured via env vars (`PEGANA_API_BASE`, `REDIS_URL`, `DATABASE_URL`).
+The server is hosted at `mcp.pegana.xyz`, so there is nothing to clone or install and
+no API key: point your MCP host at the URL (see [setup](/guides/mcp-setup-claude)). The
+runtime is [`mcp-ts/`](https://github.com/PeganaHQ/Pegana/tree/main/mcp-ts) (TypeScript
+on Bun + Hono), configured via env vars (`PEGANA_API`, `REDIS_URL`, `DATABASE_URL`).
 
 ## Anti-prompt-injection note
 
-The MCP server returns structured JSON — no markdown, no nested instructions, no
-"ignore previous" payloads. We do not flow user-provided strings back into the
-response. The `get_methodology` content is static (vendored at build time), so an
-attacker compromising `api.pegana.xyz` cannot inject prompts via the methodology
-response.
+The MCP server returns structured JSON: no markdown, no nested instructions, no
+"ignore previous" payloads. The only caller-supplied string echoed back is the
+`symbol` (or `alert_id`) you passed, in `get_methodology`'s output and in error texts;
+it is length-capped by the input schema (20 characters for symbols, a UUID for alert
+IDs). For every asset in the registry, the `get_methodology` content is compiled into
+the server at build time, so an attacker compromising `api.pegana.xyz` cannot inject
+prompts via the methodology response.
 
 The values we *do* return (`asset`, `state`, decimal numbers, timestamps) are
 constrained shapes — your model can treat them as data, not prompts.

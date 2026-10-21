@@ -8,6 +8,10 @@ import {
   fmtSize,
   fmtUsd,
   impactColor,
+  noMeasurableImpactUpTo,
+  nextQuotePrice,
+  quoteAmountBaseUnits,
+  scaleOutToRequestedSize,
   safeExitSize,
 } from "@/lib/asset/exit-liquidity";
 import { displaySymbol } from "@/lib/asset/display-symbol";
@@ -52,15 +56,21 @@ interface QuoteRow {
   failed: boolean;
 }
 
+/** Jupiter's priceImpactPct (a fraction string) as percent; null if unusable. */
+export function parseImpactPct(raw: unknown): number | null {
+  if (typeof raw !== "string" && typeof raw !== "number") return null;
+  if (typeof raw === "string" && raw.trim() === "") return null;
+  const n = Number(raw) * 100;
+  return Number.isFinite(n) ? n : null;
+}
+
 async function jupiterQuote(
   inputMint: string,
   decimals: number,
   marketUsd: number,
   sizeUsd: number,
-): Promise<{ usdcOut: number; impactPct: number; routeLabel: string | null }> {
-  const inputAmount = Math.round(
-    (sizeUsd / marketUsd) * Math.pow(10, decimals),
-  );
+): Promise<{ usdcOut: number; impactPct: number | null; routeLabel: string | null }> {
+  const inputAmount = quoteAmountBaseUnits(sizeUsd, marketUsd, decimals);
   const url =
     `/api/jupiter-quote` +
     `?inputMint=${inputMint}` +
@@ -80,11 +90,54 @@ async function jupiterQuote(
         ),
     ),
   ];
+  // outAmount is for the rounded input; rescale it to the size the row shows.
+  const usdcOut = scaleOutToRequestedSize(
+    Number(d.outAmount) / 1e6,
+    inputAmount,
+    sizeUsd,
+    marketUsd,
+    decimals,
+  );
+  if (usdcOut == null) throw new Error("Jupiter quote has no usable amount");
   return {
-    usdcOut: Number(d.outAmount) / 1e6,
-    impactPct: parseFloat(d.priceImpactPct ?? "0") * 100,
+    usdcOut,
+    // A missing or garbled impact is UNKNOWN (null), never 0: 0 would read as
+    // "no price impact".
+    impactPct: parseImpactPct(d.priceImpactPct),
     routeLabel: labels.join(" → ") || null,
   };
+}
+
+// Jupiter rate-limits bursts: firing all five sizes at once failed 27 of 40
+// quotes in a live probe (every failure an upstream 429), while one-at-a-time
+// requests succeed. So the ladder is fetched sequentially, and a failed size is
+// retried with backoff before it is shown as "Quote failed".
+const QUOTE_RETRY_DELAYS_MS = [1_500, 4_000] as const;
+
+function sleep(ms: number, isCancelled: () => boolean): Promise<void> {
+  return new Promise((resolve) => {
+    if (isCancelled()) return resolve();
+    setTimeout(resolve, ms);
+  });
+}
+
+/** One quote with bounded retries. Exported for tests. */
+export async function quoteWithRetry<T>(
+  fetchOnce: () => Promise<T>,
+  isCancelled: () => boolean,
+  delays: readonly number[] = QUOTE_RETRY_DELAYS_MS,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    if (attempt > 0) await sleep(delays[attempt - 1], isCancelled);
+    if (isCancelled()) break;
+    try {
+      return await fetchOnce();
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error("cancelled");
 }
 
 function makeLoadingRows(sizes: readonly number[]): QuoteRow[] {
@@ -153,20 +206,31 @@ function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
     makeLoadingRows(SIZES_USD),
   );
 
+  // Re-quote only on a real (>=1%) market move, not on every 30s poll.
+  const [quotePrice, setQuotePrice] = useState<number | null>(() =>
+    nextQuotePrice(null, marketUsd),
+  );
   useEffect(() => {
-    if (isUsdc || !marketUsd || marketUsd <= 0) return;
+    setQuotePrice((cur) => nextQuotePrice(cur, marketUsd));
+  }, [marketUsd]);
+
+  useEffect(() => {
+    if (isUsdc || !quotePrice || quotePrice <= 0) return;
+    const marketUsd = quotePrice;
 
     let cancelled = false;
+    const isCancelled = () => cancelled;
     setRows(makeLoadingRows(sizes));
 
-    Promise.all(
-      sizes.map(async (sizeUsd, i) => {
+    // Sequential, not Promise.all: see QUOTE_RETRY_DELAYS_MS.
+    void (async () => {
+      for (const [i, sizeUsd] of sizes.entries()) {
+        if (cancelled) return;
         try {
-          const result = await jupiterQuote(
-            asset.mint,
-            asset.decimals,
-            marketUsd,
-            sizeUsd,
+          const result = await quoteWithRetry(
+            () =>
+              jupiterQuote(asset.mint, asset.decimals, marketUsd, sizeUsd),
+            isCancelled,
           );
           if (!cancelled) {
             setRows((prev) => {
@@ -185,13 +249,13 @@ function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
             });
           }
         }
-      }),
-    );
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [asset.mint, asset.decimals, marketUsd, isUsdc, sizes]);
+  }, [asset.mint, asset.decimals, quotePrice, isUsdc, sizes]);
 
   // Depth-curve summary (desktop, once the whole ladder is sampled): the largest
   // exit size still under the 0.3% depeg-tier slippage line.
@@ -207,6 +271,18 @@ function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
     [rows],
   );
 
+  // Every sampled size rounds to "<0.001%": the curve is a flat line, so a
+  // full-height chart would be an empty box. Say it in one compact line.
+  const flatUpTo = useMemo(
+    () =>
+      fullyLoaded
+        ? noMeasurableImpactUpTo(
+            rows.map((r) => ({ sizeUsd: r.sizeUsd, impactPct: r.impactPct })),
+          )
+        : null,
+    [fullyLoaded, rows],
+  );
+
   return (
     <div>
       <h2 className="text-[28px] font-medium leading-[1.1] tracking-[-0.01em] text-text">
@@ -216,7 +292,16 @@ function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
         Redeem {displaySymbol(asset.symbol)} → USDC right now · slippage by size
       </p>
 
-      {fullyLoaded && (
+      {flatUpTo != null && (
+        <div
+          data-testid="exit-no-impact"
+          className="mb-3 hidden rounded-[16px] border border-hairline bg-surface-1 px-5 py-3 font-mono text-[11px] text-st-pegged sm:block"
+        >
+          No measurable price impact up to {fmtSize(flatUpTo)}
+        </div>
+      )}
+
+      {fullyLoaded && flatUpTo == null && (
         <div className="mb-3 hidden rounded-[16px] border border-hairline bg-surface-1 px-5 py-4 sm:block">
           <div className="mb-2.5 flex items-baseline justify-between gap-3">
             <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-text-caption">
@@ -309,8 +394,10 @@ function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
                   >
                     {row.loading ? (
                       <span className="animate-pulse">-</span>
-                    ) : row.failed || row.impactPct == null ? (
+                    ) : row.failed ? (
                       "-"
+                    ) : row.impactPct == null ? (
+                      "n/a"
                     ) : (
                       `${row.impactPct < 0.001 ? "<0.001" : row.impactPct.toFixed(3)}%`
                     )}
@@ -427,8 +514,10 @@ function ExitLiquidityInner({ asset }: { asset: AssetCardData }) {
                       >
                         {row.loading ? (
                           <span className="animate-pulse">-</span>
-                        ) : row.failed || row.impactPct == null ? (
+                        ) : row.failed ? (
                           "-"
+                        ) : row.impactPct == null ? (
+                          "n/a"
                         ) : (
                           `${row.impactPct < 0.001 ? "<0.001" : row.impactPct.toFixed(3)}%`
                         )}

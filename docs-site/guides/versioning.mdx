@@ -27,6 +27,16 @@ pre-integration cleanup, done in place because no external consumer had integrat
 </Note>
 
 <Note>
+**Second exception (2026-10-20): the open-source release.** When Pegana became open source and
+free, the account-bound surfaces were removed in place, with no `v2` prefix and no `Sunset`
+period: `GET /v1/alerts`, `/v1/me/*` and `/v1/auth/*` now return `404 not_found`. The public
+ledger that replaces `GET /v1/alerts` is `GET /v1/audit`. The
+[migration table](/changelog#migrating-from-removed-endpoints) maps each removed route to its
+replacement. Every other `v1` endpoint and field was left unchanged, and the additive-only
+promise applies to the surface documented today.
+</Note>
+
+<Note>
 This is distinct from the **methodology version** (e.g. `0.7.0`), which describes the risk
 model, not the wire contract. Read it at [`GET /v1/methodology/current`](https://api.pegana.xyz/v1/methodology/current);
 every receipt is pinned to the methodology version that produced it.
@@ -36,4 +46,6 @@ every receipt is pinned to the methodology version that produced it.
 
 If an endpoint is ever slated for retirement, it will advertise it with standard HTTP
 signals — a `Deprecation` header and a `Sunset` date — well ahead of any change, so pollers
-have a window to migrate. None are deprecated today.
+have a window to migrate. None are deprecated today. The 2026-10-20 removals above did not
+follow this process; they are documented as an exception rather than presented as a
+deprecation.

@@ -35,6 +35,27 @@ import type { Metadata } from "next";
 /** Canonical host. Mirrors `siteUrl` in `web/app/layout.tsx`. */
 const SITE_URL = "https://www.pegana.xyz";
 
+/**
+ * The site-wide social card (app/opengraph-image.png, app/twitter-image.png,
+ * both 1200x630). Next replaces the parent's `openGraph`/`twitter` objects
+ * WHOLESALE when a page sets its own, so without these every inner page
+ * unfurled with `summary_large_image` and no image at all. A route with its
+ * own colocated opengraph-image file (asset, audit receipt) still wins:
+ * file-based metadata overrides config-based metadata in the same segment.
+ */
+const DEFAULT_OG_IMAGE = {
+  url: "/opengraph-image.png",
+  width: 1200,
+  height: 630,
+  alt: "Pegana: peg-risk oracle for Solana",
+};
+const DEFAULT_TWITTER_IMAGE = {
+  url: "/twitter-image.png",
+  width: 1200,
+  height: 630,
+  alt: "Pegana: peg-risk oracle for Solana",
+};
+
 /** Brand suffix for social cards. `title` itself stays bare for the template. */
 const OG_SUFFIX = " | Pegana";
 
@@ -66,8 +87,19 @@ export function pageMetadata({
     title,
     description,
     alternates: { canonical: path },
-    openGraph: { title: ogTitle, description, url, type: "website" },
-    twitter: { card: "summary_large_image", title: ogTitle, description },
+    openGraph: {
+      title: ogTitle,
+      description,
+      url,
+      type: "website",
+      images: [DEFAULT_OG_IMAGE],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: ogTitle,
+      description,
+      images: [DEFAULT_TWITTER_IMAGE],
+    },
     ...(noindex ? { robots: { index: false, follow: false } } : {}),
   };
 }

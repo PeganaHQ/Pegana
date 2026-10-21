@@ -88,9 +88,10 @@ export function sniffImageType(bytes: Uint8Array): string | null {
   if (startsWith([0x52, 0x49, 0x46, 0x46]) && startsWith([0x57, 0x45, 0x42, 0x50], 8)) {
     return "image/webp";
   }
-  // SVG is text; scan a bounded prefix for the root element. Safe to serve here
-  // because it is only ever loaded via <img src>, where scripts do not execute,
-  // and the response carries `nosniff`.
+  // SVG is text; scan a bounded prefix for the root element. <img src> never
+  // runs an SVG's scripts, but anyone can open this URL as a top-level
+  // document, where a hostile SVG WOULD run in our origin. That is why every
+  // response carries LOGO_SECURITY_HEADERS (CSP sandbox, no scripts).
   const prefix = new TextDecoder("utf-8", { fatal: false })
     .decode(bytes.subarray(0, 1024))
     .trimStart()
@@ -99,6 +100,27 @@ export function sniffImageType(bytes: Uint8Array): string | null {
 
   return null;
 }
+
+// Applied to every logo we relay. The bytes come from third-party hosts that
+// lst-directory.com publishes (S3 buckets, GitHub repos, shdw-drive...), and
+// SVG can carry <script>. Opened directly, such a file would execute in the
+// www.pegana.xyz origin (the page CSP in proxy.ts does not cover /api), and be
+// cached for days. A sandboxed, script-less CSP makes the document inert,
+// whatever it contains; inline styles stay allowed so SVGs still render.
+export const LOGO_SECURITY_HEADERS: Record<string, string> = {
+  "content-security-policy":
+    "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
+  "x-content-type-options": "nosniff",
+  "cross-origin-resource-policy": "same-origin",
+};
+
+const EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+};
 
 function notFound(): Response {
   // Every failure mode (missing mint, no logoUri, blocked host, non-image,
@@ -176,9 +198,8 @@ export async function GET(request: Request) {
         // Long-lived + immutable: a given mint's logoUri rarely changes, and
         // Vercel's CDN + browser cache absorb repeat requests after warmup.
         "cache-control": "public, max-age=86400, s-maxage=604800, immutable",
-        // Belt-and-suspenders — images never execute embedded script, but
-        // this blocks a browser from ever sniffing the body as anything else.
-        "x-content-type-options": "nosniff",
+        "content-disposition": `inline; filename="logo.${EXT[sniffed] ?? "img"}"`,
+        ...LOGO_SECURITY_HEADERS,
       },
     });
   } catch {

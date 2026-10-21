@@ -1,7 +1,9 @@
 "use client";
 
+import { isRateLimited } from "@/lib/api/client";
+import { RATE_LIMITED_BODY, RATE_LIMITED_LABEL } from "@/lib/api/rate-limit-copy";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/atoms/intent-link";
 import { Check, ListFilter } from "lucide-react";
 import { useAlertsWindow } from "@/lib/hooks/use-alerts";
 import { useAssets } from "@/lib/hooks/use-assets";
@@ -14,12 +16,19 @@ import { Pagination } from "@/components/molecules/pagination";
 import { usePagination } from "@/lib/hooks/use-pagination";
 import { stateMeta } from "@/lib/asset/state-meta";
 import {
-  cleanBpsSeries,
   formatDayUS,
   formatGap,
   isDeprecated,
   reconcileBps,
 } from "@/lib/api/format";
+import {
+  clusterAlerts,
+  eventCounts,
+  matchesEventFilters,
+  type ClassFilter,
+  type EventCluster,
+  type SeverityFilter,
+} from "@/lib/alerts/events";
 import { cn } from "@/lib/utils/cn";
 import { displaySymbol } from "@/lib/asset/display-symbol";
 import type { AlertRow, PegState, AssetCardData } from "@/lib/api/types";
@@ -29,100 +38,6 @@ import { spreadSignClass } from "@/lib/state-class";
 // left to match the dashboard shell. Class + severity facets live in the
 // rail; main column is the chronological timeline (with the 52-week
 // heatmap as an opening summary).
-
-type ClassFilter = "all" | "lst" | "stable" | "synth";
-type SeverityFilter = "all" | "DRIFT" | "DEPEG" | "CRITICAL";
-
-interface EventCluster {
-  asset: string;
-  klass: string;
-  day: string;
-  latestAt: string;
-  alerts: AlertRow[];
-  worst: PegState;
-  magnitudeBps: number | null;
-  magnitudeLabel: "alert spread" | "current spread" | "spread unavailable";
-  sparkline: number[];
-  live: boolean;
-}
-
-const STATE_RANK: Record<PegState, number> = {
-  PEGGED: 0,
-  UNKNOWN: 0,
-  DRIFT: 1,
-  DEPEG: 2,
-  CRITICAL: 3,
-  BLACK_SWAN: 4,
-};
-
-function alertBps(a: AlertRow): number | null {
-  // Alert rows carry only the engine's authoritative `discount` — the backend
-  // emits no intrinsic/market on this endpoint, so there's nothing to
-  // cross-check against; read the declared spread directly.
-  const spread = reconcileBps({
-    discount: a.discount ?? null,
-    intrinsic_usd: null,
-    market_usd: null,
-  });
-  return spread.bps;
-}
-
-function assetSparkline(asset: AssetCardData | undefined): number[] {
-  return cleanBpsSeries(
-    asset?.series_24h?.map((v) => Math.round(v * 10000)),
-  ).slice(-36);
-}
-
-function clusterAlerts(
-  rows: AlertRow[],
-  assetMap: Record<string, AssetCardData>,
-): EventCluster[] {
-  const map = new Map<string, EventCluster>();
-  for (const a of rows) {
-    const day = a.detected_at.slice(0, 10);
-    const key = `${a.asset}__${day}`;
-    const ex = map.get(key);
-    const ownBps = alertBps(a);
-    const fallbackBps = reconcileBps(
-      assetMap[a.asset] ?? {
-        discount: null,
-        intrinsic_usd: null,
-        market_usd: null,
-      },
-    ).bps;
-    if (ex) {
-      ex.alerts.push(a);
-      if (STATE_RANK[a.to_state] > STATE_RANK[ex.worst]) ex.worst = a.to_state;
-      if (a.detected_at > ex.latestAt) ex.latestAt = a.detected_at;
-      if (ex.magnitudeBps == null && ownBps != null) {
-        ex.magnitudeBps = ownBps;
-        ex.magnitudeLabel = "alert spread";
-      }
-      ex.live = ex.live || a.id.startsWith("live:");
-    } else {
-      map.set(key, {
-        asset: a.asset,
-        klass: a.class,
-        day,
-        latestAt: a.detected_at,
-        alerts: [a],
-        worst: a.to_state,
-        magnitudeBps: ownBps ?? fallbackBps,
-        magnitudeLabel:
-          ownBps != null
-            ? "alert spread"
-            : fallbackBps != null
-              ? "current spread"
-              : "spread unavailable",
-        sparkline: assetSparkline(assetMap[a.asset]),
-        live: a.id.startsWith("live:"),
-      });
-    }
-  }
-  return [...map.values()].sort((a, b) =>
-    a.latestAt < b.latestAt ? 1 : a.latestAt > b.latestAt ? -1 : 0,
-  );
-}
 
 function classLabel(c: string): string {
   return c === "lst"
@@ -235,52 +150,20 @@ export default function EventsPage() {
   // rendered directly above this page's own "LIVE FEED UNREACHABLE" block:
   // two contradictory claims in one viewport. Missing data must not be
   // presentable as confirming data; that is the whole product.
-  const classCounts = useMemo<Record<"all" | "lst" | "stable" | "synth", number | null>>(() => {
-    if (!alerts) return { all: null, lst: null, stable: null, synth: null };
-    const c = { all: 0, lst: 0, stable: 0, synth: 0 };
-    for (const a of alerts) {
-      if (isDeprecated(a.asset)) continue;
-      c.all += 1;
-      if (a.class === "lst") c.lst += 1;
-      else if (a.class.startsWith("stable_")) c.stable += 1;
-      else if (a.class === "synth_lev") c.synth += 1;
-    }
-    return c;
-  }, [alerts]);
-
-  const severityCounts = useMemo<Record<"all" | "DRIFT" | "DEPEG" | "CRITICAL", number | null>>(() => {
-    if (!alerts) return { all: null, DRIFT: null, DEPEG: null, CRITICAL: null };
-    const s = { all: 0, DRIFT: 0, DEPEG: 0, CRITICAL: 0 };
-    for (const a of alerts) {
-      if (isDeprecated(a.asset)) continue;
-      s.all += 1;
-      if (a.to_state === "DRIFT") s.DRIFT += 1;
-      else if (a.to_state === "DEPEG") s.DEPEG += 1;
-      else if (a.to_state === "CRITICAL" || a.to_state === "BLACK_SWAN")
-        s.CRITICAL += 1;
-    }
-    return s;
-  }, [alerts]);
+  // Every alert lands in exactly one class bucket and one severity bucket
+  // (lib/alerts/events.ts), so each tab group sums to All. It used to drop
+  // retired classes and recoveries into PEGGED, so 74+349+0 != 440.
+  const { byClass: classCounts, bySeverity: severityCounts } = useMemo(
+    () => eventCounts(alerts),
+    [alerts],
+  );
 
   const clusters = useMemo(() => {
     const rows = [...liveRows, ...(alerts ?? [])];
     if (rows.length === 0) return [];
-    const filtered = rows.filter((a) => {
-      if (isDeprecated(a.asset)) return false;
-      if (classFilter !== "all") {
-        if (classFilter === "lst" && a.class !== "lst") return false;
-        if (classFilter === "stable" && !a.class.startsWith("stable_"))
-          return false;
-        if (classFilter === "synth" && a.class !== "synth_lev") return false;
-      }
-      if (severityFilter !== "all") {
-        if (severityFilter === "CRITICAL") {
-          if (a.to_state !== "CRITICAL" && a.to_state !== "BLACK_SWAN")
-            return false;
-        } else if (a.to_state !== severityFilter) return false;
-      }
-      return true;
-    });
+    const filtered = rows.filter((a) =>
+      matchesEventFilters(a, classFilter, severityFilter),
+    );
     return clusterAlerts(filtered, assetMap);
   }, [alerts, assetMap, classFilter, liveRows, severityFilter]);
 
@@ -304,7 +187,8 @@ export default function EventsPage() {
     items: clusters,
     pageSize: 25,
     resetKey: `${classFilter}|${severityFilter}`,
-    itemNoun: "cluster",
+    // The unit the page copy defines: one row per asset per day.
+    itemNoun: "row",
   });
   const pagedClusters = pagination.pageItems;
 
@@ -324,6 +208,69 @@ export default function EventsPage() {
   }, [pagedClusters]);
 
   const filtersActive = classFilter !== "all" || severityFilter !== "all";
+
+  // Tab definitions shared by the desktop rail and the mobile pills. The
+  // "Other" class and the Recovery/Unknown severities appear only when they
+  // hold alerts, but they exist so every tab group sums to All.
+  const classOptions: ReadonlyArray<{
+    value: ClassFilter;
+    label: string;
+    count: number | null;
+  }> = [
+    { value: "all", label: "All", count: classCounts.all },
+    { value: "lst", label: "LSTs", count: classCounts.lst },
+    { value: "stable", label: "Stables", count: classCounts.stable },
+    { value: "synth", label: "Synthetic", count: classCounts.synth },
+    ...(classCounts.other
+      ? [{ value: "other" as const, label: "Other", count: classCounts.other }]
+      : []),
+  ];
+  const severityOptions: ReadonlyArray<{
+    value: SeverityFilter;
+    label: string;
+    count: number | null;
+    swatch?: string;
+  }> = [
+    { value: "all", label: "All", count: severityCounts.all },
+    {
+      value: "DRIFT",
+      label: "Drift",
+      count: severityCounts.DRIFT,
+      swatch: stateMeta("DRIFT").dotVar,
+    },
+    {
+      value: "DEPEG",
+      label: "Depeg",
+      count: severityCounts.DEPEG,
+      swatch: stateMeta("DEPEG").dotVar,
+    },
+    {
+      value: "CRITICAL",
+      label: "Critical",
+      count: severityCounts.CRITICAL,
+      swatch: stateMeta("CRITICAL").dotVar,
+    },
+    ...(severityCounts.RECOVERY
+      ? [
+          {
+            value: "RECOVERY" as const,
+            label: "Recovery",
+            count: severityCounts.RECOVERY,
+            swatch: stateMeta("PEGGED").dotVar,
+          },
+        ]
+      : []),
+    ...(severityCounts.UNKNOWN
+      ? [
+          {
+            value: "UNKNOWN" as const,
+            label: "Unknown",
+            count: severityCounts.UNKNOWN,
+            swatch: stateMeta("UNKNOWN").dotVar,
+          },
+        ]
+      : []),
+  ];
 
   // Timeline row — idiom ported from the V2 changelog spine (spine + dots +
   // type pills), adapted to app density — not the scoped `.pegana-v2`
@@ -447,38 +394,13 @@ export default function EventsPage() {
             label="Class"
             active={classFilter}
             onChange={setClassFilter}
-            options={[
-              { value: "all", label: "All", count: classCounts.all },
-              { value: "lst", label: "LSTs", count: classCounts.lst },
-              { value: "stable", label: "Stables", count: classCounts.stable },
-              { value: "synth", label: "Synthetic", count: classCounts.synth },
-            ]}
+            options={classOptions}
           />
           <FilterPillGroup
             label="Severity"
             active={severityFilter}
             onChange={setSeverityFilter}
-            options={[
-              { value: "all", label: "All", count: severityCounts.all },
-              {
-                value: "DRIFT",
-                label: "Drift",
-                count: severityCounts.DRIFT,
-                swatch: stateMeta("DRIFT").dotVar,
-              },
-              {
-                value: "DEPEG",
-                label: "Depeg",
-                count: severityCounts.DEPEG,
-                swatch: stateMeta("DEPEG").dotVar,
-              },
-              {
-                value: "CRITICAL",
-                label: "Critical",
-                count: severityCounts.CRITICAL,
-                swatch: stateMeta("CRITICAL").dotVar,
-              },
-            ]}
+            options={severityOptions}
           />
         </div>
       </aside>
@@ -497,8 +419,8 @@ export default function EventsPage() {
             </h1>
             <p className="mt-3 max-w-[62ch] text-[14px] leading-[1.6] text-text-body sm:text-[15px]">
               Each row is one asset on one day with at least one state
-              transition out of PEGGED. Click into the asset for the exact
-              spread chart.
+              transition, recoveries to Pegged included. Click into the asset
+              for the exact spread chart.
             </p>
             <Link
               href="/audit"
@@ -516,47 +438,14 @@ export default function EventsPage() {
               active={classFilter}
               onChange={setClassFilter}
               scroll
-              options={[
-                { value: "all", label: "All", count: classCounts.all },
-                { value: "lst", label: "LSTs", count: classCounts.lst },
-                {
-                  value: "stable",
-                  label: "Stables",
-                  count: classCounts.stable,
-                },
-                {
-                  value: "synth",
-                  label: "Synthetic",
-                  count: classCounts.synth,
-                },
-              ]}
+              options={classOptions}
             />
             <FilterPillGroup
               label="Severity"
               active={severityFilter}
               onChange={setSeverityFilter}
               scroll
-              options={[
-                { value: "all", label: "All", count: severityCounts.all },
-                {
-                  value: "DRIFT",
-                  label: "Drift",
-                  count: severityCounts.DRIFT,
-                  swatch: stateMeta("DRIFT").dotVar,
-                },
-                {
-                  value: "DEPEG",
-                  label: "Depeg",
-                  count: severityCounts.DEPEG,
-                  swatch: stateMeta("DEPEG").dotVar,
-                },
-                {
-                  value: "CRITICAL",
-                  label: "Critical",
-                  count: severityCounts.CRITICAL,
-                  swatch: stateMeta("CRITICAL").dotVar,
-                },
-              ]}
+              options={severityOptions}
             />
           </div>
 
@@ -673,12 +562,18 @@ export default function EventsPage() {
           {backendDown && (
             <div role="status" aria-live="polite">
               <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-st-drift">
-                ● Live feed unreachable
+                ● {isRateLimited(error) ? RATE_LIMITED_LABEL : "Live feed unreachable"}
               </p>
               <p className="mt-3 max-w-[480px] text-[14px] leading-[1.6] text-text-muted">
-                The Pegana API isn&apos;t responding right now, so the event
-                timeline can&apos;t load. It will reappear automatically as soon
-                as the feed is healthy.
+                {isRateLimited(error) ? (
+                  RATE_LIMITED_BODY
+                ) : (
+                  <>
+                    The Pegana API isn&apos;t responding right now, so the event
+                    timeline can&apos;t load. It will reappear automatically as
+                    soon as the feed is healthy.
+                  </>
+                )}
               </p>
               <div className="mt-5 flex flex-wrap gap-3">
                 <button
@@ -767,12 +662,14 @@ export default function EventsPage() {
               {BUCKET_ORDER.map(({ key, label }) => {
                 const items = bucketedClusters[key];
                 if (items.length === 0) return null;
-                const eventCount = items.reduce((s, c) => s + c.alerts.length, 0);
+                // Alerts, the same unit as the filter counts; the row count is
+                // visible directly beneath.
+                const alertCount = items.reduce((s, c) => s + c.alerts.length, 0);
                 return (
                   <section key={key}>
                     <h2 className="mb-4 flex items-baseline gap-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-caption">
                       <span>{label}</span>
-                      <span className="text-text-caption/60">{eventCount} {eventCount === 1 ? "event" : "events"}</span>
+                      <span className="text-text-caption/60">{alertCount} {alertCount === 1 ? "alert" : "alerts"}</span>
                     </h2>
                     <ol className="relative grid gap-10 pl-6 sm:pl-8 before:absolute before:left-[3px] before:top-[6px] before:bottom-0 before:w-px before:bg-hairline">
                       {items.map(renderCluster)}

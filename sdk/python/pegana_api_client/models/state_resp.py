@@ -25,8 +25,13 @@ class StateResp:
             first snapshot of the current contiguous run. Constant across
             recomputes; it changes ONLY on a real state transition. For an asset
             that has only ever held one state it is that asset's first observed
-            snapshot. When `stale` is true it collapses to `updated_at`, the moment
-            data stopped.
+            snapshot, which is NOT a transition: see `since_is_lower_bound` and
+            `history_start`. When `stale` is true it collapses to `updated_at`, the
+            moment data stopped.
+        since_is_lower_bound (bool): `true` when `since` is at the start of stored history (`since <=
+            history_start`): the asset has held this state for the whole recorded
+            window and may have entered it earlier, so `since` is a lower bound,
+            not a transition time.
         stale (bool): `true` when `updated_at` is older than the 15-minute freshness bound the
             list/detail endpoints enforce — i.e. the feed has likely frozen. Unlike
             list/detail, `/state` still returns the last value rather than 404-hiding
@@ -50,6 +55,11 @@ class StateResp:
             endpoint's `confidence`. Collapses to `unknown` when the feed is stale (same
             as `state`), so a frozen feed cannot read as confidently pegged. Omitted only
             when no snapshot carries a confidence value (non-Pyth-dependent assets).
+        history_start (datetime.datetime | None | Unset): RFC3339 of the earliest snapshot Pegana has stored for this
+            asset; no
+            history exists before it. Production history begins
+            2026-10-17T09:20Z (the database was rebuilt then), so for assets
+            tracked before that it is about that instant. Omitted when unknown.
         state_reason (None | str | Unset): Advisory machine-readable reason for the current state (mirrors
             `discount_snapshots.state_reason` and `Receipt.state_reason`).
 
@@ -57,8 +67,13 @@ class StateResp:
             - `premium_sanity` — engine NAV-sanity override: smoothed discount exceeded
               the premium-sanity bound, state forced to UNKNOWN (intrinsic anchor
               suspect).
-            - `stale_source` — API layer: feed is >15 min stale, state collapsed to
-              UNKNOWN; no fresh discount snapshot exists.
+            - `stale_source` — API layer: no discount snapshot in the last 15 min
+              (sources or engine dark), state collapsed to UNKNOWN.
+            - `market_unavailable` — API layer: no discount snapshot in the last 15
+              min, but the intrinsic leg IS fresh and no market tick exists in that
+              window (thin market, no reliable quote). State UNKNOWN; the other
+              fields are from the last discount snapshot (`updated_at` = when it
+              stopped), like `stale_source`.
 
             **Reserved — not yet emitted (planned for depth-gate / oracle-crosscheck
             work):** `no_oracle_crosscheck | intrinsic_unavailable | shallow_market |
@@ -72,10 +87,12 @@ class StateResp:
     intrinsic_usd: str
     market_usd: str
     since: datetime.datetime
+    since_is_lower_bound: bool
     stale: bool
     state: PegState
     updated_at: datetime.datetime
     confidence: None | str | Unset = UNSET
+    history_start: datetime.datetime | None | Unset = UNSET
     state_reason: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -90,6 +107,8 @@ class StateResp:
 
         since = self.since.isoformat()
 
+        since_is_lower_bound = self.since_is_lower_bound
+
         stale = self.stale
 
         state = self.state.value
@@ -101,6 +120,14 @@ class StateResp:
             confidence = UNSET
         else:
             confidence = self.confidence
+
+        history_start: None | str | Unset
+        if isinstance(self.history_start, Unset):
+            history_start = UNSET
+        elif isinstance(self.history_start, datetime.datetime):
+            history_start = self.history_start.isoformat()
+        else:
+            history_start = self.history_start
 
         state_reason: None | str | Unset
         if isinstance(self.state_reason, Unset):
@@ -117,6 +144,7 @@ class StateResp:
                 "intrinsic_usd": intrinsic_usd,
                 "market_usd": market_usd,
                 "since": since,
+                "since_is_lower_bound": since_is_lower_bound,
                 "stale": stale,
                 "state": state,
                 "updated_at": updated_at,
@@ -124,6 +152,8 @@ class StateResp:
         )
         if confidence is not UNSET:
             field_dict["confidence"] = confidence
+        if history_start is not UNSET:
+            field_dict["history_start"] = history_start
         if state_reason is not UNSET:
             field_dict["state_reason"] = state_reason
 
@@ -142,6 +172,8 @@ class StateResp:
 
         since = datetime.datetime.fromisoformat(d.pop("since"))
 
+        since_is_lower_bound = d.pop("since_is_lower_bound")
+
         stale = d.pop("stale")
 
         state = PegState(d.pop("state"))
@@ -156,6 +188,23 @@ class StateResp:
             return cast(None | str | Unset, data)
 
         confidence = _parse_confidence(d.pop("confidence", UNSET))
+
+        def _parse_history_start(data: object) -> datetime.datetime | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                history_start_type_0 = datetime.datetime.fromisoformat(data)
+
+                return history_start_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(datetime.datetime | None | Unset, data)
+
+        history_start = _parse_history_start(d.pop("history_start", UNSET))
 
         def _parse_state_reason(data: object) -> None | str | Unset:
             if data is None:
@@ -172,10 +221,12 @@ class StateResp:
             intrinsic_usd=intrinsic_usd,
             market_usd=market_usd,
             since=since,
+            since_is_lower_bound=since_is_lower_bound,
             stale=stale,
             state=state,
             updated_at=updated_at,
             confidence=confidence,
+            history_start=history_start,
             state_reason=state_reason,
         )
 
