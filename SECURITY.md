@@ -28,8 +28,10 @@ We support coordinated disclosure and will credit reporters who want it.
 ## Scope
 
 In scope: `www.pegana.xyz` (and `pegana.xyz`), `api.pegana.xyz`, `mcp.pegana.xyz`,
-`docs.pegana.xyz`, the source in this repository (engine, API, indexers, MCP server, web
-app), the public `pegana-replay` CLI, and the on-chain receipt/anchor mechanism. The
+`docs.pegana.xyz`, the oracle source in this repository (engine, API, indexers, dispatcher,
+MCP server, verifier, SDKs), the public `pegana-replay` CLI, and the on-chain receipt/anchor
+mechanism. The pegana.xyz website and web app are proprietary and not in this repository;
+report issues you find on the live site the same way. The
 webhook egress path in `dispatcher-rs` is in scope for self-hosted deployments (the hosted
 service does not offer webhook registration).
 

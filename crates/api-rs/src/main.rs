@@ -151,6 +151,10 @@ async fn main() -> Result<()> {
     ws::spawn_redis_fanout(state.redis.clone(), state.ws_hub.clone());
     ws::spawn_excluded_refresh(state.pg.clone(), state.ws_hub.clone());
     spawn_fd_gauges();
+    // Parse the per-feed oracle_stale windows (assets.toml pyth_staleness
+    // overrides, embedded at build time) once at startup, not on first request.
+    let overrides = oracle_degraded::init_staleness_overrides();
+    tracing::info!(overrides, "oracle_stale per-feed staleness windows loaded");
 
     // Pre-warm the /v1/assets list cache every 4s (just under its 5s TTL) so the
     // shared Redis cache never lapses cold. That endpoint's cost is a per-asset

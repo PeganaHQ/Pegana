@@ -3,6 +3,8 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+# oracle_degraded.rs embeds the [pyth_staleness.overrides] table at compile time.
+COPY assets.toml ./
 RUN cargo build --release -p api-rs --locked
 
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818

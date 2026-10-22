@@ -52,8 +52,14 @@ function intrinsicText(src: AssetSource): string {
       return `Intrinsic: the issuer's NAV / redemption rate as published on Pyth (${src.feed ?? "redemption-rate feed"}).`;
     case "solayer_susd_rate":
       return "Intrinsic: the sUSD share rate read from Solayer's on-chain share account.";
-    case "perena_usd_star_nav":
-      return "Intrinsic: the USD* NAV read from Perena's on-chain reserve account.";
+    case "perena_vault_nav":
+      return "Intrinsic: the USD* share price (mint_share_price) read from Perena's on-chain vault account, with the vault's last update time as the liveness signal.";
+    case "evm_view_nav":
+      return "Intrinsic: the issuer's own NAV contract on Ethereum (Ondo's RWADynamicOracle for USDY, the sUSDe ERC-4626 vault's convertToAssets for sUSDe), read with eth_call at a block no more than 180s old and published only when at least two of three independent public RPCs agree within 10 bps.";
+    case "jupiter_perps_pool_nav":
+      return "Intrinsic: the Jupiter Perpetuals pool NAV, pool aum_usd / JLP supply, decoded on-chain in one read and refused when the pool's AUM has not been refreshed for 5 minutes. JLP mints and redeems at this NAV, so its Pyth JLP/USD market leg is likely arbitrage-coupled to it rather than independent; the wide 200 bps drift band is the guard.";
+    case "fx_http_median":
+      return "Intrinsic: the peg currency's USD value, the median EUR/USD spot rate from two free public venues (Kraken, Coinbase) that must agree within 10 bps; not published over the forex weekend.";
     case "piggybank_pb_vault":
       return "Intrinsic: the NAV read from the Piggybank vault account.";
     default:

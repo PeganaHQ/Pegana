@@ -5,17 +5,16 @@ This file records the posture on those, and on any asset vendored into the repo.
 
 ## Fonts
 
-No font binaries are vendored in this repository. Switzer and Geist Mono are
-loaded through `next/font/local` from files under `web/app/fonts/`, and any
-future family must be licensed for web embedding before it is added.
+No font binaries are vendored in this repository. The pegana.xyz website,
+which is proprietary and not part of this repository, loads its own licensed
+web fonts.
 
 ## Token and protocol logos
 
 Pegana does **not** vendor third-party token logos as committed image files.
-Logos are relayed at request time through a same-origin proxy
-(`web/app/api/token-logo/route.ts`), which resolves the image URL server-side
-from the mint's own published `logoUri` and never from a caller-supplied string.
-Nothing is stored.
+The pegana.xyz website relays logos at request time through a same-origin
+proxy, which resolves the image URL server-side from the mint's own published
+`logoUri` and never from a caller-supplied string. Nothing is stored.
 
 Regardless of how they are served, the posture on the marks themselves:
 

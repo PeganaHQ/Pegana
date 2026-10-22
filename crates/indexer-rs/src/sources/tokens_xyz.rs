@@ -98,7 +98,7 @@ pub async fn run(state: AppState, shutdown: CancellationToken) -> Result<()> {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(DEFAULT_POLL_MS);
 
-    let mut tick = interval(Duration::from_millis(cadence_ms));
+    let mut tick = interval(Duration::from_millis(super::min_poll_ms(cadence_ms)));
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     info!(
         cadence_ms,

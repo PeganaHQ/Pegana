@@ -1,6 +1,6 @@
 ---
 title: "Introduction"
-description: "Pegana is the peg-risk oracle for Solana. Read peg state for every LST, stablecoin, yield-bearing asset and synthetic — via REST, WebSocket or MCP. Free and open source."
+description: "Pegana is the peg-risk oracle for Solana. Read peg state for every LST, stablecoin, yield-bearing asset and synthetic, via REST, WebSocket or MCP. Free, with an open-source (MIT) oracle."
 ---
 
 ## What Pegana does
@@ -64,7 +64,7 @@ calibration status of each asset is always on `GET /v1/assets` — treat any
 | ------------ | ------ | ------------------------------------------------------ |
 | lst          | 43     | jitoSOL, mSOL, bSOL, INF, JupSOL, BNSOL, STKESOL …     |
 | stable_yield | 10     | USDY, sUSDe, syrupUSDC, JLP, ONyc, PST, eUSX, USD\* …  |
-| stable_fiat  | 8      | USDC, USDT, PYUSD, USDG, USD1, USDu, CASH, AUSD        |
+| stable_fiat  | 7      | USDC, USDT, PYUSD, USDG, USD1, USDu, CASH              |
 | stable_dn    | 3      | USDe, JupUSD, USX                                      |
 | stable_cdp   | 2      | USDS, hyUSD                                            |
 | stable_fx    | 1      | EURC                                                   |
@@ -74,16 +74,19 @@ as the source of truth for what is live right now.
 
 **Inactive entries** (in `assets.toml` with `active = false`, not polled, so not in
 the public set): `BRZ` (BRL FX-pegged) and `pbUSDC` — deactivated 2026-06-01 (only thin dust
-DEX pairs left, prices unreliable). `dSOL` was removed after the Drift exploit
+DEX pairs left, prices unreliable), and `AUSD`, retired 2026-10-22 (no Solana market and no
+sponsored Pyth feed on Solana). `dSOL` was removed after the Drift exploit
 (2026-04-01) and survives only as a historical comment.
 
 ## What we promise
 
 - **Methodology is public.** Every threshold, every source, every smoothing parameter
   lives in [/methodology](/methodology/overview). No black box.
-- **Open source (MIT).** The full product (indexer, engine, API, MCP server, web app and
-  methodology) is public at
-  [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). The
+- **Open-source oracle (MIT).** Pegana is open-core. The oracle (indexers, engine, API,
+  dispatcher, MCP server, methodology, verifier, SDKs, migrations and the asset canon) is
+  public at [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). The
+  pegana.xyz website, its design system, the Pegana name, logo and wordmark, and our
+  production operations tooling are proprietary. The
   `pegana-replay` CLI that reproduces receipts is also mirrored at
   [`github.com/PeganaHQ/ReplayCLI`](https://github.com/PeganaHQ/ReplayCLI) —
   re-derive a verdict yourself (use the release matching the receipt's methodology version; 0.4.0 onward).

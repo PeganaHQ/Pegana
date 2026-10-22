@@ -20,8 +20,8 @@ description: "Common questions about scope, sources, pricing, reliability, and h
   consumer of a state oracle wants a sticky event ("USDC just entered DRIFT"), not
   a continuous number to liquidate against.
 
-  Pegana reads from Pyth (we use SOL/USD and Redemption Rate feeds) — they're upstream,
-  not competitors.
+  Pegana reads from Pyth (we use SOL/USD and other spot feeds, plus some Redemption
+  Rate feeds). They're upstream, not competitors.
 </Accordion>
 
 <Accordion title="What's the difference from Chaos Labs?">
@@ -30,7 +30,7 @@ description: "Common questions about scope, sources, pricing, reliability, and h
   with Pegana, but their public surface is the enterprise integration tier and their
   oracle isn't Solana-specific.
 
-  Pegana is a focused, Solana-native peg-risk oracle with full open-source code, MIT
+  Pegana is a focused, Solana-native peg-risk oracle with open-source oracle code, MIT
   license, public API without keys, and per-asset calibration for Solana's LST and
   yield-bearing landscape. The two products coexist at different scopes — Chaos
   enterprises don't ship their own MCP server; Pegana doesn't compete on EVM risk.
@@ -38,8 +38,8 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 
 <Accordion title="What about stableguard.org?">
   [stableguard.org](https://stableguard.org) covers fiat stables across multiple
-  chains. Their coverage of Solana is a sub-set of ours; we cover 8 fiat stables
-  (USDC, USDT, PYUSD, USDG, USD1, USDu, CASH, AUSD) plus EURC (EUR) on Solana.
+  chains. Their coverage of Solana is a sub-set of ours; we cover 7 fiat stables
+  (USDC, USDT, PYUSD, USDG, USD1, USDu, CASH) plus EURC (EUR) on Solana.
   Pegana also covers 43 LSTs, 10 yield-bearing assets, CDPs (`hyUSD`), and
   delta-neutral synthetics (`USDe`, `USX`), which stableguard does not.
 
@@ -91,8 +91,9 @@ description: "Common questions about scope, sources, pricing, reliability, and h
   (UNKNOWN is published at cold-start or when an anchor is detectably broken — the
   NAV-sanity gate — not on routine staleness, which holds the last state.)
 
-  Pyth's SSE stream is independent of Solana RPC and may continue updating —
-  yield-bearing NAV signals can therefore stay live while LST intrinsic stales out.
+  Some NAV sources do not depend on Solana RPC (USDY and sUSDe are read from Ethereum,
+  EURC from public FX venues) and may continue updating, so those signals can stay live
+  while LST intrinsic stales out.
   We do not invent values for the stale fields.
 </Accordion>
 
@@ -126,9 +127,12 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 </Accordion>
 
 <Accordion title="What's open source?">
-  All of it. The full product (indexer, engine, API, dispatcher, MCP server, web app,
-  methodology and the `pegana-replay` verifier) is MIT-licensed at
-  [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). The
+  The oracle. Pegana is open-core: the indexers, engine, API, dispatcher, MCP server,
+  methodology, `pegana-replay` verifier, SDKs, migrations and the asset canon are
+  MIT-licensed at [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana).
+  The pegana.xyz website (marketing site and web app), its design system, the Pegana
+  name, logo and wordmark, and our production operations tooling are proprietary. Code
+  published before 2026-10-22 remains available under MIT in the repository history. The
   `pegana-replay` CLI is also mirrored on its own at
   [`github.com/PeganaHQ/ReplayCLI`](https://github.com/PeganaHQ/ReplayCLI), so you can
   independently re-derive and audit Pegana receipts without trusting our
@@ -136,8 +140,9 @@ description: "Common questions about scope, sources, pricing, reliability, and h
 </Accordion>
 
 <Accordion title="Can I self-host Pegana?">
-  Yes. The repository ships a `docker-compose.yml` for the full stack (Postgres with
-  TimescaleDB, Redis, indexer, engine, API, dispatcher, MCP server) and a
+  Yes, the oracle. The repository ships a `docker-compose.yml` for the oracle stack
+  (Postgres with TimescaleDB, Redis, indexer, engine, API, dispatcher, MCP server); the
+  website is not included. There is also a
   `docker-compose.dev.yml` for local development; see the README at
   [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). Separately, the
   [`pegana-replay`](https://github.com/PeganaHQ/ReplayCLI) verifier lets you reproduce

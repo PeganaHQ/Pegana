@@ -205,7 +205,7 @@ tests:
 
             `~/.pegana-metrics/pegana_backup.prom` (pegana_backup_last_exit_code:
 
-            2 config, 3 dump/verify, 5 disk). See docs/runbooks/restore.md.
+            2 config, 3 dump/verify, 5 disk). See the private restore runbook.
 
             '
     - eval_time: 9h
@@ -424,3 +424,131 @@ tests:
                 `increase(pegana_engine_nav_sanity_unknown_total[15m]) > 0` for
                 15m. The methodology caught a broken NAV anchor (sHYUSD-class);
                 expected occasionally, investigate if sustained.
+
+  # fx_http forex-weekend exemption. promtool time 0 is 1970-01-01 00:00 UTC, a
+  # THURSDAY, so: Fri 20:30 = 44h30m, Sat 12:00 = 60h, Sun 22:30 = 94h30m (the
+  # 5-minute reopen grace ends at 94h35m), Mon 08:00 = 104h. The gauge is stuck
+  # at 0 (last publish at time 0), so the publish age equals eval_time.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_source_last_publish_timestamp{source="fx_http"}'
+        values: "0x6300"
+    alert_rule_test:
+      # Weekday: a stuck fx_http fires on its own rule...
+      - eval_time: 10m
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: indexer
+              source: fx_http
+            exp_annotations:
+              summary: "Ingestion source fx_http stopped publishing while FX is open"
+              description: |
+                No successful publish from source=fx_http for
+                10m 0s (threshold 5m, sustained 2m) outside the
+                forex-closed weekend (Fri 20:30 to Sun 22:30 UTC). EURC's intrinsic will
+                go stale. Either a venue (Kraken / Coinbase) is down, the two venues
+                disagree by more than max_divergence_bps, or the task died. Check the
+                indexer logs (`fx_http poll failed`) and
+                `pegana_fx_http_polls_total{status}`.
+      # ...and never through the generic per-source rule.
+      - eval_time: 10m
+        alertname: PeganaSourceNotPublishing
+        exp_alerts: []
+      # Friday one minute before the close: still open, still firing.
+      - eval_time: 44h29m
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: indexer
+              source: fx_http
+            exp_annotations:
+              summary: "Ingestion source fx_http stopped publishing while FX is open"
+              description: |
+                No successful publish from source=fx_http for
+                1d 20h 29m 0s (threshold 5m, sustained 2m) outside the
+                forex-closed weekend (Fri 20:30 to Sun 22:30 UTC). EURC's intrinsic will
+                go stale. Either a venue (Kraken / Coinbase) is down, the two venues
+                disagree by more than max_divergence_bps, or the task died. Check the
+                indexer logs (`fx_http poll failed`) and
+                `pegana_fx_http_polls_total{status}`.
+      # Friday after 20:30, Saturday, Sunday before the reopen: suppressed.
+      - eval_time: 44h31m
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts: []
+      - eval_time: 60h
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts: []
+      - eval_time: 94h29m
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts: []
+      # Sunday inside the 5-minute reopen grace: still suppressed.
+      - eval_time: 94h36m
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts: []
+      # Sunday 22:40, gauge still stale past the grace + `for: 2m`: fires.
+      - eval_time: 94h40m
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: indexer
+              source: fx_http
+            exp_annotations:
+              summary: "Ingestion source fx_http stopped publishing while FX is open"
+              description: |
+                No successful publish from source=fx_http for
+                3d 22h 40m 0s (threshold 5m, sustained 2m) outside the
+                forex-closed weekend (Fri 20:30 to Sun 22:30 UTC). EURC's intrinsic will
+                go stale. Either a venue (Kraken / Coinbase) is down, the two venues
+                disagree by more than max_divergence_bps, or the task died. Check the
+                indexer logs (`fx_http poll failed`) and
+                `pegana_fx_http_polls_total{status}`.
+      # Monday, still stale: fires.
+      - eval_time: 104h
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: indexer
+              source: fx_http
+            exp_annotations:
+              summary: "Ingestion source fx_http stopped publishing while FX is open"
+              description: |
+                No successful publish from source=fx_http for
+                4d 8h 0m 0s (threshold 5m, sustained 2m) outside the
+                forex-closed weekend (Fri 20:30 to Sun 22:30 UTC). EURC's intrinsic will
+                go stale. Either a venue (Kraken / Coinbase) is down, the two venues
+                disagree by more than max_divergence_bps, or the task died. Check the
+                indexer logs (`fx_http poll failed`) and
+                `pegana_fx_http_polls_total{status}`.
+
+  # fx_http publishing every minute on a weekday stays quiet, and the generic
+  # rule still covers every other source.
+  - interval: 1m
+    input_series:
+      - series: 'pegana_source_last_publish_timestamp{source="fx_http"}'
+        values: "0+60x20"
+      - series: 'pegana_source_last_publish_timestamp{source="evm_nav"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PeganaFxSourceNotPublishing
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: PeganaSourceNotPublishing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: indexer
+              source: evm_nav
+            exp_annotations:
+              summary: "Ingestion source evm_nav stopped publishing"
+              description: |
+                No successful publish from source=evm_nav for
+                10m 0s (threshold 5m, sustained 2m). Assets fed
+                by it will go stale; the engine-side PeganaDeadAssets only fires at 15m,
+                so this is the early per-source signal. Check the indexer logs + the
+                source's upstream.

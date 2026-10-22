@@ -26,35 +26,43 @@ strategy.
 For USDC, the answer to "what's the peg?" is "$1, always." Compare market to $1,
 you're done.
 
-For USDY, the answer to "what's the peg?" is "the NAV Ondo published 3 minutes ago,
-which is $1.078 as of today." If you compare USDY's market price to $1, you'll think
-it's catastrophically over-pegged. It isn't — it's correctly priced against a NAV
-that's grown 7.8% over its lifetime.
+For USDY, the answer to "what's the peg?" is "the NAV Ondo's price oracle reports
+right now", which was about $1.15 as of 2026-10. If you compare USDY's market price to
+$1, you'll think it's badly over-pegged. It isn't: it's correctly priced against a NAV
+that has grown over its lifetime.
 
 So the formula becomes: **peg = NAV, not peg = $1**. The discount you actually care
 about is `market - NAV`, not `market - $1`. A market price below NAV is redemption
 stress; a market price above NAV is buy-side demand running ahead of the issuer's
 published rate.
 
-## How NAV gets on chain
+## Where Pegana reads the NAV
 
-Three patterns dominate today on Solana:
+Pegana reads each NAV from wherever the issuer itself publishes it:
 
-**Pyth Redemption Rate** (USDY, syrupUSDC, sUSDe, ONyc).
-The issuer signs and pushes a redemption price to a dedicated Pyth feed. Pegana
-subscribes to the SSE stream and reads it the moment it's published. **Staleness gate:
-30s** — older readings are refused so you don't act on a NAV from yesterday.
+**Issuer contract on Ethereum** (USDY, sUSDe).
+Pegana reads the issuer's own contract with a plain `eth_call`: Ondo's
+`RWADynamicOracle.getPrice()` for USDY, and the sUSDe ERC-4626 vault's
+`convertToAssets(1e18)` for sUSDe (USDe per sUSDe). The read is pinned to a recent block
+(no more than 180s old), and at least two of three independent public RPCs must agree
+within 10 bps, otherwise nothing is published.
 
-**Token-2022 InterestBearing extension** (sUSD).
-The mint itself stores a rebasing rate. Reading it is a `getAccount` on the mint and a
-small calculation. Pegana's `solayer_susd` adapter does this every 15s.
+**On-chain Solana decode** (JLP, sUSD, `USD*`).
+JLP's NAV is the Jupiter Perpetuals pool's `aum_usd` divided by the JLP supply. sUSD's
+mint carries a Token-2022 InterestBearing rate; reading it is a `getAccount` on the mint
+and a small calculation. `USD*` reads the Perena vault's share price.
+
+**Pyth Redemption Rate** (syrupUSDC, ONyc, eUSX).
+The issuer pushes a redemption price to a dedicated Pyth feed. Pegana reads the feed's
+on-chain push account on Solana. A per-feed staleness window matches how often each
+issuer actually updates, so a NAV that has stopped moving is not treated as live.
 
 **Issuer dashboard scrape** (fallback).
 When an issuer hasn't published a Pyth feed yet, Pegana can fall back to scraping the
 issuer's published NAV from its dashboard. Such entries are explicitly marked
 `verified=false` in `assets.toml` until a real feed lands. (pbUSDC used this fallback
 but was deactivated 2026-06-01 — only a thin dust pool remained, so its prices were
-unreliable; USD\* was removed 2026-05-22.)
+unreliable.)
 
 ## The market side is trickier than it looks
 
@@ -89,8 +97,9 @@ what could cause the next transition before it fires.
 ## What this means for builders
 
 If you're integrating yield-bearing stables as **collateral**, the cardinal sin is
-treating NAV as constant. A $1-pegged USDC oracle, applied to USDY, will overvalue
-collateral by 7.8% today and more tomorrow. Use the actual NAV feed. Pegana exposes
+treating NAV as constant. A $1-pegged USDC oracle, applied to USDY, gets the
+collateral wrong by the full NAV growth since launch, and the gap widens every day. Use
+the actual NAV. Pegana exposes
 both `intrinsic_usd` (NAV) and `market_usd` in the same payload so you can pick which
 one your protocol should price against.
 
@@ -113,3 +122,5 @@ one your protocol should price against.
 - [Maple — syrupUSDC](https://maple.finance)
 - [OnRe — ONyc](https://onre.io)
 - [Pyth — Redemption Rate feeds](https://docs.pyth.network)
+- [Ondo: USDY price oracle](https://docs.ondo.finance)
+- [ERC-4626 tokenized vault standard](https://eips.ethereum.org/EIPS/eip-4626)

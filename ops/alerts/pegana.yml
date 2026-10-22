@@ -64,7 +64,7 @@ groups:
             pg-backup.sh has not produced a verified local dump (cron runs every
             6h). Check `tail -50 ~/.pg-backup.log` and
             `~/.pegana-metrics/pegana_backup.prom` (pegana_backup_last_exit_code:
-            2 config, 3 dump/verify, 5 disk). See docs/runbooks/restore.md.
+            2 config, 3 dump/verify, 5 disk). See the private restore runbook.
 
       - alert: PeganaBackupOffsiteStale
         expr: |
@@ -226,7 +226,8 @@ groups:
         # Retuned 2026-07-25 (alert-noise cleanup): 0.05→0.2 rate, 5m→30m. The
         # old bar paged Telegram on the NORMAL trickle of slow-feed rejections
         # (which the description itself calls "normal"); this only fires on
-        # sustained, broad degradation (Hermes actually down).
+        # sustained, broad degradation (Pyth push feeds or our Solana RPC down;
+        # the indexer reads Pyth on-chain only, no Hermes since 2026-10-22).
         expr: rate(pegana_engine_pyth_stale_total[5m]) > 0.2
         for: 30m
         labels:
@@ -238,8 +239,10 @@ groups:
             The engine is refusing Pyth readings older than PYTH_STALENESS_SECS.
             Occasional rejections for slow feeds (e.g. ONYC NAV) are normal and
             no longer page (threshold raised to >0.2/s for 30m, 2026-07-25);
-            a firing alert now means sustained rejections across feeds → Hermes
-            is degraded. Check `feed=` label to identify which.
+            a firing alert now means sustained rejections across feeds → the
+            on-chain Pyth push feeds or our Solana RPC are degraded. Check the
+            `feed=` label, `pegana_pyth_onchain_stale_total{feed}` and
+            `pegana_pyth_onchain_poll_errors_total` to tell which.
 
       - alert: PeganaSourceStale
         expr: rate(pegana_engine_source_stale_total[5m]) > 0.05
@@ -378,8 +381,10 @@ groups:
       # `pegana_source_last_publish_timestamp` gauge is set ONLY on a successful
       # publish, so a legitimately-idle source (no active assets) never creates the
       # series and therefore never false-fires.
+      # `fx_http` is excluded here: it intentionally stops publishing during the
+      # forex-closed weekend, so it has its own calendar-aware rule below.
       - alert: PeganaSourceNotPublishing
-        expr: time() - pegana_source_last_publish_timestamp > 300
+        expr: time() - pegana_source_last_publish_timestamp{source!="fx_http"} > 300
         for: 2m
         labels:
           severity: warning
@@ -392,6 +397,41 @@ groups:
             by it will go stale; the engine-side PeganaDeadAssets only fires at 15m,
             so this is the early per-source signal. Check the indexer logs + the
             source's upstream.
+
+      # fx_http (EURC's EUR/USD intrinsic) by design does NOT publish inside the
+      # forex-closed window, Fri 20:30 to Sun 22:30 UTC (fx_http.rs
+      # `is_forex_weekend`, mirrored by web/lib/asset/forex.ts). Same 300s / 2m
+      # liveness contract as PeganaSourceNotPublishing, but suppressed while the
+      # market is closed. The suppression runs to Sun 22:35 UTC (1355 minutes):
+      # a 5-minute reopen grace so the first 60s poll after 22:30, plus a
+      # scrape, can refresh a gauge that is ~50h old before `for: 2m` matures.
+      # PromQL calendar functions are UTC: day_of_week() 0 = Sunday, 5 = Friday,
+      # 6 = Saturday.
+      - alert: PeganaFxSourceNotPublishing
+        expr: |
+          (time() - pegana_source_last_publish_timestamp{source="fx_http"} > 300)
+          unless on()
+          (
+              day_of_week() == 6
+            or
+              (day_of_week() == 5 and on() (hour() * 60 + minute()) >= 1230)
+            or
+              (day_of_week() == 0 and on() (hour() * 60 + minute()) < 1355)
+          )
+        for: 2m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Ingestion source fx_http stopped publishing while FX is open"
+          description: |
+            No successful publish from source=fx_http for
+            {{ $value | humanizeDuration }} (threshold 5m, sustained 2m) outside the
+            forex-closed weekend (Fri 20:30 to Sun 22:30 UTC). EURC's intrinsic will
+            go stale. Either a venue (Kraken / Coinbase) is down, the two venues
+            disagree by more than max_divergence_bps, or the task died. Check the
+            indexer logs (`fx_http poll failed`) and
+            `pegana_fx_http_polls_total{status}`.
 
       # Intrinsic feed-integrity tripwire — the indexer's lst_directory_audit
       # source emits pegana_intrinsic_divergence_bps{asset} = |our_rate −

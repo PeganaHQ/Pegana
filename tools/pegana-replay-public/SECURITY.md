@@ -33,8 +33,9 @@ Include, if possible:
 In scope: `crates/methodology`, `crates/pegana-replay-cli`,
 `crates/common-verify` — the code in this repository.
 
-Out of scope for this repository: the engine, API, indexers, MCP server and web
-app that produce the receipts this CLI verifies. They are open source in
-[PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana); report issues with them, or
-with pegana.xyz itself, through that repository's
+Out of scope for this repository: the engine, API, indexers and MCP server that
+produce the receipts this CLI verifies. They are open source in
+[PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana). The pegana.xyz website is
+proprietary and not in either repository. Report issues with the oracle, or with
+pegana.xyz itself, through that repository's
 [SECURITY.md](https://github.com/PeganaHQ/Pegana/blob/main/SECURITY.md) or by email.

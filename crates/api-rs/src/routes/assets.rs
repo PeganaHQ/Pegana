@@ -2,7 +2,7 @@
 
 use crate::error::ApiError;
 use crate::extract::ValQuery;
-use crate::oracle_degraded::{classify_oracle_degraded, OracleDegraded};
+use crate::oracle_degraded::{classify_oracle_degraded_for_feed, OracleDegraded};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -541,12 +541,14 @@ fn row_to_card(r: sqlx::postgres::PgRow) -> AssetCard {
     let oracle_usd: Option<Decimal> = r.try_get("oracle_usd").ok();
     let oracle_conf: Option<Decimal> = r.try_get("oracle_conf").ok();
     let oracle_age_secs: Option<i64> = r.try_get("oracle_age_secs").ok();
-    let oracle_degraded = classify_oracle_degraded(
+    let oracle_feed: Option<String> = r.try_get("oracle_feed").ok();
+    let oracle_degraded = classify_oracle_degraded_for_feed(
         market_usd,
         oracle_usd,
         oracle_conf,
         oracle_age_secs,
         state_reason.as_deref(),
+        oracle_feed.as_deref(),
     );
     let state: Option<String> = r.try_get("state").ok();
     let discount: Option<Decimal> = r.try_get("discount").ok();
@@ -1662,7 +1664,8 @@ pub(crate) async fn fetch_card(
             -- so `row_to_card`'s `try_get` on a list row misses cleanly.
             o.oracle_usd,
             o.oracle_conf,
-            o.oracle_age_secs
+            o.oracle_age_secs,
+            o.oracle_feed
         FROM assets a
         LEFT JOIN LATERAL (
             SELECT * FROM discount_snapshots ds
@@ -1718,7 +1721,10 @@ pub(crate) async fn fetch_card(
             -- against" rather than a stale synthesized amber flag.
             SELECT os.price AS oracle_usd,
                    os.confidence AS oracle_conf,
-                   extract(epoch from (now() - os.publish_time))::bigint AS oracle_age_secs
+                   extract(epoch from (now() - os.publish_time))::bigint AS oracle_age_secs,
+                   -- Human feed name (e.g. PYUSD/USD): keys the per-feed
+                   -- oracle_stale window (pyth_staleness overrides).
+                   os.feed AS oracle_feed
             FROM oracle_snapshots os
             WHERE a.market_kind IN ('jupiter_usd', 'dex_screener_usd')
               AND a.peg_target::text = 'USD'

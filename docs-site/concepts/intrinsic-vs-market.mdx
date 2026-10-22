@@ -32,8 +32,10 @@ decide which side to act on for their use case.
 ## How each side is sourced
 
 **Intrinsic** comes from the asset's own mechanism. Each class has its own canonical
-source — Sanctum for LSTs, Pyth Redemption Rate for yield-bearing, on-chain decode
-for CDPs, Pyth FX for fiat-pegged. See [intrinsic value](/methodology/intrinsic-value)
+source: Sanctum for LSTs; the issuer's own NAV for yield-bearing (Ondo's
+RWADynamicOracle and the sUSDe ERC-4626 vault read on Ethereum via `eth_call`, on-chain
+decode for JLP, sUSD and `USD*`, Pyth Redemption Rate for the rest); on-chain decode
+for CDPs; a free two-venue FX median for fiat-pegged (EURC). See [intrinsic value](/methodology/intrinsic-value)
 for the full table.
 
 **Market** comes from Jupiter's routed quote, converted to USD via Pyth. We always

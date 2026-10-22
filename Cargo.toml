@@ -66,7 +66,6 @@ uuid = { version = "1", features = ["v4", "v7", "serde"] }
 
 # http
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-eventsource-stream = "0.2"
 url = "2.5"
 
 # solana

@@ -86,7 +86,7 @@ with no visible error. CI (`docs-site` job in `.github/workflows/ci.yml`) runs
 the same check; to run it locally:
 
 ```sh
-mkdir -p /tmp/docs-check && cp scripts/check-docs-site.mjs /tmp/docs-check/
+mkdir -p /tmp/docs-check && cp tools/check-docs-site.mjs /tmp/docs-check/
 npm install --prefix /tmp/docs-check --no-audit --no-fund @mdx-js/mdx@3.1.1 remark-gfm@4.0.1
 node /tmp/docs-check/check-docs-site.mjs docs-site   # from the repo root
 ```

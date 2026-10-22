@@ -25,8 +25,8 @@ pegana-replay --alert-id <uuid>          # recomputes the hash + checks the on-c
 **10 Yield-bearing stables** — peg-to-NAV, not peg-to-$1 (NAV grows as the strategy earns)
 `USDY` (Ondo · T-bills) · `sUSD` (Solayer · Token-2022 rebasing) · `syrupUSDC` (Maple) · `sUSDe` (Ethena) · `ONyc` (OnRe · reinsurance) · `JLP` (Jupiter LP) · `eHYUSD` (Hylo Earn pool — API symbol `sHYUSD`) …
 
-**8 Fiat stables** — pegged to $1 via different mechanisms
-`USDC` · `USDT` · `PYUSD` · `USDG` · `USD1` · `AUSD` …
+**7 Fiat stables**, pegged to $1 via different mechanisms
+`USDC` · `USDT` · `PYUSD` · `USDG` · `USD1` · `USDu` · `CASH`
 
 **3 delta-neutral** (`USDe` · `JupUSD` · `USX`) · **2 CDP** (`USDS` · `hyUSD`) · **1 FX** (`EURC`)
 
@@ -69,7 +69,7 @@ Public RPC ────┘     │  DexScreener · +6   │  pub/sub
            public                      free tools
 ```
 
-Read the full spec at `docs/spec.html`.
+The full design specification is maintained privately.
 
 ## Quick start (dev local)
 
@@ -101,11 +101,9 @@ cargo run -p dispatcher-rs &
 
 Split layout:
 - **Backend** (api + indexer + engine + dispatcher + mcp + protocol-indexer + postgres + redis + prometheus + caddy): Hostinger KVM 2 (~$13.99/mo) via `docker compose up -d`. Caddy terminates TLS for `api.pegana.xyz` + `mcp.pegana.xyz`.
-- **Frontend** (Next.js console + marketing): Vercel free tier on `pegana.xyz` / `www.pegana.xyz`, pointing at `NEXT_PUBLIC_API_BASE=https://api.pegana.xyz`.
+- **Frontend** (Next.js console + marketing, proprietary and not part of this repository): Vercel free tier on `pegana.xyz` / `www.pegana.xyz`, pointing at `NEXT_PUBLIC_API_BASE=https://api.pegana.xyz`.
 
-See [docs/ops/deploy.md](docs/ops/deploy.md) for the box-side
-runbook and [docs/runbooks/rollback.md](docs/runbooks/rollback.md) for the
-rollback playbook.
+The production deploy and rollback runbooks are maintained privately.
 
 ## Stack
 
@@ -124,7 +122,6 @@ rollback playbook.
 | Suite | Tests | Command |
 |-------|-------|---------|
 | Rust workspace | 613 | `cargo test --workspace --all-targets` |
-| Web (vitest + Playwright) | 107 unit + 15 E2E | `bun run test && bun run test:e2e` |
 | MCP | 14 files | `bun run test` |
 | Protocol indexer | 7 files | `bun run test` |
 | SDK TypeScript | 3 files | `bun test` |
@@ -135,8 +132,8 @@ rollback playbook.
 
 `$0` local dev · `~$14/mo` lean production (Hostinger KVM 2; frontend on Vercel free tier)
 
-External APIs used (all free): Sanctum extra-api, Jupiter lite-api, Pyth Hermes, public Solana RPC, Kamino REST, Jupiter Lend REST.
+External APIs used (all free): Sanctum extra-api, Jupiter lite-api, Pyth on-chain push feeds (read over Solana RPC), public Solana RPC, Kamino REST, Jupiter Lend REST.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Pegana is open-core. The oracle (indexers, engine, API, dispatcher, MCP server, methodology, verifier, SDKs, migrations and the asset canon) is open source under MIT, see [LICENSE](LICENSE), at github.com/PeganaHQ/Pegana and github.com/PeganaHQ/ReplayCLI. The pegana.xyz website (marketing site and web app), its design system, the Pegana name, logo and wordmark, and our production operations tooling are proprietary and not part of this repository. The Pegana name, logo and wordmark are trademarks, see [TRADEMARKS.md](TRADEMARKS.md). Code published before 2026-10-22 remains available under MIT in the repository history.

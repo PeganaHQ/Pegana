@@ -207,19 +207,22 @@ pub struct PythEntry {
     /// `conf/price` ratio is the canonical "how trustworthy is this tick"
     /// signal — see https://docs.pyth.network/price-feeds/best-practices.
     pub confidence: Decimal,
-    /// `true` when the indexer read this print from the on-chain push-oracle
-    /// account rather than the Hermes stream. On-chain prints step at the
-    /// push-feed heartbeat (about 60s, or a 0.5% move) plus the indexer's poll
-    /// interval, so they get the wider [`DEFAULT_PYTH_ONCHAIN_STALENESS_SECS`]
-    /// window instead of the Hermes-sized default. Never part of a receipt.
+    /// `true` when the indexer read this print from an on-chain push-oracle
+    /// account (every print since the Hermes stream was removed; `false` only
+    /// for an envelope without `origin`, from an older indexer). On-chain
+    /// prints step at the push-feed heartbeat (55s or a 0.5% move for Pyth's
+    /// documented Solana sponsored feeds) plus the indexer's poll interval, so
+    /// they get at least [`DEFAULT_PYTH_ONCHAIN_STALENESS_SECS`] instead of the
+    /// 30s base. Never part of a receipt.
     pub onchain: bool,
 }
 
 /// Staleness window (seconds) for Pyth prints the indexer read on-chain.
 /// Matches the indexer's numeraire gate (`PYTH_NUMERAIRE_STALE_SECS`, 120s):
-/// a 60s push-feed heartbeat plus a 12s poll fits inside it with margin, so
-/// normal poll jitter never reads as a missing feed (the confidence label
-/// used to flip high/unknown every few seconds on the 30s Hermes window).
+/// a 55s push-feed heartbeat plus a 12s poll fits inside it with margin, so
+/// normal poll jitter never reads as a missing feed (on the 30s base window
+/// the confidence label flipped high/unknown every few seconds). Slower
+/// feeds get per-feed `[pyth_staleness.overrides]`.
 pub const DEFAULT_PYTH_ONCHAIN_STALENESS_SECS: i64 = 120;
 
 pub struct EngineState {
@@ -278,8 +281,8 @@ const SOURCE_STALENESS_SECS: i64 = 600;
 /// Pyth-fed sides ARE gated, by the SAME per-feed window Pyth itself uses
 /// (spot ~30s; NAV/RR widened via overrides). `pyth_entry`'s staleness only
 /// feeds the confidence label — it does NOT block the PegState verdict — so the
-/// engine snapshot MUST re-gate here, or a feed that dies inside the multiplexed
-/// Hermes stream lets the engine publish a peg over dead data (F2). Match is
+/// engine snapshot MUST re-gate here, or a feed that stops updating while the
+/// indexer keeps forwarding lets the engine publish a peg over dead data (F2). Match is
 /// exhaustive so a NEW variant is a compile error, never a silent false-stale
 /// default (F6).
 fn intrinsic_window_secs(
@@ -307,11 +310,25 @@ fn intrinsic_window_secs(
         | IntrinsicStrategy::HyloXsolNav { .. }
         | IntrinsicStrategy::HyloShyusdRate { .. }
         | IntrinsicStrategy::SolayerSusdRate { .. }
-        | IntrinsicStrategy::PerenaUsdStarNav { .. }
+        | IntrinsicStrategy::JupiterPerpsPoolNav { .. }
+        | IntrinsicStrategy::EvmViewNav { .. }
+        | IntrinsicStrategy::FxHttpMedian { .. }
         | IntrinsicStrategy::SplStakePool { .. }
         | IntrinsicStrategy::PiggybankPbVault { .. } => Some(SOURCE_STALENESS_SECS),
+        // The Perena envelope is stamped with the vault's own last_update_ts
+        // (the NAV's age), not the poll time, so this window must cover the
+        // real crank cadence: see PERENA_NAV_WINDOW_SECS.
+        IntrinsicStrategy::PerenaVaultNav { .. } => Some(PERENA_NAV_WINDOW_SECS),
     }
 }
+
+/// Freshness window for the Perena USD* NAV, measured against the vault's
+/// `last_update_ts`. `crank_nav` was measured on mainnet (2026-10-22, 21
+/// cranks over 2.5h) at a median gap of ~825s and a max of 857s, so the NAV
+/// is routinely ~14 min old just before a crank; plus the indexer's 60s poll
+/// the worst normal age is ~920s, past the generic 600s window. 1200s (~1.4x
+/// the max gap) reads one missed crank as stale.
+const PERENA_NAV_WINDOW_SECS: i64 = 1200;
 
 /// Staleness window (seconds) for a market side, by source. Pyth spot is gated
 /// by its per-feed Pyth window (same reasoning as the intrinsic side, F2);
@@ -459,7 +476,8 @@ impl EngineState {
         freshest_observation(g.last_market_at, g.last_market_sol_at)
     }
 
-    /// Hermes-origin shorthand for [`Self::set_pyth_with_origin`] (tests).
+    /// Non-on-chain (legacy envelope) shorthand for
+    /// [`Self::set_pyth_with_origin`] (tests).
     #[cfg(test)]
     pub async fn set_pyth(
         &self,
@@ -1352,8 +1370,8 @@ mod integration_tests {
         assert_eq!(e.pyth_confidence_label("ZEROC/USD").await, None);
     }
 
-    /// A 45s-old print is stale on the 30s Hermes window but fine when it came
-    /// from the on-chain fallback (60s push heartbeat + poll). Past the
+    /// A 45s-old print is stale on the 30s base window but fine when it came
+    /// from an on-chain push account (60s push heartbeat + poll). Past the
     /// on-chain window it is refused like any other stale print. Regression
     /// for the confidence label flapping high/unknown on poll jitter.
     #[tokio::test]
@@ -1366,7 +1384,7 @@ mod integration_tests {
         e.set_pyth_with_origin("SOL/USD", p, t45, c, false).await;
         assert!(
             e.pyth_entry("SOL/USD").await.is_none(),
-            "hermes print 45s old is stale"
+            "base-window print 45s old is stale"
         );
         e.set_pyth_with_origin("SOL/USD", p, t45, c, true).await;
         assert_eq!(e.pyth_confidence_label("SOL/USD").await, Some("high"));
@@ -1380,6 +1398,109 @@ mod integration_tests {
         let tight = fresh_engine().with_pyth_onchain_staleness(40);
         tight.set_pyth_with_origin("SOL/USD", p, t45, c, true).await;
         assert!(tight.pyth_entry("SOL/USD").await.is_none());
+    }
+
+    /// Slow-heartbeat push feeds (measured on mainnet 2026-10-22, see the
+    /// `[pyth_staleness.overrides]` comment in assets.toml) get a per-feed
+    /// window that covers one heartbeat with margin, so a print one heartbeat
+    /// old still carries a real confidence label instead of "unknown". A print
+    /// past the window is still refused, and the global defaults are untouched:
+    /// a 55s-heartbeat feed with no override stays on the 120s on-chain window.
+    #[tokio::test]
+    async fn slow_heartbeat_feeds_get_per_feed_windows_without_loosening_defaults() {
+        let e = fresh_engine();
+        let now = chrono::Utc::now();
+        let p = Decimal::ONE;
+        let c = Decimal::new(1, 5); // conf/price 0.001% -> "high"
+                                    // (feed, measured heartbeat secs)
+        let cases = [
+            ("PYUSD/USD", 1200),
+            ("SUSDE/USD", 300),
+            ("USX/USD", 300),
+            ("USDS/USD", 300),
+            ("USDG/USD", 240),
+        ];
+        for (feed, heartbeat) in cases {
+            let window = e.staleness.limit_for(feed, e.pyth_staleness_secs);
+            // Margin: at least 1.25x heartbeat plus the 12s poll, at most 2x,
+            // so the override tracks the real cadence rather than "forever".
+            assert!(
+                window >= heartbeat * 5 / 4 + 12 && window <= heartbeat * 2,
+                "{feed}: window {window}s does not match a {heartbeat}s heartbeat"
+            );
+            // Observed worst case: a print one full heartbeat (+ poll) old.
+            let at_heartbeat = now - chrono::Duration::seconds(heartbeat + 12);
+            e.set_pyth_with_origin(feed, p, at_heartbeat, c, true).await;
+            assert_eq!(
+                e.pyth_confidence_label(feed).await,
+                Some("high"),
+                "{feed}: a print one heartbeat old must keep its confidence label"
+            );
+            let past = now - chrono::Duration::seconds(window + 5);
+            e.set_pyth_with_origin(feed, p, past, c, true).await;
+            assert!(
+                e.pyth_entry(feed).await.is_none(),
+                "{feed}: a print past its {window}s window must read stale"
+            );
+        }
+
+        // Global defaults unchanged.
+        assert_eq!(e.staleness.default_secs, Some(30));
+        assert_eq!(DEFAULT_PYTH_ONCHAIN_STALENESS_SECS, 120);
+        for feed in ["USDC/USD", "SOL/USD", "JLP/USD", "USDE/USD"] {
+            assert!(
+                !e.staleness.overrides.contains_key(feed),
+                "{feed} runs on the documented 55s heartbeat and must not be widened"
+            );
+            let t200 = now - chrono::Duration::seconds(200);
+            e.set_pyth_with_origin(feed, p, t200, c, true).await;
+            assert!(
+                e.pyth_entry(feed).await.is_none(),
+                "{feed}: a 200s-old on-chain print must still read stale"
+            );
+        }
+    }
+
+    /// P2-3: the Perena envelope carries the NAV's own update time, so its
+    /// window must cover the measured ~14 min crank (+ poll) but still read a
+    /// missed crank as stale.
+    #[test]
+    fn perena_nav_window_covers_the_crank_cadence() {
+        let st = PythStalenessConfig::default();
+        let w = intrinsic_window_secs(
+            &IntrinsicStrategy::PerenaVaultNav {
+                vault: "v".into(),
+                program: "p".into(),
+            },
+            &st,
+            30,
+        );
+        assert_eq!(w, Some(PERENA_NAV_WINDOW_SECS));
+        let now = chrono::Utc::now();
+        // 857s max crank gap + 60s poll: still fresh.
+        assert!(!side_is_stale(
+            w,
+            Some(now - chrono::Duration::seconds(917)),
+            now
+        ));
+        // A missed crank (two gaps) reads stale.
+        assert!(side_is_stale(
+            w,
+            Some(now - chrono::Duration::seconds(1700)),
+            now
+        ));
+        // Every other non-Pyth source keeps the generic 600s window.
+        assert_eq!(
+            intrinsic_window_secs(
+                &IntrinsicStrategy::SolayerSusdRate {
+                    share_account: "s".into(),
+                    program: "p".into(),
+                },
+                &st,
+                30
+            ),
+            Some(SOURCE_STALENESS_SECS)
+        );
     }
 
     #[test]
@@ -1558,23 +1679,30 @@ mod integration_tests {
         let e = fresh_engine();
         let four_hours_ago = chrono::Utc::now() - chrono::Duration::hours(4);
 
+        // (USDY moved off Pyth to an Ethereum view call in 2026-10, so the
+        // still-Pyth syrupUSDC pair carries this check.)
         // The daily-stepping INTRINSIC feed HAS the 36h override → a 4h-old
         // reading (well past the 30s default) is still fresh enough to use.
-        e.set_pyth("USDY/USD.RR", Decimal::ONE, four_hours_ago, Decimal::ZERO)
-            .await;
+        e.set_pyth(
+            "SYRUPUSDC/USDC.RR",
+            Decimal::ONE,
+            four_hours_ago,
+            Decimal::ZERO,
+        )
+        .await;
         assert!(
-            e.pyth_price("USDY/USD.RR").await.is_some(),
-            "USDY/USD.RR (intrinsic NAV) must survive its per-feed override window"
+            e.pyth_price("SYRUPUSDC/USDC.RR").await.is_some(),
+            "SYRUPUSDC/USDC.RR (intrinsic NAV) must survive its per-feed override window"
         );
 
         // The continuously-updating SPOT feed is NOT overridden — the pre-fix bug
         // keyed the override here, leaving the intrinsic stuck at the default and
         // USDY frozen ~23h/day. A 4h-old spot reading must now hit the 30s default.
-        e.set_pyth("USDY/USD", Decimal::ONE, four_hours_ago, Decimal::ZERO)
+        e.set_pyth("SYRUPUSDC/USD", Decimal::ONE, four_hours_ago, Decimal::ZERO)
             .await;
         assert!(
-            e.pyth_price("USDY/USD").await.is_none(),
-            "USDY/USD (spot) must hit the 30s default — the override targets the .RR feed"
+            e.pyth_price("SYRUPUSDC/USD").await.is_none(),
+            "SYRUPUSDC/USD (spot) must hit the 30s default; the override targets the .RR feed"
         );
 
         // A feed with no override at all also hits the 30s default.

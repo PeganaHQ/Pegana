@@ -25,13 +25,11 @@ redis = { workspace = true }
 rust_decimal = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true }
-eventsource-stream = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-sdk = { workspace = true }
 spl-token-2022 = { workspace = true }
 borsh = { workspace = true }
 metrics = { workspace = true }
-rand = { workspace = true }
 dotenvy = { workspace = true }
 envy = "0.4"
 

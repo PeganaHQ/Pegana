@@ -145,7 +145,7 @@ pub async fn run(state: AppState, shutdown: CancellationToken) -> Result<()> {
         return Ok(());
     }
     let cadence_ms = state.config.spl_stake_pool_poll_ms.unwrap_or(30_000);
-    let mut tick = interval(Duration::from_millis(cadence_ms));
+    let mut tick = interval(Duration::from_millis(super::min_poll_ms(cadence_ms)));
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     let rpc = RpcClient::new_with_commitment(

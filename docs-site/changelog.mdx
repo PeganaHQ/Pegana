@@ -16,6 +16,67 @@ Two related surfaces, for different questions:
 
 ---
 
+## 2026-10-22: open-core, the website and operations tooling are proprietary; the oracle stays MIT
+
+- **License scope.** Pegana is open-core. The oracle (indexers, engine, API, dispatcher, MCP
+  server, methodology, verifier, SDKs, migrations and the asset canon) stays open source under
+  MIT at [github.com/PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana) and
+  [github.com/PeganaHQ/ReplayCLI](https://github.com/PeganaHQ/ReplayCLI). The pegana.xyz
+  website (marketing site and web app), its design system, the Pegana name, logo and wordmark,
+  and our production operations tooling are proprietary and are no longer published in the
+  public repository. Code published before 2026-10-22 remains available under MIT in the
+  repository history. No API, MCP, SDK or verifier contract changes.
+
+---
+
+## 2026-10-22: free intrinsic sources for JLP, USDY, sUSDe, EURC and USD\*
+
+These assets used Pyth redemption-rate or FX feeds that are not available on Solana without paid
+Hermes. Each now reads its intrinsic value from a free source that the issuer or the protocol
+publishes itself. No API field changes; `intrinsic_usd` keeps its meaning.
+
+- **USDY**: Ondo's `RWADynamicOracle.getPrice()` on Ethereum, read with a plain `eth_call`.
+- **sUSDe**: the sUSDe ERC-4626 vault's `convertToAssets(1e18)` on Ethereum (USDe per sUSDe,
+  USDe treated as $1). For both Ethereum reads the block must be no more than 180s old, and at
+  least two of three independent public RPCs must agree within 10 bps, or nothing is published.
+- **JLP**: the Jupiter Perpetuals pool, `aum_usd / JLP supply`, decoded on Solana in one read and
+  refused if the pool's AUM has not been refreshed for 5 minutes. The market leg stays the Pyth
+  JLP/USD spot price, which is likely arbitrage-coupled to the pool NAV (JLP mints and redeems
+  at it), so the wide 200 bps drift band is the guard.
+- **EURC**: the EUR/USD spot rate as the median of two free public venues (Kraken, Coinbase),
+  which must agree within 10 bps. As before, nothing is published over the forex weekend
+  (Fri 20:30 to Sun 22:30 UTC) and the asset shows the "FX market closed" banner.
+- **`USD*`**: the Perena vault's `mint_share_price`, with the vault's `last_update_ts` as the
+  liveness signal. Jupiter quotes exclude the `Perena Star V2` route; there is still no
+  independent deep market, so `USD*` stays monitoring-only.
+- **MCP**: `get_methodology` describes the new sources for these assets.
+- **Slower Pyth push feeds**: PYUSD/USD (about 20 minutes between updates), SUSDE/USD, USX/USD,
+  USDS/USD (about 5 minutes) and USDG/USD (about 4 minutes) now each get a staleness window
+  matched to their measured cadence, so their confidence label no longer drops to `unknown`
+  between updates. Every other feed keeps the existing windows.
+- **Self-hosters**: the Ethereum reads use keyless public RPCs by default; set `ETH_RPC_URLS`
+  (comma-separated) to use your own. Optional cadence knobs: `EVM_NAV_POLL_MS` (60000),
+  `JUPITER_PERPS_POLL_MS` (15000), `FX_HTTP_POLL_MS` (60000). Ops: the `fx_http` liveness
+  alert (`PeganaFxSourceNotPublishing`) is calendar-aware and stays quiet over the forex weekend.
+
+---
+
+## 2026-10-22: Pyth prices read from the post-upgrade on-chain push program; Hermes removed; AUSD retired (no Solana market)
+
+- **Pyth source.** Since the Pyth Core upgrade (2026-08-26) sponsored push feeds live under a
+  new on-chain program. The indexer now derives each feed's account under both the new and the
+  legacy program, accepts only accounts owned by a Pyth receiver, and keeps the freshest
+  fully-verified print. USX, ONyc, eUSX and the sUSDe market leg read live Pyth prices again.
+- **Hermes removed.** There is no Hermes stream or API key any more; every Pyth print comes from
+  Solana. Self-hosters can drop `PYTH_HERMES_URL`, `PYTH_HERMES_API_KEY`,
+  `PYTH_HERMES_RETRY_MS` and `PYTH_ONCHAIN_FALLBACK` from their `.env` (they are ignored).
+  `PYTH_ONCHAIN_POLL_MS` and `PYTH_ONCHAIN_MAX_AGE_SECS` still apply.
+- **USDY market leg** moved from the Pyth USDY/USD spot feed (it steps about once a day on
+  Solana) to a Jupiter quote. USDY no longer carries a Pyth cross-check feed.
+- **AUSD retired** (`is_active = false`): no Solana market deep enough to quote and no sponsored
+  Pyth feed on Solana. History and existing receipts stay readable.
+- **sUSD** stays tracked as monitoring-only: NAV live; no Solana market deep enough to price.
+
 ## 2026-10-22: nullable cascade totals, history paging cursors, audit index scope, MCP limits
 
 - **BREAKING for strict typed clients: `simulate-depeg` totals can be `null`.**
@@ -165,7 +226,7 @@ behavior should check each line.
   [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). The paid and
   authenticated surfaces were removed: there is no sign-in, no JWT, no API keys, no x402
   payments, no Telegram bot and no `/account` area. Entries below describe those surfaces as
-  they were at the time and are kept for history only.
+  they were at the time and are kept for history only. See the 2026-10-22 open-core entry.
 - **MCP:** all 10 tools are free, including `get_asset_history` and `subscribe_peg_events`.
   `ping_paid` keeps its name for compatibility, is free, and returns `paid pong`.
 - **REST:** `GET /v1/alerts` and the `/v1/me/*` and `/v1/auth/*` routes no longer exist. The

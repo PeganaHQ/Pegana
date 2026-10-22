@@ -37,7 +37,10 @@ Resolved through a 5-state FSM (PEGGED → DRIFT → DEPEG → CRITICAL → BLAC
 | Source | Read by Pegana | Used for |
 | --- | --- | --- |
 | **Sanctum** | `sol_value` per LST mint, every 15s | SOL-pegged LST intrinsic |
-| **Pyth** | SOL/USD, FX crosses, Redemption Rate feeds | All USD conversion + yield-bearing NAV |
+| **Pyth** | SOL/USD, USDC/USD and other spot feeds, some Redemption Rate feeds, read from Solana push accounts | All USD conversion + some yield-bearing NAV (syrupUSDC, ONyc, eUSX) |
+| **Ethereum issuer contracts** (`eth_call`) | Ondo `RWADynamicOracle.getPrice()`, sUSDe ERC-4626 `convertToAssets` | USDY and sUSDe NAV |
+| **Jupiter Perpetuals / Perena (on-chain decode)** | Perps pool `aum_usd` / JLP supply, Perena vault share price | JLP and `USD*` NAV |
+| **Kraken + Coinbase** | EUR/USD spot, two-venue median | EURC intrinsic (paused over the forex weekend) |
 | **Hylo (on-chain decode)** | `total_sol_cache.total_sol` from Exchange PDA | hyUSD CDP collateral ratio |
 | **Jupiter** | Best routed quote, USDC numeraire | Market value of every asset |
 | **Solayer / Piggybank** | Mint-level rebasing rate / dashboard NAV | Sub-set of yield-bearing accounting |
@@ -68,7 +71,8 @@ decoder-drift input it instead **holds the last published state** rather than fl
 ## Update cadence
 
 - **Indexers** poll their sources every **15s** (Sanctum, Solayer, Piggybank, Hylo, Jupiter)
-- **Pyth** pushes via SSE — sub-second arrivals
+- **Pyth** on-chain push accounts are polled every **12s** in one batched read
+- **Ethereum NAV** and **FX** sources poll every **60s**; the Jupiter Perpetuals pool every **15s**
 - **Engine** recomputes on every source event, publishes to Redis + Postgres
 - **API** snapshots are `<1s` old; the WebSocket pushes within ~200ms of the engine
 - **Transition feed** (WebSocket, `/v1/audit`) updates within seconds of the state transition

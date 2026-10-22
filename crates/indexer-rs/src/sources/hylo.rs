@@ -115,7 +115,7 @@ pub async fn run(state: AppState, shutdown: CancellationToken) -> Result<()> {
         state.config.hylo_poll_ms,
         state.assets.polling.hylo_onchain_poll_ms,
     );
-    let mut tick = interval(Duration::from_millis(cadence));
+    let mut tick = interval(Duration::from_millis(super::min_poll_ms(cadence)));
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     // Pre-derive PDAs once (deterministic from on-chain seeds — never changes).
