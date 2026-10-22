@@ -48,8 +48,9 @@ need to restart (`Ctrl+C`, `mintlify dev`).
 
 ## Deployment
 
-Mintlify deploys via GitHub integration. Install the Mintlify GitHub app on
-[`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana) and point it
+Mintlify deploys via GitHub integration. The Mintlify GitHub app is installed
+on the private source repository (not on the public mirror at
+[`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana)) and points
 at this `docs-site/` directory.
 
 - Pushes to `main` → publish to `docs.pegana.xyz`

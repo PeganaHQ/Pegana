@@ -58,7 +58,11 @@ describe("get_methodology", () => {
   });
 
   it("yield assets name their real market source (pyth_spot, dex_screener_usd)", async () => {
-    expect(await explain("JLP")).toMatch(/Pyth \(JLP\/USD\.RR\)[\s\S]*Pyth JLP\/USD spot price/);
+    expect(await explain("JLP")).toMatch(/Jupiter Perpetuals pool NAV[\s\S]*Pyth JLP\/USD spot price/);
+    expect(await explain("USDY")).toMatch(/RWADynamicOracle[\s\S]*Jupiter swap quote/);
+    expect(await explain("sUSDe")).toMatch(/ERC-4626[\s\S]*Pyth SUSDE\/USD spot price/);
+    expect(await explain("EURC")).toMatch(/Kraken, Coinbase/);
+    expect(await explain("USD*")).toMatch(/Perena's on-chain vault/);
     expect(await explain("sUSD")).toMatch(/DexScreener/);
     expect(await explain("hyUSD")).toMatch(/Hylo Exchange collateral ratio/);
   });

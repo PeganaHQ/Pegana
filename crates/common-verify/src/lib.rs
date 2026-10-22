@@ -181,7 +181,7 @@ pub enum IntrinsicStrategy {
     },
     /// Generic Pyth-published redemption-rate / NAV feed (suffix `.RR`). Used
     /// for any wrapped/yield-bearing asset whose issuer publishes its NAV via
-    /// Pyth (e.g. USDY/USD.RR — Ondo's official on-chain redemption rate).
+    /// Pyth (e.g. SYRUPUSDC/USDC.RR, Maple's official redemption rate).
     /// The indexer routes the cached feed price into `intrinsic_snapshots`
     /// and the engine consumes it directly — no per-issuer adapter needed.
     PythRedemptionRate {
@@ -191,9 +191,9 @@ pub enum IntrinsicStrategy {
     // Phase A: yield-bearing stable adapters (one variant per issuer for
     // type-safe verify-assets and explicit account/program addresses).
 
-    // Ethena sUSDe: Task 9 found that Ethena publishes per-share NAV to Pyth
-    // as `Crypto.SUSDE/USDE.RR`, covered by the generic PythRedemptionRate
-    // variant. EthenaSusdeRate variant removed to keep the enum dead-code-free.
+    // Ethena sUSDe: originally read from Pyth `Crypto.SUSDE/USDE.RR`. That
+    // feed is not available on Solana without paid Hermes, so since 2026-10
+    // sUSDe (and USDY) read the issuer contract directly via `EvmViewNav`.
 
     // Maple syrupUSDC: Task 7 found that Maple publishes the official
     // syrupUSDC redemption rate to Pyth as `Crypto.SYRUPUSDC/USDC.RR`, so the
@@ -207,12 +207,49 @@ pub enum IntrinsicStrategy {
         program: String,
     },
 
-    /// Perena USD* savings-vault share token. NAV is stored in the reserve
-    /// account at offset 352 and cross-checked against total_underlying /
-    /// share_supply at offsets 192 / 200 to detect silent layout shifts.
-    PerenaUsdStarNav {
-        reserve: String,
+    /// Perena USD* share token, post-migration (2026-10). NAV is the
+    /// `accounting.mint_share_price` (u64, 6dp) of the `bankineco` Vault
+    /// account (bytemuck, IDL-decoded) that is the USD* mint authority.
+    /// Liveness is the vault's `accounting.last_update_ts` (crank_nav, ~5 min).
+    PerenaVaultNav {
+        vault: String,
         program: String,
+    },
+
+    /// Jupiter Perpetuals LP (JLP). NAV = Pool `aum_usd` (u128, 6dp) / JLP
+    /// mint supply (6dp), both read in one `getMultipleAccounts` so the pair
+    /// is slot-consistent. `pool` is owned by `program`; the LP mint is the
+    /// asset's own `mint`.
+    JupiterPerpsPoolNav {
+        pool: String,
+        program: String,
+    },
+
+    /// Issuer NAV read from an Ethereum mainnet `eth_call` to a view function
+    /// (e.g. Ondo RWADynamicOracle `getPrice()`, ERC-4626 `convertToAssets`).
+    /// `calldata` is the full hex call data (selector + ABI-encoded args);
+    /// the uint256 result is scaled by `10^decimals`. Read from >= 1 public
+    /// RPC; when two answer, they must agree within `max_divergence_bps`.
+    EvmViewNav {
+        contract: String,
+        calldata: String,
+        decimals: u32,
+        #[serde(default = "default_evm_max_divergence_bps")]
+        max_divergence_bps: u32,
+        #[serde(default = "default_evm_max_block_age_secs")]
+        max_block_age_secs: i64,
+    },
+
+    /// Fiat FX rate (e.g. EUR/USD, quoted as USD per 1 unit of `base`) taken
+    /// as the median of free public venues (Kraken ticker mid, Coinbase
+    /// exchange-rates). Rejected when the venues diverge by more than
+    /// `max_divergence_bps`. Not published while the FX market is closed
+    /// (the forex weekend), matching the previous Pyth FX behaviour.
+    FxHttpMedian {
+        base: String,
+        quote: String,
+        #[serde(default = "default_fx_max_divergence_bps")]
+        max_divergence_bps: u32,
     },
 
     // OnRe ONyc: Task 8 found that OnRe publishes ONyc's NAV directly to Pyth
@@ -227,6 +264,18 @@ pub enum IntrinsicStrategy {
     // StreamflowUsdPlus deferred to v1.5 — USD+ not yet live on mainnet as of
     // 2026-05-22 (Streamflow announced 2025-12-24, waitlist still open).
     // Re-add this variant when the mint ships.
+}
+
+fn default_evm_max_divergence_bps() -> u32 {
+    10
+}
+
+fn default_evm_max_block_age_secs() -> i64 {
+    180
+}
+
+fn default_fx_max_divergence_bps() -> u32 {
+    10
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,6 +341,13 @@ pub struct AssetConfig {
     /// (e.g. Jupiter TOKEN_NOT_TRADABLE) or for v1.5 placeholders.
     #[serde(default = "default_active")]
     pub active: bool,
+    /// Jupiter DEX labels to exclude from this asset's quotes (sent as
+    /// `excludeDexes`). Used to keep the market leg independent of the
+    /// intrinsic leg: an issuer's own mint/redeem route (e.g. "Perena Star V2"
+    /// for USD*, "Perps" for JLP) prices the token AT its NAV by construction,
+    /// so it can never reveal a discount.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jupiter_exclude_dexes: Vec<String>,
 }
 
 fn default_active() -> bool {

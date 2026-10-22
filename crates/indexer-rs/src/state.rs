@@ -26,9 +26,10 @@ pub type PythCache = Arc<RwLock<HashMap<String, PythEntry>>>;
 /// A stalled Pyth publisher keeps its last `publish_time`, so a frozen SOL/USD
 /// would otherwise silently poison every USD intrinsic derived from it — and the
 /// engine's own staleness gate cannot see it, because the indexer re-stamps
-/// intrinsics with `now()` each tick. 120s = 2× the Hermes stream idle timeout
-/// (60s, `pyth::STREAM_IDLE_TIMEOUT`), so this only fires on a genuine sustained
-/// stall past a reconnect cycle, never on transient SSE jitter.
+/// intrinsics with `now()` each tick. 120s = 10× the default on-chain poll
+/// cadence (12s, `pyth::DEFAULT_ONCHAIN_POLL_MS`) and 2× the ~60s push-feed
+/// heartbeat, so this only fires on a genuine sustained stall, never on
+/// normal poll jitter.
 ///
 /// On staleness the consumer falls through to the Jupiter-derived last resort
 /// (`jupiter::numeraire_usd`), which is held to this same age bound. Only when
@@ -80,11 +81,8 @@ pub struct AppState {
     pub pg: PgPool,
     pub redis: redis::aio::ConnectionManager,
     /// REST client with a 15s whole-request timeout — for the short Jupiter /
-    /// Sanctum / DexScreener / Hermes-`/latest` calls.
+    /// Sanctum / DexScreener calls.
     pub http: reqwest::Client,
-    /// Streaming client with NO whole-request timeout — for the long-lived
-    /// Hermes SSE stream. (Sharing `http` here guillotined the stream every 15s.)
-    pub http_stream: reqwest::Client,
     pub pyth: PythCache,
     pub sanctum_cache: SanctumCache,
     /// Reverse-lookup: Pyth feed_id (hex without 0x) → symbolic feed name.
@@ -132,18 +130,6 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(15))
             .user_agent("pegana-indexer/0.1")
             .build()?;
-        // Separate client for the long-lived Hermes SSE stream. reqwest's
-        // `.timeout()` is a deadline on the ENTIRE response, not idle — sharing
-        // the 15s `http` client above killed the stream at exactly 15s every
-        // cycle, pinning a 30s-backoff reconnect loop (~246 reconnects/6h) that
-        // starved the engine's confidence side of fresh Pyth ticks. This client
-        // has NO whole-request timeout; connection setup is still bounded by
-        // connect_timeout, and stream idle is handled by STREAM_IDLE_TIMEOUT
-        // (60s) in sources/pyth.rs.
-        let http_stream = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(15))
-            .user_agent("pegana-indexer/0.1")
-            .build()?;
 
         // Build feed_id → symbol map.
         let mut lookup = HashMap::new();
@@ -158,19 +144,10 @@ impl AppState {
             pg,
             redis,
             http,
-            http_stream,
             pyth: Arc::new(RwLock::new(HashMap::new())),
             sanctum_cache: Arc::new(RwLock::new(HashMap::new())),
             pyth_feed_lookup: Arc::new(lookup),
         })
-    }
-
-    pub fn pyth_feed_ids(&self) -> Vec<String> {
-        self.assets
-            .pyth_feeds
-            .values()
-            .map(|s| normalize_feed_id(s))
-            .collect()
     }
 
     /// Lst symbols that go to Sanctum (i.e. have intrinsic.kind = sanctum_lst).

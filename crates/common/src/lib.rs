@@ -125,6 +125,10 @@ pub mod channels {
     pub const SRC_PIGGYBANK: &str = "pegana:src:piggybank";
     pub const SRC_SPL_STAKE_POOL: &str = "pegana:src:spl_stake_pool";
     pub const SRC_PERENA: &str = "pegana:src:perena";
+    /// Generic `{asset, value_usd, ts}` intrinsic envelope shared by the
+    /// free off-Pyth NAV sources (Jupiter Perps pool AUM, Ethereum view calls,
+    /// HTTP FX median). Same shape as the Sanctum/Solayer/Perena channels.
+    pub const SRC_INTRINSIC: &str = "pegana:src:intrinsic";
     pub const ALERTS_STREAM: &str = "pegana:alerts";
     /// Engine → dispatcher pub/sub channel (ADR-0006). The engine's
     /// `alert_evidence` reconcile worker publishes an `evidence_now_available`

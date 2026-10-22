@@ -122,6 +122,23 @@ async fn main() -> Result<()> {
         "perena",
         sources::perena::run(state.clone(), shutdown.clone())
     );
+    // Free off-Pyth intrinsic sources (2026-10): JLP pool AUM, Ethereum
+    // issuer view calls (USDY, sUSDe), and the HTTP FX median (EURC).
+    spawn_source!(
+        tasks,
+        "jupiter_perps",
+        sources::jupiter_perps::run(state.clone(), shutdown.clone())
+    );
+    spawn_source!(
+        tasks,
+        "evm_nav",
+        sources::evm_nav::run(state.clone(), shutdown.clone())
+    );
+    spawn_source!(
+        tasks,
+        "fx_http",
+        sources::fx_http::run(state.clone(), shutdown.clone())
+    );
     spawn_source!(
         tasks,
         "dexscreener",

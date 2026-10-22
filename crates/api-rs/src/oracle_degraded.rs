@@ -16,6 +16,8 @@
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::LazyLock;
 use utoipa::ToSchema;
 
 /// Advisory oracle-vs-market divergence annotation for a single asset. Never
@@ -111,12 +113,96 @@ fn checked_bps(numerator: Decimal, denominator: Decimal) -> Option<i32> {
 /// every value that was actually COMPUTED (regardless of whether it
 /// individually fired) is populated, so a client badge can show full context
 /// rather than only the trigger.
+/// (This 90s-default form is kept for the unit tests below; production
+/// calls [`classify_oracle_degraded_for_feed`].)
+#[cfg(test)]
 pub fn classify_oracle_degraded(
     market_usd: Option<Decimal>,
     oracle_usd: Option<Decimal>,
     oracle_conf: Option<Decimal>,
     oracle_age_secs: Option<i64>,
     state_reason: Option<&str>,
+) -> Option<OracleDegraded> {
+    classify_with_stale_after(
+        market_usd,
+        oracle_usd,
+        oracle_conf,
+        oracle_age_secs,
+        state_reason,
+        ORACLE_DEGRADED_STALENESS_SECS,
+    )
+}
+
+/// [`classify_oracle_degraded`] with the staleness floor resolved for the
+/// oracle leg's own feed (`oracle_snapshots.feed`, the human feed name) via
+/// [`oracle_staleness_secs`]. This is what `fetch_card` uses.
+pub fn classify_oracle_degraded_for_feed(
+    market_usd: Option<Decimal>,
+    oracle_usd: Option<Decimal>,
+    oracle_conf: Option<Decimal>,
+    oracle_age_secs: Option<i64>,
+    state_reason: Option<&str>,
+    oracle_feed: Option<&str>,
+) -> Option<OracleDegraded> {
+    classify_with_stale_after(
+        market_usd,
+        oracle_usd,
+        oracle_conf,
+        oracle_age_secs,
+        state_reason,
+        oracle_staleness_secs(oracle_feed),
+    )
+}
+
+/// Per-feed Pyth staleness overrides, the SAME `[pyth_staleness.overrides]`
+/// table the engine reads (assets.toml). Embedded at compile time (the api
+/// Docker build copies assets.toml) and parsed once, on first use; `main`
+/// forces it at startup. A parse failure yields an empty table, i.e. every
+/// feed falls back to [`ORACLE_DEGRADED_STALENESS_SECS`] (fail closed to the
+/// tighter, louder default; the unit test below guarantees it parses).
+static PYTH_STALENESS_OVERRIDES: LazyLock<HashMap<String, i64>> =
+    LazyLock::new(|| parse_staleness_overrides(include_str!("../../../assets.toml")));
+
+fn parse_staleness_overrides(raw: &str) -> HashMap<String, i64> {
+    match toml::from_str::<pegana_common::AssetsFile>(raw) {
+        Ok(af) => af.pyth_staleness.overrides,
+        Err(e) => {
+            tracing::error!(error = %e, "assets.toml did not parse; oracle_stale uses the 90s default for every feed");
+            HashMap::new()
+        }
+    }
+}
+
+/// Parse the override table now (call once at startup) and return how many
+/// feeds carry an override, for the boot log.
+pub fn init_staleness_overrides() -> usize {
+    PYTH_STALENESS_OVERRIDES.len()
+}
+
+/// Staleness floor (seconds) for the amber `oracle_stale` flag on `feed`. A
+/// feed with a `[pyth_staleness.overrides]` entry (slow push heartbeats such
+/// as PYUSD/USD ~1200s, or daily NAV feeds) gets that window; everything else,
+/// and an unknown feed, keeps [`ORACLE_DEGRADED_STALENESS_SECS`]. Never
+/// tighter than the default: the override only widens. Advisory only; the
+/// result never reaches a receipt or the canonical hash.
+pub fn oracle_staleness_secs(feed: Option<&str>) -> i64 {
+    staleness_for(&PYTH_STALENESS_OVERRIDES, feed)
+}
+
+fn staleness_for(overrides: &HashMap<String, i64>, feed: Option<&str>) -> i64 {
+    feed.and_then(|f| overrides.get(f).copied())
+        .map_or(ORACLE_DEGRADED_STALENESS_SECS, |w| {
+            w.max(ORACLE_DEGRADED_STALENESS_SECS)
+        })
+}
+
+fn classify_with_stale_after(
+    market_usd: Option<Decimal>,
+    oracle_usd: Option<Decimal>,
+    oracle_conf: Option<Decimal>,
+    oracle_age_secs: Option<i64>,
+    state_reason: Option<&str>,
+    stale_after_secs: i64,
 ) -> Option<OracleDegraded> {
     // No independent oracle leg — nothing to annotate.
     let oracle_usd = oracle_usd.filter(|v| *v > Decimal::ZERO)?;
@@ -143,7 +229,7 @@ pub fn classify_oracle_degraded(
         .and_then(|diff| checked_bps(diff, oracle_usd));
     let divergent = spread_bps.is_some_and(|bps| bps > ORACLE_DEGRADED_DIVERGENCE_BPS);
 
-    let stale = oracle_age_secs.is_some_and(|secs| secs > ORACLE_DEGRADED_STALENESS_SECS);
+    let stale = oracle_age_secs.is_some_and(|secs| secs > stale_after_secs);
 
     if !(divergent || conf_wide || stale) {
         return None;
@@ -378,6 +464,95 @@ mod tests {
         assert!(
             out.is_none(),
             "an overflowing spread computation must yield None, not panic or a bogus signal: {out:?}"
+        );
+    }
+
+    /// Per-feed staleness (2026-10-22): the amber floor reads the engine's
+    /// `[pyth_staleness.overrides]`, so a slow-heartbeat push feed is not
+    /// "stale" one heartbeat in, a default feed still is at 91s, and an
+    /// override feed is stale again past its own window.
+    #[test]
+    fn per_feed_staleness_uses_assets_toml_overrides() {
+        let pyusd = oracle_staleness_secs(Some("PYUSD/USD"));
+        assert_eq!(pyusd, 1800, "PYUSD/USD window comes from assets.toml");
+        assert_eq!(init_staleness_overrides(), PYTH_STALENESS_OVERRIDES.len());
+        assert!(
+            init_staleness_overrides() > 0,
+            "assets.toml overrides parsed"
+        );
+
+        // Override feed, one ~1200s heartbeat (+ 12s poll) old: NOT stale.
+        let at_heartbeat = classify_oracle_degraded_for_feed(
+            None,
+            Some(usd(10000)),
+            None,
+            Some(1212),
+            None,
+            Some("PYUSD/USD"),
+        );
+        assert!(at_heartbeat.is_none(), "{at_heartbeat:?}");
+        // Same for a ~300s-heartbeat feed.
+        assert!(classify_oracle_degraded_for_feed(
+            None,
+            Some(usd(10000)),
+            None,
+            Some(312),
+            None,
+            Some("SUSDE/USD"),
+        )
+        .is_none());
+
+        // Override feed past its window: stale again.
+        let past = classify_oracle_degraded_for_feed(
+            None,
+            Some(usd(10000)),
+            None,
+            Some(pyusd + 1),
+            None,
+            Some("PYUSD/USD"),
+        )
+        .expect("past the override window must fire");
+        assert_eq!(past.reason, "oracle_stale");
+
+        // Default feeds (no override, unknown feed, or no feed) stay at 90s.
+        for feed in [Some("USDE/USD"), Some("NOT/A_FEED"), None] {
+            assert_eq!(oracle_staleness_secs(feed), ORACLE_DEGRADED_STALENESS_SECS);
+            let fires = classify_oracle_degraded_for_feed(
+                None,
+                Some(usd(10000)),
+                None,
+                Some(91),
+                None,
+                feed,
+            )
+            .expect("91s on a default feed must fire");
+            assert_eq!(fires.reason, "oracle_stale", "{feed:?}");
+            assert!(classify_oracle_degraded_for_feed(
+                None,
+                Some(usd(10000)),
+                None,
+                Some(90),
+                None,
+                feed
+            )
+            .is_none());
+        }
+    }
+
+    #[test]
+    fn staleness_override_only_widens_and_bad_toml_fails_closed() {
+        let mut m = HashMap::new();
+        m.insert("FAST/USD".to_string(), 10);
+        m.insert("SLOW/USD".to_string(), 600);
+        assert_eq!(
+            staleness_for(&m, Some("FAST/USD")),
+            ORACLE_DEGRADED_STALENESS_SECS
+        );
+        assert_eq!(staleness_for(&m, Some("SLOW/USD")), 600);
+        assert!(parse_staleness_overrides("not = [valid").is_empty());
+        assert_eq!(
+            staleness_for(&parse_staleness_overrides("garbage"), Some("PYUSD/USD")),
+            ORACLE_DEGRADED_STALENESS_SECS
         );
     }
 }

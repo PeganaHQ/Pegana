@@ -315,15 +315,15 @@ async fn quote_sol_usd(state: &AppState) -> Option<Decimal> {
     const ONE_SOL_LAMPORTS: u128 = 1_000_000_000;
     const USDC_DECIMALS: u32 = 6;
 
-    let quote = match quote_exact_in(state, "SOL/USD", SOL_MINT, USDC_MINT, ONE_SOL_LAMPORTS).await
-    {
-        Ok(q) => q,
-        Err(e) => {
-            warn!(error = %e, "Jupiter SOL→USDC numéraire quote failed");
-            metrics::counter!("pegana_jupiter_numeraire_quote_errors_total").increment(1);
-            return None;
-        }
-    };
+    let quote =
+        match quote_exact_in(state, "SOL/USD", SOL_MINT, USDC_MINT, ONE_SOL_LAMPORTS, &[]).await {
+            Ok(q) => q,
+            Err(e) => {
+                warn!(error = %e, "Jupiter SOL→USDC numéraire quote failed");
+                metrics::counter!("pegana_jupiter_numeraire_quote_errors_total").increment(1);
+                return None;
+            }
+        };
     let Ok(out_amt) = Decimal::from_str(&quote.out_amount) else {
         warn!(out_amount = %quote.out_amount, "Jupiter SOL→USDC numéraire quote unparseable");
         metrics::counter!("pegana_jupiter_numeraire_quote_errors_total").increment(1);
@@ -410,6 +410,9 @@ fn probe_units(price_usd: f64, decimals: u32, one_unit: u128) -> u128 {
     sized.max(one_unit)
 }
 
+/// Floor for the Jupiter round-robin tick (`POLL_TICK_MS`).
+const MIN_JUPITER_TICK_MS: u64 = 250;
+
 pub async fn run(state: AppState, shutdown: CancellationToken) -> Result<()> {
     // Pre-filter to assets that actually use a Jupiter quote. Otherwise the
     // round-robin wastes tick slots on PythSpot/DexScreener-backed assets,
@@ -431,7 +434,11 @@ pub async fn run(state: AppState, shutdown: CancellationToken) -> Result<()> {
         .config
         .poll_tick_ms
         .or(state.assets.polling.jupiter_tick_ms)
-        .unwrap_or(2_200);
+        .unwrap_or(2_200)
+        // Not a *_POLL_MS cadence: a keyed Jupiter tick is documented at
+        // 500-1000ms, so it gets its own lower floor. Zero would panic
+        // `tokio::time::interval`.
+        .max(MIN_JUPITER_TICK_MS);
     let concurrency = state.config.jupiter_max_concurrent.max(1).min(assets.len());
 
     let mut idx: usize = 0;
@@ -501,16 +508,60 @@ fn parse_retry_after(resp: &reqwest::Response) -> Option<Duration> {
     Some(Duration::from_secs(secs).min(MAX_429_BACKOFF))
 }
 
+/// Build the lite-api quote URL. `exclude_dexes` are Jupiter DEX labels
+/// (as listed by `/swap/v1/program-id-to-label`, e.g. "Perena Star V2",
+/// "Perps"), sent comma-joined and percent-encoded as `excludeDexes` so the
+/// issuer's own mint/redeem route can never become the market leg.
+fn quote_url(
+    base: &str,
+    input_mint: &str,
+    output_mint: &str,
+    amount: u128,
+    exclude_dexes: &[String],
+) -> String {
+    let mut url = format!(
+        "{base}/swap/v1/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount}&slippageBps=50&swapMode=ExactIn"
+    );
+    let labels: Vec<&str> = exclude_dexes
+        .iter()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if !labels.is_empty() {
+        url.push_str("&excludeDexes=");
+        url.push_str(&percent_encode_query(&labels.join(",")));
+    }
+    url
+}
+
+/// Minimal RFC 3986 query-value encoding (unreserved characters pass through).
+fn percent_encode_query(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 async fn quote_exact_in(
     state: &AppState,
     asset_symbol: &str,
     input_mint: &str,
     output_mint: &str,
     amount: u128,
+    exclude_dexes: &[String],
 ) -> Result<QuoteResponse> {
-    let url = format!(
-        "{}/swap/v1/quote?inputMint={}&outputMint={}&amount={}&slippageBps=50&swapMode=ExactIn",
-        state.config.jupiter_api_url, input_mint, output_mint, amount
+    let url = quote_url(
+        &state.config.jupiter_api_url,
+        input_mint,
+        output_mint,
+        amount,
+        exclude_dexes,
     );
 
     // Retry-on-429 loop. Other status codes bail immediately — they're either
@@ -579,7 +630,16 @@ async fn record_depth_probe(
         );
     }
 
-    let quote = match quote_exact_in(state, &asset.symbol, &asset.mint, num_mint, amount).await {
+    let quote = match quote_exact_in(
+        state,
+        &asset.symbol,
+        &asset.mint,
+        num_mint,
+        amount,
+        &asset.jupiter_exclude_dexes,
+    )
+    .await
+    {
         Ok(quote) => quote,
         Err(e) => {
             metrics::gauge!(
@@ -661,7 +721,15 @@ async fn poll_one(state: &AppState, asset: &AssetConfig) -> Result<()> {
 
     // Quote 1 unit of the asset → numeraire.
     let one_unit: u128 = 10u128.pow(asset.decimals as u32);
-    let quote = quote_exact_in(state, &asset.symbol, &asset.mint, num_mint, one_unit).await?;
+    let quote = quote_exact_in(
+        state,
+        &asset.symbol,
+        &asset.mint,
+        num_mint,
+        one_unit,
+        &asset.jupiter_exclude_dexes,
+    )
+    .await?;
 
     let in_amt = Decimal::from_str(&quote.in_amount)?;
     let out_amt = Decimal::from_str(&quote.out_amount)?;
@@ -779,7 +847,7 @@ async fn poll_one(state: &AppState, asset: &AssetConfig) -> Result<()> {
 mod tests {
     use super::{
         is_plausible_market_usd, jupiter_cache_price, log_numeraire_substitution,
-        numeraire_decision, probe_units, refresh_due, select_numeraire, should_probe,
+        numeraire_decision, probe_units, quote_url, refresh_due, select_numeraire, should_probe,
         JupiterNumeraire, NumeraireDecision, NumeraireSource, DEPTH_PROBE_INTERVAL,
         JUPITER_NUMERAIRE_MAX_AGE_SECS, JUPITER_NUMERAIRE_REFRESH_SECS,
     };
@@ -796,6 +864,31 @@ mod tests {
 
     fn d(s: &str) -> Decimal {
         Decimal::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn quote_url_without_exclusions_is_unchanged() {
+        assert_eq!(
+            quote_url("https://lite-api.jup.ag", "A", "B", 1_000_000, &[]),
+            "https://lite-api.jup.ag/swap/v1/quote?inputMint=A&outputMint=B&amount=1000000&slippageBps=50&swapMode=ExactIn"
+        );
+        // Blank labels are ignored rather than sending an empty excludeDexes.
+        assert!(!quote_url("h", "A", "B", 1, &[" ".to_string()]).contains("excludeDexes"));
+    }
+
+    #[test]
+    fn quote_url_encodes_excluded_dex_labels() {
+        let url = quote_url(
+            "https://lite-api.jup.ag",
+            "star9agSpjiFe3M49B3RniVU4CMBBEK3Qnaqn3RGiFM",
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            1_000_000,
+            &["Perena Star V2".to_string(), "Perps".to_string()],
+        );
+        assert!(
+            url.ends_with("&excludeDexes=Perena%20Star%20V2%2CPerps"),
+            "{url}"
+        );
     }
 
     #[test]

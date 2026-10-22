@@ -58,9 +58,6 @@ services:
       JUPITER_API_URL: ${JUPITER_API_URL:-https://api.jup.ag}
       JUPITER_API_KEY: ${JUPITER_API_KEY:-}
       JUPITER_MAX_CONCURRENT: ${JUPITER_MAX_CONCURRENT:-4}
-      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
-      PYTH_HERMES_API_KEY: ${PYTH_HERMES_API_KEY:-}
-      PYTH_ONCHAIN_FALLBACK: ${PYTH_ONCHAIN_FALLBACK:-1}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
       SOLANA_RPC_URL_FALLBACK: ${SOLANA_RPC_URL_FALLBACK:-https://solana-rpc.publicnode.com}
       ASSETS_FILE: ${ASSETS_FILE:-./assets.toml}
@@ -88,6 +85,13 @@ services:
       TOKENS_XYZ_POLL_MS: ${TOKENS_XYZ_POLL_MS:-60000}
       TOKENS_XYZ_RISK_POLL_MS: ${TOKENS_XYZ_RISK_POLL_MS:-1800000}
       PYTH_INTRINSIC_INTERVAL_MS: ${PYTH_INTRINSIC_INTERVAL_MS:-30000}
+      PYTH_ONCHAIN_POLL_MS: ${PYTH_ONCHAIN_POLL_MS:-12000}
+      PYTH_ONCHAIN_MAX_AGE_SECS: ${PYTH_ONCHAIN_MAX_AGE_SECS:-604800}
+      # Free intrinsic sources. Empty ETH_RPC_URLS = the keyless public defaults.
+      ETH_RPC_URLS: ${ETH_RPC_URLS:-}
+      EVM_NAV_POLL_MS: ${EVM_NAV_POLL_MS:-60000}
+      JUPITER_PERPS_POLL_MS: ${JUPITER_PERPS_POLL_MS:-15000}
+      FX_HTTP_POLL_MS: ${FX_HTTP_POLL_MS:-60000}
       LST_DIRECTORY_POLL_MS: ${LST_DIRECTORY_POLL_MS:-900000}
       INTRINSIC_DIVERGENCE_TOLERANCE_BPS: ${INTRINSIC_DIVERGENCE_TOLERANCE_BPS:-300}
       RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
@@ -328,6 +332,9 @@ services:
       # public dirs, read-only: one copy of each file in the repo, and a
       # deploy's `git reset --hard` is visible without recreating caddy (a
       # single-file mount pins the old inode, see prometheus below).
+      # web/ is proprietary and not in the public repository: on a public
+      # checkout these mounts are empty (Docker creates the host dirs), so a
+      # self-hosted stack answers 404 on /static. Put your own logos there.
       - ./web/public/tokens:/srv/static/tokens:ro
       - ./web/public/logos:/srv/static/logos:ro
       - caddydata:/data

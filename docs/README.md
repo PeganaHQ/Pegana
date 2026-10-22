@@ -1,8 +1,7 @@
 # Pegana Docs
 
-- [Backend specification (HTML)](./spec.html) — full system design, all 9 decisions locked
 - [Architecture](./ARCHITECTURE.md) — service map, data flow, freeze-order invariants, trust boundary
-- [Deploy guide](./ops/deploy-hetzner.md) — Hetzner CPX32 setup, Caddy, backups
+- Deploy and operations runbooks are maintained privately
 - [Calibration log](./CALIBRATION-v1.md) — per-class verdict thresholds + tuning (see also [CALIBRATION-v2-mcp-spike.md](./CALIBRATION-v2-mcp-spike.md))
 
 ## Key references

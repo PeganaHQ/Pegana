@@ -23,18 +23,8 @@ pub struct Config {
     pub sanctum_nav_drift_bps: i64,
     #[serde(default = "default_jupiter_url")]
     pub jupiter_api_url: String,
-    #[serde(default = "default_pyth_url")]
-    pub pyth_hermes_url: String,
-    /// Keyed Hermes host goes in PYTH_HERMES_URL (already supported via env);
-    /// the key goes in PYTH_HERMES_API_KEY.
-    #[serde(default)]
-    pub pyth_hermes_api_key: Option<String>,
-    /// On-chain Pyth fallback master switch (`PYTH_ONCHAIN_FALLBACK`). Kept as
-    /// a string because envy/serde's bool only accepts `true`/`false`, and the
-    /// documented form is `PYTH_ONCHAIN_FALLBACK=1`. Unset = enabled. Parsed by
-    /// `sources::pyth::parse_onchain_flag`.
-    #[serde(default)]
-    pub pyth_onchain_fallback: Option<String>,
+    // Pyth is read from on-chain push-oracle accounts over `solana_rpc_url`;
+    // there is no Hermes URL or key (removed 2026-10-22, see sources/pyth.rs).
     #[serde(default = "default_rpc_url")]
     pub solana_rpc_url: String,
     #[serde(default = "default_rpc_fallback")]
@@ -107,9 +97,6 @@ fn default_sanctum_nav_drift_bps() -> i64 {
 fn default_jupiter_url() -> String {
     "https://lite-api.jup.ag".into()
 }
-fn default_pyth_url() -> String {
-    "https://hermes.pyth.network".into()
-}
 fn default_rpc_url() -> String {
     "https://api.mainnet-beta.solana.com".into()
 }
@@ -132,18 +119,6 @@ fn default_db_max_connections() -> u32 {
 }
 fn default_db_statement_timeout_ms() -> u64 {
     30_000
-}
-
-/// `Authorization` value for Hermes. An empty/blank key counts as no key:
-/// docker-compose passes `PYTH_HERMES_API_KEY=` through as an empty string,
-/// and `Bearer ` with nothing after it is not a credential.
-pub(crate) fn pyth_bearer(key: Option<&str>) -> Option<String> {
-    effective_pyth_key(key).map(|k| format!("Bearer {k}"))
-}
-
-/// The configured Hermes key, trimmed, or `None` when unset or blank.
-pub(crate) fn effective_pyth_key(key: Option<&str>) -> Option<&str> {
-    key.map(str::trim).filter(|k| !k.is_empty())
 }
 
 impl Config {
@@ -174,37 +149,15 @@ redis_url = "redis://localhost:6379"
     }
 
     #[test]
-    fn deserializes_pyth_hermes_api_key_and_defaults_to_none() {
-        let cfg: Config =
-            toml::from_str(&minimal_config_toml("")).expect("minimal config should deserialize");
-        assert_eq!(cfg.pyth_hermes_api_key, None);
-
+    fn minimal_config_deserializes_and_ignores_retired_pyth_hermes_keys() {
+        // A prod `.env` that still carries the retired Hermes variables must
+        // keep booting: unknown keys are ignored, nothing reads them.
         let cfg: Config = toml::from_str(&minimal_config_toml(
-            r#"pyth_hermes_api_key = "hermes-secret""#,
+            r#"pyth_hermes_api_key = "x"
+pyth_hermes_url = "https://hermes.pyth.network"
+pyth_onchain_fallback = "1""#,
         ))
-        .expect("config with pyth hermes key should deserialize");
-        assert_eq!(cfg.pyth_hermes_api_key.as_deref(), Some("hermes-secret"));
-    }
-
-    #[test]
-    fn deserializes_pyth_onchain_fallback_flag_and_defaults_to_none() {
-        let cfg: Config =
-            toml::from_str(&minimal_config_toml("")).expect("minimal config should deserialize");
-        assert_eq!(cfg.pyth_onchain_fallback, None);
-
-        let cfg: Config = toml::from_str(&minimal_config_toml(r#"pyth_onchain_fallback = "1""#))
-            .expect("config with on-chain flag should deserialize");
-        assert_eq!(cfg.pyth_onchain_fallback.as_deref(), Some("1"));
-    }
-
-    #[test]
-    fn pyth_bearer_formats_optional_authorization_value() {
-        assert_eq!(pyth_bearer(None), None);
-        assert_eq!(pyth_bearer(Some("")), None, "empty env value is no key");
-        assert_eq!(pyth_bearer(Some("   ")), None, "blank env value is no key");
-        assert_eq!(
-            pyth_bearer(Some("hermes-secret")),
-            Some("Bearer hermes-secret".to_string())
-        );
+        .expect("retired keys must not break config parsing");
+        assert_eq!(cfg.solana_rpc_url, default_rpc_url());
     }
 }

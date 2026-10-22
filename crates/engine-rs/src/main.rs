@@ -287,6 +287,7 @@ async fn main() -> Result<()> {
             channels::SRC_PIGGYBANK,
             channels::SRC_SPL_STAKE_POOL,
             channels::SRC_PERENA,
+            channels::SRC_INTRINSIC,
         ])
         .await?;
 
@@ -400,14 +401,16 @@ struct EngineConfig {
     pub redis_url: String,
     #[serde(default = "default_assets_path")]
     pub assets_file: PathBuf,
-    /// Max age (s) accepted from a cached Pyth reading. Default 30s — Hermes
-    /// pushes ~1Hz, so a 30s window covers network blips without using truly
-    /// stale prices for FX-cross intrinsics like BRZ.
+    /// Base max age (s) for a cached Pyth reading, and the fallback window for
+    /// feeds without a `[pyth_staleness.overrides]` entry. Default 30s. Every
+    /// print now comes from Solana push accounts (the Hermes stream is gone),
+    /// which are additionally floored at `pyth_onchain_staleness_secs`.
     #[serde(default = "default_pyth_staleness")]
     pub pyth_staleness_secs: i64,
     /// Max age (s) for Pyth prints the indexer read from on-chain push-oracle
     /// accounts (`PYTH_ONCHAIN_STALENESS_SECS`, default 120). Those step at the
-    /// push-feed heartbeat (about 60s), not Hermes' ~1 Hz.
+    /// push-feed heartbeat (55s for Pyth's documented Solana sponsored feeds,
+    /// slower for some; see the per-feed overrides) plus the indexer's poll.
     #[serde(default = "default_pyth_onchain_staleness")]
     pub pyth_onchain_staleness_secs: i64,
     /// Postgres pool ceiling. Default 10 (sqlx's default) — engine runs a
@@ -511,7 +514,8 @@ async fn handle_message(
                     .map(|d| d.with_timezone(&Utc)),
             ) {
                 let conf = parse_decimal_opt(&value, "confidence").unwrap_or(Decimal::ZERO);
-                // `origin` is additive: absent (older indexers) means Hermes.
+                // `origin` is additive: absent (an indexer older than the
+                // on-chain-only reader) means the print gets only the base window.
                 let onchain = value.get("origin").and_then(|v| v.as_str()) == Some("onchain");
                 engine
                     .set_pyth_with_origin(feed, price, publish_time, conf, onchain)
@@ -565,12 +569,14 @@ async fn handle_message(
             || c == channels::SRC_SOLAYER
             || c == channels::SRC_PIGGYBANK
             || c == channels::SRC_SPL_STAKE_POOL
-            || c == channels::SRC_PERENA =>
+            || c == channels::SRC_PERENA
+            || c == channels::SRC_INTRINSIC =>
         {
             // Generic per-asset intrinsic envelope shape, shared by Sanctum,
             // Solayer (sUSD Token-2022 InterestBearing), Piggybank (pbUSDC
-            // vault PDA decode), and Perena (USD* reserve NAV decode). Each
-            // publishes `{asset, value_usd}`.
+            // vault PDA decode), Perena (USD* vault NAV decode), and the
+            // generic SRC_INTRINSIC channel (JLP pool AUM, Ethereum view-call
+            // NAVs, HTTP FX median). Each publishes `{asset, value_usd}`.
             // Sanctum additionally publishes `value_sol` (sol_per_lst) — the
             // engine uses it to compute LST discount in SOL terms so the
             // pyth(SOL/USD) multiplier cancels.

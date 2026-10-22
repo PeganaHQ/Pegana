@@ -122,9 +122,12 @@ Note `4` vs `5`: a severe transition with no anchor reports `ONCHAIN_INCOMPLETE`
 | `METHODOLOGY.md` | Long-form prose companion to `crates/methodology`. The code is authoritative; this explains it. |
 | `.github/workflows/release.yml` | `cargo-dist` pipeline. Publishes attested binaries on every `v*` tag, signed via GitHub-issued OIDC (no key material). |
 
-**Not here:** the engine, dispatcher, indexers, API, MCP server, web app and on-chain commit
-pipeline. They are open source too, in the full product repository
-[PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana) (MIT). This repo is the verifier subset,
+**Not here:** the engine, dispatcher, indexers, API, MCP server and on-chain commit
+pipeline. They are open source too, in the oracle repository
+[PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana) (MIT). Pegana is open-core: the
+pegana.xyz website (marketing site and web app), its design system, the Pegana name, logo
+and wordmark, and the production operations tooling are proprietary and in neither
+repository. This repo is the verifier subset,
 mirrored from it so you can audit and build the CLI without the rest of the stack, and
 **every decision the engine produces is reproducible from this repo** against the alert's receipt.
 

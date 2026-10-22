@@ -12,7 +12,7 @@
 # for public repos); in the private repo every run is skipped before a runner
 # starts, so it costs nothing there.
 #
-# Limits, stated honestly (docs/runbooks/oncall.md, "External uptime probe"):
+# Limits, stated honestly (private on-call runbook, "External uptime probe"):
 #   - GitHub's cron is best effort: runs can start 5-30 min late under load,
 #     so detection takes 10 min at best and can take longer.
 #   - GitHub disables scheduled workflows in a public repo after 60 days with
@@ -131,7 +131,7 @@ jobs:
             }
 
             const body = `Probe at ${now} found ${failing} endpoint(s) failing after 3 attempts:\n\n${report}\n` +
-              `[probe run](${runUrl}). Playbook: docs/runbooks/oncall.md, "Box is down".`;
+              `[probe run](${runUrl}). Playbook: private on-call runbook, "Box is down".`;
             if (issue) {
               // Comment at most once an hour so a long outage does not
               // produce a notification every 10 minutes. Count only this

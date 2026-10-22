@@ -100,7 +100,7 @@ pub async fn upsert_intrinsic_liveness_guarded(
 
 /// Clear an intrinsic-liveness stale flag, but ONLY if the row still carries one
 /// of `reasons` — so a recovery in one detector never erases the stale signal
-/// another detector (directory_stale, epoch_lag, nav_accrual_stall) wrote.
+/// another detector (directory_stale, epoch_lag, nav_update_stale, ...) wrote.
 pub async fn clear_intrinsic_liveness_if_reasons(
     pg: &PgPool,
     asset: &str,
@@ -119,59 +119,6 @@ pub async fn clear_intrinsic_liveness_if_reasons(
     .execute(pg)
     .await?;
     Ok(())
-}
-
-/// Observation stats over the last `window_secs` of USD* NAV history — the input
-/// to the Perena nav-accrual-stall liveness signal (ADR-0038). A frozen backing
-/// must be distinguished from a mere OBSERVATION gap: measuring "time since the
-/// NAV last moved" by wall-clock would false-fire after a >window indexer/DB
-/// outage (the on-chain NAV kept accruing, we just weren't polling). So instead
-/// we ask whether the NAV was flat across a window we actually **spanned** and
-/// **continuously observed** — see `nav_accrual_stale`. Returns `None` on query
-/// error → caller fails OPEN.
-pub struct PerenaNavStats {
-    /// Distinct NAV values seen in the window. `1` ⇒ flat; `>=2` ⇒ it moved.
-    pub distinct_navs: i64,
-    /// Age (secs) of the OLDEST poll in the window. `< ~window` ⇒ a cold start
-    /// that hasn't accumulated a full window yet → not judgeable.
-    pub oldest_age_secs: i64,
-    /// Largest gap (secs) between consecutive polls in the window. A big gap is
-    /// an OUTAGE — a "flat" span across it was unobserved, not a proven freeze.
-    pub max_gap_secs: i64,
-    /// Poll count in the window. `<= 1` ⇒ too thin to judge.
-    pub poll_count: i64,
-}
-
-pub async fn perena_nav_window_stats(pg: &PgPool, window_secs: i64) -> Option<PerenaNavStats> {
-    sqlx::query_as::<_, (i64, i64, i64, i64)>(
-        r#"
-        WITH w AS (
-            SELECT ts, value_usd,
-                   ts - LAG(ts) OVER (ORDER BY ts) AS gap
-            FROM intrinsic_snapshots
-            WHERE asset = 'USD*' AND source = 'perena'
-              AND ts > now() - make_interval(secs => $1)
-        )
-        SELECT
-            count(DISTINCT value_usd)::bigint AS distinct_navs,
-            coalesce(extract(epoch FROM (now() - min(ts)))::bigint, 0) AS oldest_age_secs,
-            coalesce(extract(epoch FROM max(gap))::bigint, 0) AS max_gap_secs,
-            count(*)::bigint AS poll_count
-        FROM w
-        "#,
-    )
-    .bind(window_secs as f64)
-    .fetch_one(pg)
-    .await
-    .ok()
-    .map(
-        |(distinct_navs, oldest_age_secs, max_gap_secs, poll_count)| PerenaNavStats {
-            distinct_navs,
-            oldest_age_secs,
-            max_gap_secs,
-            poll_count,
-        },
-    )
 }
 
 /// Append a liquidity observation. `liquidity_usd` is `None` for a

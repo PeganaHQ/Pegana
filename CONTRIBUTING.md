@@ -1,6 +1,9 @@
 # Contributing
 
-Pegana is open source under the MIT license. Issues and pull requests are welcome on
+Pegana is open-core: the oracle in this repository is open source under the MIT license.
+The pegana.xyz website and its design system are proprietary and not part of this repository
+(see the License section of [README.md](README.md) and [TRADEMARKS.md](TRADEMARKS.md)).
+Issues and pull requests on the oracle are welcome on
 [github.com/PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana).
 
 ## Before you open something
@@ -26,7 +29,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
 
-# TypeScript packages (mcp-ts, protocol-indexer-ts, web): from the package directory
+# TypeScript packages (mcp-ts, protocol-indexer-ts): from the package directory
 bun run typecheck
 bun run lint
 bun run test
@@ -39,8 +42,6 @@ House rules:
 - Never edit an already-applied migration under `migrations/`; add a new, higher-numbered one.
 - Data shown to users must be real. Do not hardcode or invent values in UI or docs examples
   that could be read as live data.
-- Every surface that renders rows of data in `web/` is a semantic `<table>`
-  (see `web/AGENTS.md`).
 
 ## How changes land
 
@@ -59,5 +60,6 @@ which applies to both repositories. Report conduct issues to rafael@pegana.xyz.
 
 ## License
 
-By contributing you agree that your contributions are released under the MIT license
-(see [LICENSE](LICENSE)).
+By contributing you agree that your contributions to the oracle are released under the MIT
+license (see [LICENSE](LICENSE)). The MIT license does not cover the Pegana name, logo or
+wordmark (see [TRADEMARKS.md](TRADEMARKS.md)).

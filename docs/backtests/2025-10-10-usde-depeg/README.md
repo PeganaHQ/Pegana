@@ -57,7 +57,7 @@ Build or install the public CLI, then verify any emitted schema-v2 receipt:
 
 The receipt pins the methodology version (0.7.0), the canonical asset snapshot, the frozen inputs, the computed transition, and its SHA-256 hash. Regenerate or check the complete case with:
 
-    scripts/run-backtest.sh 2025-10-10-usde-depeg check
+    cargo run -p xtask -- backtest --case 2025-10-10-usde-depeg --check
 
 ## Disclaimer
 
