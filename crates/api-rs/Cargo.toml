@@ -41,7 +41,7 @@ tower-http = { version = "0.5", features = ["cors", "trace", "limit", "compressi
 # DB cursor and the HTTP response advance together without buffering the
 # full result set in memory. Pin to 0.19 — 0.20+ require axum 0.8 while
 # we're still on axum 0.7 (which workspace-wide upgrade is a separate task).
-axum-streams = { version = "0.19", features = ["csv"] }
+axum-streams = { version = "0.30", features = ["csv"] }
 async-stream = "0.3"
 
 # OpenAPI auto-generation. derives + utoipa::path macros annotate the
