@@ -66,7 +66,7 @@ jobs:
       issues: write    # used by the on-failure step to open a tracking issue
     steps:
       - name: Checkout (full history)
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
         with:
           fetch-depth: 0  # subtree split needs the full commit graph
 
@@ -320,7 +320,7 @@ jobs:
       # failure mode of "PAT expired" doesn't also prevent the notification.
       - name: Open issue on failure
         if: failure()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -381,7 +381,7 @@ jobs:
       # mirror is currently broken.
       - name: Close sync-failure issue on success
         if: success()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
