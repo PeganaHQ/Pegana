@@ -44,5 +44,5 @@ futures = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-sdk = { workspace = true }
-solana-transaction-error = "2"
+solana-transaction-error = "4"
 spl-memo = "5"
