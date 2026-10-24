@@ -33,7 +33,7 @@ envy = "0.4"
 # setrlimit: raise the nofile soft limit at startup (main.rs).
 libc = "0.2"
 
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "limit", "compression-gzip"] }
 
 # Trust Layer Phase 4 — /v1/audit.csv streams via chunked transfer encoding.
