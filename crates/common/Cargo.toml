@@ -42,4 +42,4 @@ bytes = "1"
 rand = { workspace = true }
 # webhook_response tests spin up a local axum sink to assert the
 # streaming truncation cap actually stops mid-body.
-axum = "0.7"
+axum = "0.8"
