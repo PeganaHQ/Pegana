@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "maple",
   "name": "Pegana",
-  "description": "The peg-risk oracle for Solana. Real-time monitoring of LSTs, stablecoins, yield-bearing assets and synthetics. Read via REST, WebSocket and MCP. Free hosted access, MIT verifier and SDKs, and FSL-1.1-MIT service code.",
+  "description": "The peg-risk oracle for Solana. Real-time monitoring of LSTs, stablecoins, yield-bearing assets and synthetics. Read via REST, WebSocket and MCP. Free hosted access, Fair Source verifier, MIT SDKs, and FSL-1.1-MIT service code.",
   "colors": {
     "primary": "#ff8a5b",
     "light": "#fb6fae",

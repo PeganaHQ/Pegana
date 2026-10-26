@@ -5,7 +5,7 @@
 [![status](https://img.shields.io/badge/status-Technical%20Preview-brightgreen.svg)](https://pegana.xyz)
 [![rust](https://img.shields.io/badge/rust-1.90-orange.svg)](rust-toolchain.toml)
 [![methodology](https://img.shields.io/badge/methodology-0.8.0-blue.svg)](https://crates.io/crates/pegana-methodology)
-[![cli](https://img.shields.io/badge/pegana--replay-0.6.0-blue.svg)](https://crates.io/crates/pegana-replay)
+[![cli](https://img.shields.io/badge/pegana--replay-0.6.1-blue.svg)](https://crates.io/crates/pegana-replay)
 
 Pegana is the **specialized peg-risk oracle for Solana**. It monitors the divergence between the **intrinsic value** (what an asset *should* be worth, based on its peg mechanism) and the **market value** (what you'd actually get swapping it right now) for **66 assets on the public peg surface** on Solana mainnet — the live list is always [`GET /v1/assets`](https://api.pegana.xyz/v1/assets). When the gap exceeds per-asset thresholds, Pegana publishes the transition via REST, WebSocket and MCP, and emits a reproducible audit receipt.
 
@@ -136,4 +136,4 @@ External APIs used (all free): Sanctum extra-api, Jupiter lite-api, Pyth on-chai
 
 ## License
 
-Pegana has two code tracks: the oracle service is source-available under [FSL-1.1-MIT](LICENSE), while the methodology, verifier, replay CLI, SDKs, documentation, and examples are open source under [MIT](LICENSE-MIT). The `web/` app is proprietary. Each service version changes to MIT two years after it is made available; versions published before this change remain MIT. See [LICENSING.md](LICENSING.md) for the path map and [TRADEMARK.md](TRADEMARK.md) for the Pegana marks.
+Pegana code is licensed by path: the oracle service is source-available under [FSL-1.1-MIT](LICENSE), while the methodology and verifier (`pegana-methodology`, `pegana-replay`) are Fair Source under FSL-1.1-MIT with the [Pegana Verification Permission](VERIFICATION-PERMISSION.md). In short: read, run, modify and verify freely, including commercially, with the Pegana Verification Permission; each release becomes MIT two years after it ships. The SDKs, documentation, and examples are open source under [MIT](LICENSE-MIT). The `web/` app is proprietary. Each service version changes to MIT two years after it is made available; versions published before this change remain MIT. See [LICENSING.md](LICENSING.md) for the path map and [TRADEMARK.md](TRADEMARK.md) for the Pegana marks.
