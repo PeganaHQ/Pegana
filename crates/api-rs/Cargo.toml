@@ -35,7 +35,7 @@ envy = "0.4"
 libc = "0.2"
 
 axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.5", features = ["cors", "trace", "limit", "compression-gzip"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "limit", "compression-gzip"] }
 
 # Trust Layer Phase 4 — /v1/audit.csv streams via chunked transfer encoding.
 # axum-streams bridges async-stream's yielded rows to a CSV body, so the
