@@ -1,0 +1,13 @@
+name = "pegana-webhook-receiver"
+main = "worker.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Replace with the id printed by `wrangler kv namespace create PEGANA_DEDUP`.
+[[kv_namespaces]]
+binding = "PEGANA_DEDUP"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Override the embedded pubkey by running:
+#   wrangler secret put PEGANA_PUB_KEY_B64
+# (paste the current value from https://pegana.xyz/developers#webhook)

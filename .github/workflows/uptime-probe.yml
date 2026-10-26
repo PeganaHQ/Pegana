@@ -1,0 +1,230 @@
+# External uptime probe.
+#
+# Alertmanager and Prometheus run on the same box as the API, so nothing on
+# the box can report that the box itself is gone. This workflow probes the
+# public endpoints from GitHub's runners every 60 minutes and, on a confirmed
+# failure, opens (or updates) a GitHub issue labelled `uptime` and assigned to
+# the operator. GitHub then emails/pushes that notification, so it works with
+# no secret and independently of Discord and Sentry. When every endpoint is
+# healthy again the issue gets a recovery comment and is closed.
+#
+# It only runs on the public PeganaHQ/Pegana repository (free Actions minutes
+# for public repos); in the private repo every run is skipped before a runner
+# starts, so it costs nothing there.
+#
+# Limits, stated honestly (private on-call runbook, "External uptime probe"):
+#   - GitHub's cron is best effort: runs can start 5-30 min late under load,
+#     so detection takes 60 min at best and can take longer.
+#   - GitHub disables scheduled workflows in a public repo after 60 days with
+#     no repository activity; the regular mirror sync PRs keep it alive.
+#   - A newly merged schedule can take hours to fire its first run.
+#   - It detects "unreachable / not ready", not wrong data.
+#
+# Optional Telegram notification: set UPTIME_TELEGRAM_BOT_TOKEN and
+# UPTIME_TELEGRAM_CHAT_ID in the uptime-notify environment and the `notify`
+# job sends a Telegram message when an outage issue is opened, about once an
+# hour while it stays open, and once when it recovers (the run that closes the
+# issue). Without them the step is skipped. The secrets MUST exist only in the
+# uptime-notify environment; a repository-level copy defeats this gate.
+#
+# The environment sits on the separate `notify` job, not on `probe`: a job
+# with `environment:` records a deployment on every run, and the probe runs
+# every 60 minutes. `notify` only starts when there is something to send.
+#
+# Only GitHub-owned actions are used (allowed by the public repo's selected
+# actions policy), pinned to a full SHA (sha_pinning_required=true).
+
+name: uptime-probe
+
+on:
+  schedule:
+    # Offset from :00 so the run is not queued in GitHub's busiest minutes,
+    # where scheduled runs are delayed or dropped.
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.repository == 'PeganaHQ/Pegana' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      notify: ${{ steps.issue.outputs.notify }}
+      kind: ${{ steps.issue.outputs.kind }}
+      report: ${{ steps.probe.outputs.report }}
+    steps:
+      - name: Probe public endpoints
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          # api /readyz fails when db, redis or the engine's snapshots are
+          # stale, so it also catches a box that is up but not producing data.
+          targets=(
+            "https://api.pegana.xyz/healthz"
+            "https://api.pegana.xyz/readyz"
+            "https://mcp.pegana.xyz/health"
+            "https://www.pegana.xyz/"
+          )
+          failing=()
+          report=""
+          for url in "${targets[@]}"; do
+            ok=0; last=""
+            # Three attempts about 30s apart: one slow request or a deploy's
+            # container swap is not an outage.
+            for attempt in 1 2 3; do
+              last=$(curl -sS -o /dev/null -w '%{http_code} in %{time_total}s' \
+                       --max-time 10 -A 'pegana-uptime-probe (github actions)' "$url" 2>&1 | tr '\n' ' ')
+              if [[ "$last" == 200\ * ]]; then ok=1; break; fi
+              [[ $attempt -lt 3 ]] && sleep 30
+            done
+            if (( ok )); then
+              report+="- OK   ${url} (${last})"$'\n'
+            else
+              failing+=("$url")
+              report+="- FAIL ${url} (last attempt: ${last:-no response})"$'\n'
+            fi
+          done
+          printf '%s' "$report"
+          {
+            echo "failing=${#failing[@]}"
+            echo "report<<PROBE_EOF"
+            printf '%s' "$report"
+            echo "PROBE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open, update or close the uptime issue
+        id: issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          FAILING: ${{ steps.probe.outputs.failing }}
+          REPORT: ${{ steps.probe.outputs.report }}
+          ASSIGNEE: ${{ vars.UPTIME_PROBE_ASSIGNEE || 'lrafasouza' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const failing = Number(process.env.FAILING || '0');
+            const report = process.env.REPORT || '';
+            const assignee = process.env.ASSIGNEE;
+            const label = 'uptime';
+            const now = new Date().toISOString();
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: label, per_page: 100,
+            });
+            const issue = open.find((i) => !i.pull_request);
+
+            if (failing === 0) {
+              if (issue) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: issue.number,
+                  body: `Recovered at ${now}: every endpoint answers 200.\n\n${report}\n[probe run](${runUrl})` });
+                await github.rest.issues.update({ owner, repo, issue_number: issue.number, state: 'closed' });
+                core.notice(`Closed #${issue.number}: recovered`);
+                // One "recovered" message, only from the run that closes
+                // the issue (a healthy run with no open issue sends nothing).
+                core.setOutput('notify', 'true');
+                core.setOutput('kind', 'recovered');
+              }
+              return;
+            }
+
+            const body = `Probe at ${now} found ${failing} endpoint(s) failing after 3 attempts:\n\n${report}\n` +
+              `[probe run](${runUrl}). Playbook: private on-call runbook, "Box is down".`;
+            if (issue) {
+              // Comment at most once an hour so a long outage does not
+              // produce a notification every 10 minutes. Count only this
+              // workflow's own comments: on a public repo anyone can comment,
+              // and a stranger's comment must not suppress the updates.
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: issue.number, per_page: 100,
+              });
+              const ours = comments.filter((c) => c.user && c.user.login === 'github-actions[bot]');
+              const last = ours.length ? ours[ours.length - 1].created_at : issue.created_at;
+              if (Date.now() - new Date(last).getTime() >= 60 * 60 * 1000) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: issue.number,
+                  body: `Still failing. ${body}` });
+                core.setOutput('notify', 'true');
+                core.setOutput('kind', 'down');
+              }
+              core.setFailed(`Outage ongoing (#${issue.number})`);
+              return;
+            }
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch {
+              await github.rest.issues.createLabel({ owner, repo, name: label, color: 'b60205',
+                description: 'Opened by the external uptime probe' });
+            }
+            const params = { owner, repo, labels: [label],
+              title: `Uptime probe: ${failing} public endpoint(s) down`,
+              body: `@${assignee} ${body}` };
+            let created;
+            try {
+              created = await github.rest.issues.create({ ...params, assignees: [assignee] });
+            } catch (e) {
+              // An assignee without access to the repo is rejected; the
+              // @mention in the body still notifies.
+              core.warning(`Could not assign ${assignee}: ${e.message}`);
+              created = await github.rest.issues.create(params);
+            }
+            core.setOutput('notify', 'true');
+            core.setOutput('kind', 'down');
+            core.setFailed(`Opened #${created.data.number}: ${failing} endpoint(s) down`);
+
+  notify:
+    # Runs when the issue step opened a new outage issue, posted its hourly
+    # "still failing" update, or closed the issue on recovery, so a long
+    # outage pings Telegram about once an hour (not every 10 minutes) and
+    # ends with one "recovered" message. always(): `probe` ends with
+    # core.setFailed on an outage, which would otherwise skip this job.
+    needs: probe
+    if: always() && github.repository == 'PeganaHQ/Pegana' && github.ref == 'refs/heads/main' && needs.probe.outputs.notify == 'true'
+    runs-on: ubuntu-latest
+    environment: uptime-notify
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Notify Telegram (optional)
+        # Secrets cannot be tested in `if:`; the script below skips when unset.
+        shell: bash
+        env:
+          TG_TOKEN: ${{ secrets.UPTIME_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.UPTIME_TELEGRAM_CHAT_ID }}
+          REPORT: ${{ needs.probe.outputs.report }}
+          KIND: ${{ needs.probe.outputs.kind }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [[ -z "${TG_TOKEN:-}" || -z "${TG_CHAT:-}" ]]; then
+            echo "Telegram secrets not set; skipping."
+            exit 0
+          fi
+          if [[ "${KIND:-down}" == "recovered" ]]; then
+            headline="Pegana uptime probe: recovered, every endpoint answers 200"
+          else
+            headline="Pegana uptime probe: endpoint(s) down"
+          fi
+          text="${headline}"$'\n\n'"${REPORT}"$'\n'"${RUN_URL}"
+          # The token is only ever expanded inside the URL passed to curl, with
+          # xtrace off, and curl output is discarded so it cannot be echoed.
+          if curl -sS --max-time 15 -o /dev/null --fail \
+               --data-urlencode "chat_id=${TG_CHAT}" \
+               --data-urlencode "text=${text}" \
+               --data-urlencode "disable_web_page_preview=true" \
+               "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" 2>/dev/null; then
+            echo "Telegram notification sent."
+          else
+            echo "::warning::Telegram notification failed (check the secrets)."
+          fi

@@ -1,0 +1,29 @@
+---
+title: "Pricing"
+description: "Pegana hosted access is free; verifier and SDKs are MIT, and service code is FSL-1.1-MIT. REST, WebSocket, MCP and the embed widget need no API key, no signup and no payment."
+---
+
+Pegana has no tiers and no paid surface. Every read path is free.
+
+## What is free
+
+| Surface | Limit | What you get |
+| --- | --- | --- |
+| REST API | Per-IP rate limit; currently `240` requests a minute per IP (see the `RateLimit-Limit` header). `/v1/audit.csv` is stricter at 10/min. | All `/v1/assets/*`, `/v1/stats`, `/v1/calibration`, `/v1/methodology/current`, `/v1/audit*`, `/v1/peg/feed`, `/v1/meta/*`. |
+| WebSocket | 20 connections per IP | Push of every engine recompute at `/v1/ws`. |
+| Embed widget | Public | `<iframe>` badge per asset. |
+| MCP server | Per-agent rate limit | All 10 tools at `https://mcp.pegana.xyz`, including `get_asset_history` and `subscribe_peg_events`. |
+
+No API key. No signup. No wallet. No per-call fee. The service code is source-available under FSL-1.1-MIT at
+[github.com/PeganaHQ/Pegana](https://github.com/PeganaHQ/Pegana); you can also run
+the oracle stack yourself under that license.
+
+## What does not exist
+
+- **Paid tiers or API keys.** There is nothing to buy and nothing to authenticate.
+- **x402 / per-call payments.** The MCP tools that were once metered are now free.
+- **SLA contracts.** None. Live status is at
+  [pegana.xyz/status](https://www.pegana.xyz/status). For production discussions,
+  reach the operator at `rafael@pegana.xyz`.
+
+See [rate limits](/guides/rate-limits) for the exact limits and headers.

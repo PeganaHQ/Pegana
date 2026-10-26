@@ -1,0 +1,46 @@
+-- 0076: Deactivate sharkSOL — the stake pool is abandoned (2026-08-10).
+--
+-- CONCLUSIVE ON-CHAIN EVIDENCE. Pool HQLwnQJFH7t9nBTP4vbdW4eHy62aecfDnj8te8VzqkFL
+-- (SPL stake-pool program), read at network epoch 1014:
+--
+--   LST         last_update_epoch   lag        total SOL
+--   laineSOL              1014        0        12,278.68
+--   bSOL                  1014        0       920,108.91
+--   sharkSOL              1002       12             1.88
+--
+-- Healthy pools update every single epoch. sharkSOL has not updated in 12
+-- epochs (roughly a month) and holds 1.88 SOL in total, about $142. That $142
+-- is essentially the whole "market": the market-context source measured $143 of
+-- liquidity, 35 holders and no 24h volume for it (migration 0075).
+--
+-- WHY THIS WAS INVISIBLE UNTIL NOW. Because `last_update_epoch` is frozen, the
+-- pool's SOL-per-token rate cannot advance, and Sanctum keeps serving the last
+-- value it computed. Pegana therefore stored a rate that matched its source
+-- exactly and looked healthy. lst-directory.com's independent `stale` flag has
+-- been firing for sharkSOL, and no other tracked LST, since 2026-08-04 — the
+-- `lst_directory_audit` source exists precisely to catch this, and it did.
+--
+-- Note for anyone re-deriving this: a flat `meta.sol_per_lst` is NOT the signal.
+-- The median distinct value count across every Sanctum LST over 30 days is 1
+-- (JupSOL held one value from 05-27 to 08-10), so that field cannot distinguish
+-- a dead pool from a healthy one. The discriminating facts are the on-chain
+-- `last_update_epoch` lag and the pool balance.
+--
+-- WHAT WAS BEING PUBLISHED. `state: PEGGED`, `confidence: high`,
+-- `risk_score: 0` — the most reassuring verdict the API can emit — for a pool
+-- holding 1.88 SOL. This is the failure mode the PeganaLstDirectoryFlagged
+-- alert names: "a frozen-but-served backing reads as a confident peg", the
+-- 2026-04-01 dSOL failure mode. For a trust product that is the worst possible
+-- output, which is why it is a deactivation rather than a caveat.
+--
+-- Soft delete (is_active=false), same as dSOL (0020) and pbUSDC (0040).
+-- Historical snapshot rows are preserved so the asset page still renders its
+-- timeline and existing receipts stay reproducible. Reactivate if the pool
+-- resumes updating.
+--
+-- See also: assets.toml ([[assets]] sharkSOL: active=false),
+-- docs/analysis/2026-08-10-dead-market-lsts.md.
+
+UPDATE assets
+SET is_active = false
+WHERE symbol = 'sharkSOL';

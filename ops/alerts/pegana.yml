@@ -1,0 +1,1253 @@
+# Prometheus alerting rules for Pegana.
+#
+# Loaded by the compose `prometheus` service (rule_files) and delivered by the
+# compose `alertmanager` service to Telegram and/or Discord (config rendered at
+# start by ops/alertmanager/render-config.sh): `severity=critical` repeats
+# every 1h, `severity=warning` every 12h.
+#
+# Severity discipline:
+#   * critical → user-visible breakage in progress (engine silent, no live data)
+#   * warning  → degradation that doesn't break UX but predicts one (rate-limit
+#                creep, oracle freshness slipping)
+#
+# Every rule embeds the metric expression in `description` so on-call doesn't
+# need a wiki tab open to know which Grafana panel to look at first.
+
+groups:
+  - name: pegana.infrastructure
+    interval: 30s
+    rules:
+      - alert: PeganaScrapeTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus scrape target down: {{ $labels.job }} {{ $labels.instance }}"
+          description: |
+            `up{job="{{ $labels.job }}",instance="{{ $labels.instance }}"} == 0` for 5m.
+            Prometheus cannot scrape this target; inspect the container,
+            network, and metrics endpoint.
+
+      - alert: PeganaHostDiskLow
+        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.15
+        for: 10m
+        labels:
+          severity: critical
+          service: host
+        annotations:
+          summary: "Host root filesystem has less than 15% space available"
+          description: |
+            `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15`
+            on the host root filesystem for 10m. Check Docker volumes, logs,
+            and backup retention before writes fail.
+
+      - alert: PeganaAlertmanagerNotificationFailures
+        expr: increase(alertmanager_notifications_failed_total[5m]) > 0
+        labels:
+          severity: critical
+          service: alertmanager
+        annotations:
+          summary: "Alertmanager notification delivery failing"
+          description: |
+            `increase(alertmanager_notifications_failed_total[5m]) > 0`.
+            Alertmanager failed to deliver at least one notification; inspect its logs
+            (the `integration` label says telegram, discord or webhook; webhook
+            is the dead-man heartbeat, ALERTMANAGER_DEADMAN_URL), the channel inputs
+            (ALERTMANAGER_TELEGRAM_BOT_TOKEN / ALERTMANAGER_TELEGRAM_CHAT_ID, or
+            ALERTMANAGER_DISCORD_WEBHOOK_URL), and network reachability. This alert
+            may not get through while delivery is broken: check the Prometheus alerts
+            page or `docker compose logs alertmanager`.
+
+  # No Postgres connection saturation rule: this stack has no postgres_exporter
+  # or pg_stat_activity metric. Add one when a database exporter is deployed.
+  - name: pegana.request_health
+    interval: 30s
+    rules:
+      - alert: PeganaApiServerErrors
+        expr: sum(rate(pegana_api_request_duration_seconds_count{status="5xx"}[5m])) > 0.02
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: "API 5xx responses exceed 0.02 per second"
+          description: |
+            `sum(rate(pegana_api_request_duration_seconds_count{status="5xx"}[5m])) > 0.02`
+            for 2m. Inspect API logs and database availability.
+
+      - alert: PeganaApiHighLatency
+        expr: sum(rate(pegana_api_request_duration_seconds_sum{status="2xx"}[5m])) / sum(rate(pegana_api_request_duration_seconds_count{status="2xx"}[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "API successful-request mean latency exceeds 2 seconds"
+          description: |
+            `sum(rate(pegana_api_request_duration_seconds_sum{status="2xx"}[5m])) /
+            sum(rate(pegana_api_request_duration_seconds_count{status="2xx"}[5m])) > 2`
+            for 5m. Inspect slow API routes and downstream dependencies.
+
+      - alert: PeganaMcpServerErrors
+        expr: increase(pegana_mcp_http_requests_total{status="5xx"}[5m]) > 2
+        for: 2m
+        labels:
+          severity: critical
+          service: mcp-ts
+        annotations:
+          summary: "MCP returned more than two HTTP 5xx responses in 5 minutes"
+          description: |
+            `increase(pegana_mcp_http_requests_total{status="5xx"}[5m]) > 2`
+            for 2m. Inspect MCP logs and upstream API availability.
+
+  - name: pegana.deadman
+    interval: 30s
+    rules:
+      # Always firing. Alertmanager POSTs it every 5 minutes to the off-box
+      # heartbeat service (ALERTMANAGER_DEADMAN_URL), which alerts the owner
+      # when the pings stop: Prometheus down, Alertmanager down, the box gone,
+      # or every notification silenced.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Dead-man heartbeat (always firing)"
+          description: "Always firing by design; delivered only to the off-box heartbeat."
+
+      - alert: PeganaAlertmanagerSilencesActive
+        expr: alertmanager_silences{state="active"} > 0
+        for: 1h
+        labels:
+          severity: warning
+          service: alertmanager
+        annotations:
+          summary: "Alertmanager has active silences"
+          description: |
+            `alertmanager_silences{state="active"} > 0` for 1h. Silences are
+            expected during planned work but must not outlive it: list them
+            with `amtool silence query` and expire any that are not intended.
+
+  - name: pegana.backups
+    # Fed by scripts/pg-backup.sh (host cron, every 6h) through the textfile
+    # node-exporter (job node-exporter, docker-compose.yml). A success
+    # timestamp of 0 means "never succeeded", which counts as stale.
+    interval: 60s
+    rules:
+      - alert: PeganaBackupLocalStale
+        expr: time() - pegana_backup_local_last_success_timestamp_seconds > 8 * 3600
+        for: 10m
+        labels:
+          severity: critical
+          service: backup
+        annotations:
+          summary: "No verified Postgres backup in the last 8h"
+          description: |
+            `time() - pegana_backup_local_last_success_timestamp_seconds > 8h`.
+            pg-backup.sh has not produced a verified local dump (cron runs every
+            6h). Check `tail -50 ~/.pg-backup.log` and
+            `~/.pegana-metrics/pegana_backup.prom` (pegana_backup_last_exit_code:
+            2 config, 3 dump/verify, 5 disk). See the private restore runbook.
+
+      - alert: PeganaBackupOffsiteStale
+        expr: |
+          pegana_backup_offsite_enabled == 1
+          and time() - pegana_backup_offsite_last_success_timestamp_seconds > 8 * 3600
+        for: 10m
+        labels:
+          severity: warning
+          service: backup
+        annotations:
+          summary: "No backup has reached R2 in the last 8h (local copies only)"
+          description: |
+            `time() - pegana_backup_offsite_last_success_timestamp_seconds > 8h`
+            with offsite enabled. Local copies in ~/backups are being kept, but
+            losing the box would lose the data. Usual cause: the R2 token behind
+            the `r2:` rclone remote lacks Object Read & Write (403 AccessDenied
+            in ~/.pg-backup.log).
+
+      - alert: PeganaBackupLastRunFailed
+        expr: pegana_backup_last_exit_code != 0
+        labels:
+          severity: warning
+          service: backup
+        annotations:
+          summary: "Last pg-backup.sh run failed (exit {{ $value }})"
+          description: |
+            `pegana_backup_last_exit_code != 0`. Exit 4 = verified local copy
+            kept but the R2 upload failed; 3 = dump or verification failed;
+            2 = configuration; 5 = not enough disk. Check ~/.pg-backup.log.
+
+      - alert: PeganaBackupNotRunning
+        expr: |
+          (time() - pegana_backup_last_run_timestamp_seconds > 7 * 3600)
+          or absent(pegana_backup_last_run_timestamp_seconds)
+        for: 30m
+        labels:
+          severity: warning
+          service: backup
+        annotations:
+          summary: "pg-backup.sh has not run in 7h, or its metrics are missing"
+          description: |
+            No pg-backup.sh run finished in the last 7h (cron is every 6h), or
+            the textfile metric is absent (cron entry missing, ~/.pegana-metrics
+            not mounted into node-exporter, or node-exporter down). Check
+            `crontab -l | grep pg-backup` and `docker compose ps node-exporter`.
+
+  - name: pegana.live_pipeline
+    interval: 30s
+    rules:
+      - alert: PeganaEngineSilent
+        expr: rate(pegana_engine_publishes_total{kind="update"}[2m]) == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "Engine is not publishing discount updates"
+          description: |
+            `rate(pegana_engine_publishes_total{kind="update"}[2m]) == 0` for >1m.
+            Either no source is publishing (check indexer logs) or the engine's
+            recompute path is wedged. Inspect `docker compose logs engine` and
+            `redis-cli PUBSUB NUMSUB pegana:src:*` for liveness.
+
+      - alert: PeganaHeartbeatStopped
+        expr: rate(pegana_engine_publishes_total{kind="heartbeat"}[2m]) == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "Engine heartbeat stopped"
+          description: |
+            Engine should publish a heartbeat every 5s. A stopped heartbeat
+            usually means the engine binary crashed, the Redis client lost
+            connection, or the pub/sub stream was severed.
+
+      # PeganaWebSocketUnused REMOVED 2026-07-25 (alert-noise cleanup).
+      # `pegana_ws_clients_active == 0` conflates two very different things —
+      # "nobody happens to have the live dashboard open" (completely normal for a
+      # low-traffic product, especially off-hours) and "the WS is broken" — so it
+      # paged Telegram as pure noise on every quiet stretch. A real WS-health
+      # signal must probe the handshake itself (expect HTTP 101 Switching
+      # Protocols on wss://…/v1/ws), not count clients.
+      # NOTE / follow-up: a prod browser check on 2026-07-25 found the WS
+      # handshake to api.pegana.xyz/v1/ws FAILING ("Unexpected response code" —
+      # not a 101 upgrade). Track that as a backend bug (Caddy upgrade headers /
+      # api-rs ws route), NOT as an alert.
+
+  - name: pegana.sources
+    interval: 30s
+    rules:
+      - alert: PeganaProtocolSourceTaskDown
+        expr: pegana_protocol_source_task_up == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: protocol-indexer
+        annotations:
+          summary: "Protocol indexer source task down: {{ $labels.source }}"
+          description: |
+            `pegana_protocol_source_task_up{source="{{ $labels.source }}"} == 0` for 5m.
+            The source loop exited or failed to start; inspect protocol-indexer logs.
+
+      - alert: PeganaProtocolSourceStale
+        # HF sources poll hourly by design; they have their own alerts below.
+        expr: time() - pegana_protocol_source_last_publish_timestamp{source!~".*_hf"} > 300
+        for: 5m
+        labels:
+          severity: warning
+          service: protocol-indexer
+        annotations:
+          summary: "Protocol indexer source stale: {{ $labels.source }}"
+          description: |
+            `time() - pegana_protocol_source_last_publish_timestamp{source="{{ $labels.source }}"} > 300`
+            for 5m. No successful fetch + upsert has completed recently; inspect the
+            source upstream, RPC, database, and protocol-indexer logs.
+
+      # /readyz ignores the HF sources, so their failures (e.g. the 2026-10-17
+      # 401 freeze) are invisible to health checks; alert on them directly.
+      - alert: PeganaProtocolHfSourceFailing
+        expr: sum by (source) (increase(pegana_protocol_polls_total{source=~"kamino_hf|jupiter_lend_hf",status="error"}[2h])) > 0
+        for: 2h
+        labels:
+          severity: warning
+          service: protocol-indexer
+        annotations:
+          summary: "HF source erroring: {{ $labels.source }}"
+          description: |
+            `pegana_protocol_polls_total{source="{{ $labels.source }}",status="error"}`
+            increased continuously for 2h. HF-distribution bands are stale. Check
+            HELIUS_API_KEY validity (401), quota exhaustion, and protocol-indexer logs.
+
+      - alert: PeganaProtocolHfSourceStale
+        expr: time() - pegana_protocol_source_last_publish_timestamp{source=~".*_hf"} > 7200
+        for: 10m
+        labels:
+          severity: warning
+          service: protocol-indexer
+        annotations:
+          summary: "HF source has not published for 2h: {{ $labels.source }}"
+          description: |
+            Hourly HF source `{{ $labels.source }}` has no successful publish in
+            over 2h (poll interval is 1h).
+
+      - alert: PeganaJupiterRateLimited
+        expr: rate(pegana_jupiter_polls_total{status="error"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Jupiter error rate > 0.1/s sustained"
+          description: |
+            The keyless lite-api budget is 0.5 RPS — sustained errors at this
+            rate usually mean we're crossing it. Confirm with
+            `pegana_jupiter_429_total` and consider setting `JUPITER_API_KEY`.
+
+      - alert: PeganaPythStale
+        # Retuned 2026-07-25 (alert-noise cleanup): 0.05→0.2 rate, 5m→30m. The
+        # old bar paged Telegram on the NORMAL trickle of slow-feed rejections
+        # (which the description itself calls "normal"); this only fires on
+        # sustained, broad degradation (Pyth push feeds or our Solana RPC down;
+        # the indexer reads Pyth on-chain only, no Hermes since 2026-10-22).
+        expr: rate(pegana_engine_pyth_stale_total[5m]) > 0.2
+        for: 30m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Pyth feed staleness gate firing (sustained)"
+          description: |
+            The engine is refusing Pyth readings older than PYTH_STALENESS_SECS.
+            Occasional rejections for slow feeds (e.g. ONYC NAV) are normal and
+            no longer page (threshold raised to >0.2/s for 30m, 2026-07-25);
+            a firing alert now means sustained rejections across feeds → the
+            on-chain Pyth push feeds or our Solana RPC are degraded. Check the
+            `feed=` label, `pegana_pyth_onchain_stale_total{feed}` and
+            `pegana_pyth_onchain_poll_errors_total` to tell which.
+
+      - alert: PeganaSourceStale
+        expr: rate(pegana_engine_source_stale_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Non-Pyth source staleness gate firing"
+          description: |
+            The engine is refusing a stale input and SKIPPING that asset's
+            recompute (H6/H7) rather than publishing a peg over dead data —
+            covers Sanctum / Jupiter / DexScreener / Hylo / Solayer / Piggybank
+            plus pyth_spot feeds. Check `asset=` / `side=` (intrinsic|market|both);
+            a sustained signal means a source outage, not a normal blip.
+
+      - alert: PeganaIntrinsicUnavailable
+        expr: rate(pegana_engine_intrinsic_unavailable_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Zero/absent intrinsic — recompute skipped"
+          description: |
+            compute_discount returned None (zero/absent intrinsic) so the engine
+            skipped the recompute instead of treating missing data as a confirmed
+            peg (H8). Check `asset=`. The hyUSD collateral-ratio equivalent is
+            pegana_engine_cr_unavailable_total (H2).
+
+      - alert: PeganaSanctumDown
+        expr: rate(pegana_sanctum_polls_total{status="ok"}[3m]) == 0
+        for: 3m
+        labels:
+          severity: critical
+          service: indexer
+        annotations:
+          summary: "Sanctum sol-value source has stopped delivering"
+          description: |
+            All LST intrinsic snapshots depend on Sanctum. Three consecutive
+            minutes without an `ok` poll means every LST will show stale data
+            within ~5 minutes. Hit `https://extra-api.sanctum.so/v1/sol-value/current`
+            to confirm whether Sanctum or our network is at fault.
+
+      - alert: PeganaHyloDown
+        expr: rate(pegana_hylo_polls_total{status="ok"}[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Hylo source has stopped delivering"
+          description: |
+            hyUSD/sHYUSD/xSOL intrinsics depend on the Hylo source loop. Since
+            Hylo v1.7 it reads `total_sol` directly from the on-chain Hylo
+            Exchange PDA (NO DefiLlama dependency) — check Solana RPC reachability
+            (`SOLANA_RPC_URL` env) and the PDA decode path, not DefiLlama.
+
+      # Hylo input-sanity failures — the source emits pegana_hylo_sanity_failure_total
+      # {check} when a decoded on-chain value is out of band (tvl / cr /
+      # pool-vs-supply / empty pool). Observe-only in code (the engine's H8 +
+      # discount-sanity guards still gate the verdict), but a SUSTAINED failure
+      # means the upstream data quality is bad — surface it. (audit 2026-07-18)
+      - alert: PeganaHyloSanityFailures
+        expr: rate(pegana_hylo_sanity_failure_total[10m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Hylo input sanity check failing ({{ $labels.check }})"
+          description: |
+            A Hylo input-sanity check ({{ $labels.check }}) has been failing for
+            >15m — the decoded on-chain values are out of their expected band, so
+            hyUSD/sHYUSD/xSOL intrinsics may be building on garbage. Check the
+            Hylo Exchange PDA decode path + the SOL/USD Pyth feed. The verdict is
+            still protected by the engine's own guards; this flags the upstream
+            data-quality problem before it can matter.
+
+      # SPL stake-pool crank staleness — the frozen-backing detector for
+      # SplStakePool assets (jitoSOL et al.), which the SanctumLst directory
+      # `stale` flag (PeganaLstDirectoryFlagged) does NOT cover. The source
+      # decodes each pool's `last_update_epoch` and emits
+      # pegana_spl_stake_pool_epoch_lag{symbol} = current_epoch − last_update_epoch.
+      # Pools crank once per epoch; 0-1 is normal (1 = not yet cranked this
+      # epoch). ≥ 2 means the crank stalled for ≥ a full ~2-day epoch → the NAV
+      # is frozen but still stamped ts=now(), so the engine's timestamp-only
+      # staleness gate can't see it (a false-PEGGED risk). Sustained 2h so an
+      # epoch-boundary transient before the crank runs can't trip it.
+      # Observer-only: does NOT gate any verdict.
+      - alert: PeganaStakePoolEpochLag
+        expr: pegana_spl_stake_pool_epoch_lag >= 2
+        for: 2h
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "SPL stake-pool crank stalled: {{ $labels.symbol }} NAV {{ $value | printf \"%.0f\" }} epochs behind"
+          description: |
+            {{ $labels.symbol }}'s SPL stake pool has not been cranked
+            (UpdateStakePoolBalance) in {{ $value | printf "%.0f" }} epochs — its
+            total_lamports/pool_token_supply (and thus the NAV) are FROZEN, yet the
+            indexer keeps re-reading the same account and stamping it fresh, so the
+            engine's timestamp-only staleness gate won't flag it. This is the exact
+            2026-04-01 dSOL failure mode for a directly-read pool. Investigate the
+            pool's crank / operator. Observer-only: does NOT gate any verdict — a
+            frozen NAV would still publish as a confident peg.
+
+      # Hylo total_sol_cache staleness — the same crank-staleness signal for the
+      # Hylo protocol's on-chain SOL backing (feeds hyUSD CR + xSOL NAV, NOT
+      # sHYUSD). pegana_hylo_epoch_lag = current_epoch − total_sol_cache
+      # update_epoch. Partially masked (reserve_usd still tracks the live SOL
+      # price) but a frozen SOL QUANTITY is wrong. Sustained 2h so an
+      # epoch-boundary transient can't trip it. Observer-only unless the
+      # ADR-0038 gate is enabled.
+      - alert: PeganaHyloEpochLag
+        expr: pegana_hylo_epoch_lag >= 2
+        for: 2h
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Hylo total_sol_cache stalled: {{ $value | printf \"%.0f\" }} epochs behind"
+          description: |
+            Hylo's on-chain total_sol_cache has not advanced in
+            {{ $value | printf "%.0f" }} epochs — the SOL backing feeding hyUSD's
+            CR and xSOL's NAV is FROZEN (partially masked: reserve_usd still moves
+            with the live SOL price, but the SOL quantity is stale). Investigate
+            the Hylo program's cache update. Observer-only unless the
+            intrinsic-liveness gate (ADR-0038, INTRINSIC_LIVENESS_GATE) is enabled.
+
+      # Generic per-source liveness — complements the engine-side PeganaDeadAssets
+      # (which only fires at STALE_AFTER_SECS=900 / 15m). This fires ~8m earlier and
+      # names the source. Covers ALL 10 ingestion sources via the {source} label in
+      # one rule (Sanctum/Hylo also keep their dedicated faster alerts above). The
+      # `pegana_source_last_publish_timestamp` gauge is set ONLY on a successful
+      # publish, so a legitimately-idle source (no active assets) never creates the
+      # series and therefore never false-fires.
+      # `fx_http` is excluded here: it intentionally stops publishing during the
+      # forex-closed weekend, so it has its own calendar-aware rule below.
+      - alert: PeganaSourceNotPublishing
+        expr: time() - pegana_source_last_publish_timestamp{source!="fx_http"} > 300
+        for: 2m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Ingestion source {{ $labels.source }} stopped publishing"
+          description: |
+            No successful publish from source={{ $labels.source }} for
+            {{ $value | humanizeDuration }} (threshold 5m, sustained 2m). Assets fed
+            by it will go stale; the engine-side PeganaDeadAssets only fires at 15m,
+            so this is the early per-source signal. Check the indexer logs + the
+            source's upstream.
+
+      # fx_http (EURC's EUR/USD intrinsic) by design does NOT publish inside the
+      # forex-closed window, Fri 20:30 to Sun 22:30 UTC (fx_http.rs
+      # `is_forex_weekend`, mirrored by web/lib/asset/forex.ts). Same 300s / 2m
+      # liveness contract as PeganaSourceNotPublishing, but suppressed while the
+      # market is closed. The suppression runs to Sun 22:35 UTC (1355 minutes):
+      # a 5-minute reopen grace so the first 60s poll after 22:30, plus a
+      # scrape, can refresh a gauge that is ~50h old before `for: 2m` matures.
+      # PromQL calendar functions are UTC: day_of_week() 0 = Sunday, 5 = Friday,
+      # 6 = Saturday.
+      - alert: PeganaFxSourceNotPublishing
+        expr: |
+          (time() - pegana_source_last_publish_timestamp{source="fx_http"} > 300)
+          unless on()
+          (
+              day_of_week() == 6
+            or
+              (day_of_week() == 5 and on() (hour() * 60 + minute()) >= 1230)
+            or
+              (day_of_week() == 0 and on() (hour() * 60 + minute()) < 1355)
+          )
+        for: 2m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Ingestion source fx_http stopped publishing while FX is open"
+          description: |
+            No successful publish from source=fx_http for
+            {{ $value | humanizeDuration }} (threshold 5m, sustained 2m) outside the
+            forex-closed weekend (Fri 20:30 to Sun 22:30 UTC). EURC's intrinsic will
+            go stale. Either a venue (Kraken / Coinbase) is down, the two venues
+            disagree by more than max_divergence_bps, or the task died. Check the
+            indexer logs (`fx_http poll failed`) and
+            `pegana_fx_http_polls_total{status}`.
+
+      # Intrinsic feed-integrity tripwire — the indexer's lst_directory_audit
+      # source emits pegana_intrinsic_divergence_bps{asset} = |our_rate −
+      # theirs|/our_rate. ⚠️ our_rate (Sanctum sol-value, REALIZABLE) and the
+      # directory's `rate` (BOOKED NAV) are DIFFERENT quantities — there is a
+      # permanent structural "redemption haircut" between them, measured live
+      # 2026-07-17 at ~114 bps (bSOL) / ~124 bps (jupSOL). The old 75-bps
+      # threshold sat BELOW that haircut and paged on every covered LST forever;
+      # 300 mirrors the recalibrated INTRINSIC_DIVERGENCE_TOLERANCE_BPS, well
+      # above the haircut band, so this only fires when our_rate is genuinely
+      # broken (garbage Sanctum feed → hundreds-to-thousands of bps), NOT the
+      # normal haircut. Observer-only: does NOT gate any verdict. The gauge only
+      # exists for covered LSTs with a directory match.
+      - alert: PeganaIntrinsicDivergence
+        expr: pegana_intrinsic_divergence_bps > 300
+        for: 30m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Intrinsic feed-integrity: {{ $labels.asset }} diverges {{ $value | printf \"%.0f\" }} bps (far beyond haircut)"
+          description: |
+            Pegana's REALIZABLE sanctum_lst rate for {{ $labels.asset }} diverges
+            from lst-directory.com's BOOKED rate by {{ $value | printf "%.0f" }} bps
+            for 30m — FAR beyond the ~120 bps structural redemption haircut
+            (tolerance 300 = INTRINSIC_DIVERGENCE_TOLERANCE_BPS). At this magnitude
+            it's a broken/stale Sanctum feed producing a garbage our_rate, not the
+            normal haircut — inspect the sanctum source loop for this asset.
+            Observer-only: does NOT gate any verdict.
+
+      # Directory liveness flags — the backend twin of the frontend
+      # INTRINSIC_DEGRADED advisory (ADR-0037). lst_directory_audit decodes
+      # lst-directory.com's own flags{stale,deprecated,dead} for each covered LST
+      # and emits pegana_lst_directory_flagged{asset,flag} = 1/0. `stale` = the
+      # LST's rate stopped advancing on-chain (the frozen-backing dSOL failure
+      # mode, which Pegana's timestamp-only intrinsic staleness can't see);
+      # dead/deprecated = the LST is being wound down. Sustained 30m so a
+      # transient directory blip can't trip it. Offset-free (the maintainer's own
+      # determination, not a rate comparison). Observer-only: does NOT gate any
+      # verdict — a flagged LST should be investigated / deactivated.
+      - alert: PeganaLstDirectoryFlagged
+        expr: pegana_lst_directory_flagged > 0
+        for: 30m
+        labels:
+          # `stale` is a third-party observation on small, often dormant LSTs
+          # and does not gate any verdict: info (not routed by Alertmanager).
+          # `dead`/`deprecated` mean wind-down and stay warning.
+          severity: '{{ if eq $labels.flag "stale" }}info{{ else }}warning{{ end }}'
+          service: indexer
+        annotations:
+          summary: "lst-directory flags {{ $labels.asset }} as {{ $labels.flag }}"
+          description: |
+            lst-directory.com marks the covered LST {{ $labels.asset }} as
+            {{ $labels.flag }} for 30m. `stale` means its backing rate stopped
+            advancing (a frozen-but-served backing reads as a confident peg —
+            the 2026-04-01 dSOL failure mode); `dead`/`deprecated` mean the LST is
+            being wound down and should be deactivated. Observer-only: does NOT
+            gate any verdict — go look and decide whether to deactivate the asset.
+
+  - name: pegana.recompute_health
+    interval: 30s
+    rules:
+      - alert: PeganaRecomputeSlow
+        expr: histogram_quantile(0.95, sum by (le, asset) (rate(pegana_engine_recompute_seconds_bucket[5m]))) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Engine recompute p95 > 500ms"
+          description: |
+            One asset's recompute path is unusually slow. Persistence to
+            Postgres or the Redis publish step is likely the culprit. Inspect
+            `asset=` label for the offender.
+
+  - name: pegana.calibration
+    interval: 30s
+    rules:
+      # Turns the on-demand /v1/calibration self-monitor (trailing-8d p95 of
+      # the direction-sensitive effective discount vs the asset's own drift/
+      # depeg bands, see crates/api-rs/src/routes/calibration.rs) into a
+      # paging signal. pegana_calibration_health_code is exported by the
+      # api-rs periodic task (60s cadence): ok=0, watch=1, miscalibrated=2,
+      # no_data=-1, na=-2 (non-bps CDP shape, e.g. hyUSD), inactive=-3 (asset
+      # left the active set — the task resets a dropped asset's gauge so a
+      # frozen reading can't page). `>= 2` covers ONLY miscalibrated — the rest
+      # never trip this. 30m sustained so a
+      # single noisy tick in the trailing window doesn't page; a real
+      # calibration break (band too tight, or a genuine sustained depeg the
+      # thresholds weren't set for) is still miscalibrated 30 minutes later.
+      # Observability only — reads the self-monitor, does not gate/change
+      # the verdict pipeline.
+      - alert: PeganaAssetMiscalibrated
+        expr: pegana_calibration_health_code >= 2
+        for: 30m
+        labels:
+          severity: warning
+          # The metric is exported by api-rs (scraped from api:9092 →
+          # service=api). Match that so alertmanager group_by/inhibit
+          # [alertname,service] route correctly. (The alert is ABOUT engine
+          # calibration, but the `service` label is the emitting container, for
+          # routing.)
+          service: api
+        annotations:
+          summary: "{{ $labels.asset }} calibration is broken (p95 beyond depeg band)"
+          description: |
+            `pegana_calibration_health_code{asset="{{ $labels.asset }}"} >= 2` for
+            30m — the trailing-8d p95 of {{ $labels.asset }}'s effective discount
+            is beyond its own depeg_bps band (see GET /v1/calibration). Either the
+            asset is genuinely depegged (check the live verdict/alerts first) or
+            its thresholds_bps are miscalibrated for its normal trading range.
+            Cross-check pegana_calibration_p95_bps{asset="{{ $labels.asset }}"}
+            against the asset's depeg_bps in assets.toml.
+
+  - name: pegana.alerts_pipeline
+    interval: 1m
+    rules:
+      - alert: PeganaAlertStormBlackSwan
+        # If we ever see BLACK_SWAN in the transition label something is very
+        # wrong in the real world — page no matter the rate.
+        expr: rate(pegana_alerts_emitted_total{transition=~".*->BLACK_SWAN"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "BLACK_SWAN alert emitted"
+          description: |
+            A monitored asset just crossed the BLACK_SWAN threshold. This
+            either means a real depeg crisis or a calibration error in the
+            asset's thresholds_bps. Inspect the latest row in `alerts` table.
+
+      - alert: PeganaAlertNoise
+        # Hysteresis is supposed to prevent rapid flap. >20 emissions for a
+        # single asset/transition pair in 10m means hysteresis is too loose.
+        expr: rate(pegana_alerts_emitted_total[10m]) > (20 / 600)
+        for: 10m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Alert emission rate suspiciously high"
+          description: |
+            More than 20 alerts in the last 10 minutes for a single transition.
+            Check `asset` + `transition` labels; consider raising
+            CONFIRM_UP_SECS or widening thresholds_bps for the offender.
+
+  - name: pegana.trust_layer
+    interval: 30s
+    rules:
+      - alert: PeganaReceiptHashFallback
+        # A canonical-hash failure DROPS the audit receipt (no sentinel) and
+        # the alert is NOT dispatched this tick (H10). A dropped audit receipt
+        # is a core-trust failure — page no matter the rate.
+        expr: rate(pegana_receipt_hash_fallback_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "Audit receipt hash fallback firing — receipt dropped"
+          description: |
+            `rate(pegana_receipt_hash_fallback_total[5m]) > 0`. The engine
+            failed to compute a canonical hash (`kind=assets` or `kind=receipt`)
+            so it DROPPED the receipt and did NOT dispatch the alert this tick;
+            it retries next tick. No poisoned/sentinel receipt lands on-chain,
+            but the audit trail is delayed — the trust guarantee is impaired
+            until this clears. Inspect engine logs for `receipt dropped`.
+
+      - alert: PeganaCrUnavailable
+        # hyUSD CR couldn't be derived so the engine skipped the recompute and
+        # preserved prior state (H2). Occasional misses are fine; sustained
+        # means the Hylo/CR source is degraded.
+        expr: rate(pegana_engine_cr_unavailable_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "hyUSD collateral-ratio unavailable — recompute skipped"
+          description: |
+            `rate(pegana_engine_cr_unavailable_total[5m]) > 0.05` for >5m. The
+            engine cannot derive the hyUSD collateral ratio, so it keeps the
+            prior state instead of publishing over missing data. Check the Hylo
+            source loop (`pegana_hylo_polls_total`) and Solana RPC reachability.
+
+      - alert: PeganaDeadAssets
+        # H12b observability sweep: an active asset that has never published a
+        # state since the engine started ("dead"; snapshot gating can't catch
+        # a never-recomputing asset).
+        #
+        # Baseline, not `> 0`: about 10 active assets never publish by design
+        # (they sit in UNKNOWN with no usable source; 2026-10-21 engine log:
+        # USX, EURC, sUSD, ONyc, eUSX, USDY, JLP, sUSDe, USD*, AUSD). With
+        # `> 0` this fired permanently and would have hidden a NEW dead asset.
+        # It now fires when the count rises above its lowest value of the last
+        # 7 days, i.e. when an asset that used to publish stops. A new
+        # permanent member becomes the baseline after 7 days, and an engine
+        # restart only spikes the gauge for a sweep or two (`for: 15m`).
+        # The gauge carries no per-asset labels, so an exact allowlist needs an
+        # engine change (per-asset `pegana_engine_asset_dead{asset}` gauge).
+        expr: pegana_engine_dead_assets > min_over_time(pegana_engine_dead_assets[7d])
+        for: 15m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "{{ $value }} active assets are not publishing, more than the 7-day baseline"
+          description: |
+            `pegana_engine_dead_assets > min_over_time(pegana_engine_dead_assets[7d])`
+            for >15m. At least one active asset that published during the last
+            7 days has not published since the engine started. The known
+            never-publishing (UNKNOWN by design) set is the baseline and does
+            not fire this. Find the newcomer in the engine `H12b freshness
+            sweep` log line (`dead=` list) and compare with the previous list.
+
+  - name: pegana.trust_integrity
+    interval: 30s
+    rules:
+      - alert: PeganaMethodologyBroken
+        expr: sum(pegana_engine_methodology_broken_total) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "Engine refused to start: methodology marked broken"
+          description: |
+            `sum(pegana_engine_methodology_broken_total) > 0`. The engine
+            marked the methodology broken and refused to start; roll back the
+            methodology deploy.
+
+      - alert: PeganaAuditPersistFailing
+        expr: increase(pegana_audit_persist_total{outcome="failed"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "Audit/receipt persistence is failing"
+          description: |
+            `increase(pegana_audit_persist_total{outcome="failed"}[10m]) > 0`.
+            Non-recoverable audit-write failures (even the alert_evidence_pending
+            fallback INSERT failed) = receipts not landing; inspect engine logs + DB.
+            (`outcome="queued"` is the recoverable case — primary failed but the
+            ADR-0006 retry worker will reconcile.)
+
+      - alert: PeganaStartupCheckFailed
+        expr: increase(pegana_engine_startup_check_failed_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Engine startup invariant check failed"
+          description: |
+            `increase(pegana_engine_startup_check_failed_total[10m]) > 0`.
+            An engine startup invariant check failed (e.g. wallet-balance
+            check).
+
+      - alert: PeganaNavSanityUnknownSpike
+        expr: increase(pegana_engine_nav_sanity_unknown_total[15m]) > 0
+        # 15m hold: one isolated UNKNOWN is expected occasionally and should
+        # not page; a sustained one should.
+        for: 15m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "NAV-sanity forced an asset to UNKNOWN"
+          description: |
+            `increase(pegana_engine_nav_sanity_unknown_total[15m]) > 0` for
+            15m. The methodology caught a broken NAV anchor (sHYUSD-class);
+            expected occasionally, investigate if sustained.
+
+  # Webhook delivery is now the dispatcher's ONLY channel (the Telegram bot was
+  # retired), so its dead-letter alert is live. `pegana_deliveries_total` no
+  # longer exists — the old Telegram delivery alert would never fire.
+  - name: pegana.webhook_delivery
+    interval: 30s
+    rules:
+      - alert: PeganaWebhookDeadLetters
+        expr: increase(pegana_webhook_dispatches_total{status="dead_letter"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: dispatcher
+        annotations:
+          summary: "Webhook deliveries are dead-lettering"
+          description: |
+            A subscriber stopped receiving alerts after exhausting its retry
+            ladder. Check dispatcher logs + the webhook dead-letter table.
+
+  # On-chain receipt anchoring (ADR-0004). check_wallet_balance is GAUGE-ONLY in
+  # code (operator decision 2026-05-31 — a low wallet spammed engine stdout, and
+  # there's no sentry-tracing layer), so the proactive drain warning lives HERE,
+  # as the code comment itself directs. These only fire once on-chain is enabled
+  # (PEGANA_COMMIT_KEYPAIR set → the gauge/counter start existing). Wired 2026-07-18
+  # before enabling on-chain for the re-launch — closes the "silent drain" gap.
+  - name: pegana.onchain
+    interval: 60s
+    rules:
+      # Thresholds calibrated for the actual wallet balance (~0.05 SOL) and the
+      # real per-anchor cost: a memo tx is base-fee only (no priority fee), so
+      # 5000 lamports = 0.000005 SOL/anchor → 0.02 SOL is ~4000 anchors of runway.
+      # Severe transitions (the only ones anchored) are rare, so this warns with
+      # ample lead time to refill without crying wolf on a deliberately small wallet.
+      - alert: PeganaCommitWalletLow
+        expr: pegana_commit_wallet_balance_sol < 0.02
+        for: 10m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "On-chain commit wallet low (< 0.02 SOL, ~4000 anchors left)"
+          description: |
+            The ops wallet that anchors receipts on-chain is under 0.02 SOL (~4000
+            severe-transition anchors at 5000 lamports each). Refill before it drains
+            — a drained wallet means severe-alert (Depeg/Critical/BlackSwan) receipts
+            stop being anchored (commit_status=wallet_drained) and the "verifiable
+            on-chain" claim silently fails. Refill procedure: docs/runbooks (ops
+            wallet 7Ppoyum…u7R9).
+      # The alert the Grafana on-chain panels reference (ids 213/215) but which
+      # never existed in the rules file until now.
+      - alert: PeganaOnchainCommitDegraded
+        expr: pegana_commit_wallet_balance_sol < 0.005 or rate(pegana_onchain_commit_total{outcome!="ok"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "On-chain commit degraded (wallet < 0.005 SOL or commits failing)"
+          description: |
+            Either the commit wallet is critically low (< 0.005 SOL, ~1000 anchors)
+            or on-chain commits have been failing (outcome != ok: wallet_drained /
+            timeout / semaphore_closed) for >5m. Severe-transition receipts may not
+            be anchored right now — the trust pitch is degraded. Check the wallet
+            balance + engine commit logs; refill if drained.
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Market-context enrichment (tokens.xyz risk-details source, migration 0075).
+  #
+  # These signals are INERT: holder count / 24h volume / liquidity never reach
+  # discount, the FSM, or a receipt (enforced by `cargo xtask hygiene`). So none
+  # of these alerts are `critical` — a dead feed degrades the SafetyGrade's
+  # liquidity dimension back to its class heuristic and blanks a few context
+  # fields. Nothing user-visible breaks, which is exactly the `warning` bar this
+  # file defines.
+  - name: pegana.market_context
+    interval: 30s
+    rules:
+      # Liveness. NOTE the threshold: this source polls every 30 MINUTES by
+      # design (TOKENS_XYZ_RISK_POLL_MS, deliberately slow because it shares an
+      # API key with the 60s liquidity poll that is already in production). It
+      # therefore uses its OWN gauge rather than the shared
+      # `pegana_source_last_publish_timestamp` — feeding that one would put this
+      # source permanently past PeganaSourceNotPublishing's 300s threshold and
+      # turn a working alert into noise. 2h = 4 consecutive missed cycles.
+      - alert: PeganaTokensXyzRiskStale
+        expr: time() - pegana_tokens_xyz_risk_last_success_timestamp > 7200
+        for: 10m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "tokens.xyz market-context source has not succeeded in 2h"
+          description: |
+            No successful market-context poll for {{ $value | humanizeDuration }}
+            (threshold 2h = 4 missed 30-minute cycles, sustained 10m). holder_count,
+            volume_24h_usd and liquidity_usd will go stale on /v1/assets, and the
+            web SafetyGrade's liquidity dimension falls back to its class heuristic
+            after 6h (MARKET_DEPTH_STALE_AFTER_MS). Check TOKENS_XYZ_API_KEY
+            validity and the indexer logs for `tokens.xyz risk-details` warnings.
+
+      # Hard failures (transport / decode / persist). `not_found` is EXCLUDED on
+      # purpose: 7 of the 69 active assets are singletons outside tokens.xyz's
+      # canonical registry (sHYUSD, xSOL, sUSDe, ONyc, JLP, eUSX, PST) and
+      # legitimately return 404 on every poll. Alerting on that would fire
+      # forever for a known, accepted coverage gap.
+      - alert: PeganaTokensXyzRiskErrors
+        expr: increase(pegana_tokens_xyz_risk_polls_total{status="error"}[1h]) > 10
+        for: 15m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "tokens.xyz market-context poll erroring"
+          description: |
+            More than 10 hard failures in the last hour (transport, decode, or
+            persist — `not_found` is excluded as expected coverage loss). Likely an
+            expired API key, a rate limit, or an upstream outage. Coverage measured
+            2026-08-10 was 62/69 assets; a sustained rise here means it is dropping.
+
+      # Coverage regression. Measured baseline is 62/69 resolvable assets, so a
+      # sustained drop below 50 means their registry or our key changed, not
+      # noise. Uses the ok-count from the most recent completed cycle.
+      # ⚠️ The `count_over_time` guard is LOAD-BEARING, not decoration. Without
+      # it this rule false-positives for ~2h after every indexer restart, so
+      # each deploy would page. Observed live on 2026-08-10: right after the
+      # first poll the counter read ok=62, yet `increase(...[2h])` returned 0 —
+      # `increase` measures growth BETWEEN samples, and a series that was born
+      # at 62 and has stayed flat has no growth to measure. `0 < 50` is true, so
+      # the alert went pending on a perfectly healthy source.
+      #
+      # `count_over_time` counts SAMPLES in the window, so at a 30s scrape 200
+      # samples means the series carries ~100 minutes of history — by then at
+      # least three 30-minute cycles have landed and `increase` is meaningful.
+      # Below that the guard is false and the rule simply does not evaluate.
+      - alert: PeganaTokensXyzRiskCoverageDrop
+        expr: >-
+          increase(pegana_tokens_xyz_risk_polls_total{status="ok"}[2h]) < 50
+          and
+          count_over_time(pegana_tokens_xyz_risk_polls_total{status="ok"}[2h]) > 200
+        for: 30m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "tokens.xyz market-context coverage dropped below 50 assets"
+          description: |
+            Fewer than 50 assets returned usable market context over the last 2h
+            (baseline 62/69 measured 2026-08-10, ~4 cycles in that window), and the
+            series has enough history for that to be a real reading rather than a
+            cold start. Either tokens.xyz stopped resolving mints we track, or the
+            API key lost scope. Verify with:
+              curl -H "x-api-key: $TOKENS_XYZ_API_KEY" \
+                "https://api.tokens.xyz/v1/assets/solana/risk-details?mint=<mint>"
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Upstream RPC allowance (Sub-C health-factor sources).
+  - name: pegana.rpc_quota
+    interval: 30s
+    rules:
+      # A spent plan allowance is NOT the same condition as a stale source, and
+      # conflating them cost 8 days: from 2026-08-02 the HF sources emitted only
+      # a generic staleness signal while the real cause was Helius returning
+      # "429 max usage reached". This fires on the cause, so the runbook is
+      # "check the plan", not "check the source".
+      - alert: PeganaRpcQuotaExhausted
+        expr: increase(pegana_protocol_rpc_quota_exhausted_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: protocol-indexer
+        annotations:
+          summary: "Helius RPC allowance exhausted for {{ $labels.source }}"
+          description: |
+            {{ $labels.source }} aborted its cycle because the upstream RPC plan
+            allowance is spent ("max usage reached"). Retrying cannot help until
+            the allowance resets, so the source now stops the cycle instead of
+            walking every remaining vault into the same wall.
+
+            Sub-C's AGGREGATE exposure (loop_exposure_snapshots) is unaffected —
+            it uses free public REST. What goes dark is the health-factor
+            distribution behind the cascade estimates.
+
+            Check the Helius plan usage. If this recurs at the current cadence,
+            raise KAMINO_HF_POLL_MS / JUPITER_HF_POLL_MS above their 60-minute
+            default rather than letting the storm return.
+
+  # ────────────────────────────────────────────────────────────────────────
+  # /v1/assets degradation path (stale-response fallback).
+  - name: pegana.api_degradation
+    interval: 30s
+    rules:
+      # The assets list is falling back to its last-known-good payload. Users are
+      # still served, but the numbers are frozen at an older compute time — the
+      # response carries `x-pegana-stale: true` and an older `generated_at`. This
+      # is critical because it means Postgres is failing the single most-polled
+      # endpoint in the product.
+      - alert: PeganaAssetsListServingStale
+        expr: increase(pegana_api_assets_list_stale_served_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: "/v1/assets is serving last-known-good (Postgres query failing)"
+          description: |
+            The assets-list query failed and the API fell back to its cached
+            last-known-good payload. Consumers see `x-pegana-stale: true` and a
+            stale `generated_at` instead of a 500, but peg data is NOT live right
+            now. Check Postgres health, the connection pool, and statement_timeout
+            (a regressed query saturating the pool is the 2026-07-25 failure mode).
+
+      # DB failures with NO fallback available: these became real 500s.
+      - alert: PeganaAssetsListDbFailing
+        expr: increase(pegana_api_assets_list_db_failures_total[5m]) > increase(pegana_api_assets_list_stale_served_total[5m])
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: "/v1/assets failing with no last-known-good to fall back on"
+          description: |
+            The assets-list query is failing AND the last-known-good cache could not
+            answer (Redis down, cold, or expired past its 24h TTL), so callers are
+            receiving 500s. This is a full outage of the primary read endpoint.
+
+  # ────────────────────────────────────────────────────────────────────────
+  # api-rs runtime: shared WS fan-out connection and file descriptors.
+  # Fed by crates/api-rs/src/ws.rs (pegana_ws_fanout_*) and the 15s fd exporter
+  # in crates/api-rs/src/main.rs (pegana_api_open_fds / pegana_api_fd_limit).
+  - name: pegana.api_runtime
+    interval: 30s
+    rules:
+      # The shared Redis subscription the API fans out to every client is down. Clients
+      # stay connected but receive no live frames until it reconnects.
+      - alert: PeganaWsFanoutDisconnected
+        expr: pegana_ws_fanout_connected == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: "API WebSocket fan-out is disconnected from Redis"
+          description: |
+            `pegana_ws_fanout_connected == 0` for 2m. The shared Redis
+            subscription that feeds /v1/ws is down, so live frames are not
+            reaching clients. Check the api logs for the fan-out reconnect loop
+            and Redis health.
+
+      # Repeated stalls mean the fan-out is wedging and being restarted.
+      - alert: PeganaWsFanoutStalling
+        expr: increase(pegana_ws_fanout_stalls_total[15m]) > 3
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "API WebSocket fan-out stalled more than 3 times in 15m"
+          description: |
+            `increase(pegana_ws_fanout_stalls_total[15m]) > 3`. The shared
+            fan-out keeps stalling and reconnecting: its Redis subscription was
+            silent for 30s each time. Either the engine heartbeat (every 5s) is
+            absent, or Redis is wedged. Check the engine is publishing, the api
+            logs for "stall" lines, and Redis health.
+
+      # Warn well before EMFILE makes the API refuse connections.
+      - alert: PeganaApiFdsNearLimit
+        expr: pegana_api_open_fds / pegana_api_fd_limit > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "API process is using more than 80% of its file descriptor limit"
+          description: |
+            `pegana_api_open_fds / pegana_api_fd_limit > 0.8` for 5m. The api
+            is approaching EMFILE; new connections will fail once the soft
+            limit is hit. Look for a connection or socket leak, then raise the
+            container nofile limit if the load is legitimate.
+
+  - name: pegana.runtime
+    interval: 30s
+    rules:
+      # Per-source task liveness gauge exported by the indexer (1 = loop
+      # running, 0 = exited or never started).
+      - alert: PeganaSourceTaskDown
+        expr: pegana_source_task_up == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Indexer source task down: {{ $labels.source }}"
+          description: |
+            `pegana_source_task_up{source="{{ $labels.source }}"} == 0` for 5m.
+            The source loop exited or failed to start; inspect indexer logs.
+            The container is not restarted automatically.
+
+      - alert: PeganaRedisTimeouts
+        expr: increase(pegana_redis_timeouts_total[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis operations timing out ({{ $labels.job }})"
+          description: |
+            `increase(pegana_redis_timeouts_total[10m]) > 0`. A Redis call
+            exceeded its deadline in {{ $labels.job }}. Check Redis health
+            (latency, memory, connection count) before pub/sub consumers stall.
+
+      - alert: PeganaDispatcherAlertMismatch
+        expr: increase(pegana_dispatcher_alert_mismatch_total[10m]) > 0
+        labels:
+          severity: warning
+          service: dispatcher
+        annotations:
+          summary: "Dispatcher saw an alert whose payload did not match its stored record"
+          description: |
+            `increase(pegana_dispatcher_alert_mismatch_total[10m]) > 0`.
+            Inspect dispatcher logs for the alert id and compare the published
+            payload with the stored alert row before trusting delivery.
+
+      - alert: PeganaDispatcherAlertMissing
+        expr: increase(pegana_dispatcher_alert_missing_total[10m]) > 0
+        labels:
+          severity: warning
+          service: dispatcher
+        annotations:
+          summary: "Dispatcher read stream entries that have no alerts row"
+          description: |
+            `increase(pegana_dispatcher_alert_missing_total[10m]) > 0`.
+            An alert reached the Redis stream without a matching row in
+            `alerts`, so it was not signed or delivered. Inspect dispatcher
+            logs for the alert id and check who can write to the stream.
+
+      - alert: PeganaDispatcherPermitsExhausted
+        expr: pegana_dispatcher_webhook_permits_available == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: dispatcher
+        annotations:
+          summary: "Dispatcher has no free webhook delivery permits"
+          description: |
+            `pegana_dispatcher_webhook_permits_available == 0` for 5m. Every
+            delivery slot is busy, so new webhook deliveries queue behind slow
+            subscribers. Inspect dispatcher logs for the subscribers holding permits.
+
+      - alert: PeganaDispatcherBreakerOpen
+        expr: increase(pegana_dispatcher_breaker_open_total[15m]) > 0
+        labels:
+          severity: warning
+          service: dispatcher
+        annotations:
+          summary: "A subscriber's delivery circuit opened"
+          description: |
+            `increase(pegana_dispatcher_breaker_open_total[15m]) > 0`. The
+            dispatcher stopped delivering to a failing subscriber so it cannot
+            stall the others. Check the subscriber's endpoint and the dispatcher logs.
+
+      - alert: PeganaDispatcherQueueFull
+        expr: increase(pegana_dispatcher_queue_full_total[10m]) > 0
+        labels:
+          severity: warning
+          service: dispatcher
+        annotations:
+          summary: "Webhook deliveries dead-lettered on queue overflow"
+          description: |
+            `increase(pegana_dispatcher_queue_full_total[10m]) > 0`. The delivery
+            queue overflowed and deliveries were dead-lettered. Check the
+            dead-letter table and the dispatcher's permit and breaker metrics.
+
+  - name: pegana.market
+    interval: 30s
+    rules:
+      - alert: PeganaJupiterSlotReferenceUnavailable
+        expr: increase(pegana_jupiter_slot_reference_unavailable_total[10m]) > 0
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Jupiter quotes have no slot reference"
+          description: |
+            `increase(pegana_jupiter_slot_reference_unavailable_total[10m]) > 0`.
+            The indexer could not obtain a slot reference for Jupiter quotes, so
+            dark-market detection cannot date them. Check the RPC provider.
+
+      - alert: PeganaJupiterUnavailablePublishErrors
+        expr: increase(pegana_jupiter_unavailable_publish_errors_total[10m]) > 0
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Indexer failed to publish a market-unavailable envelope"
+          description: |
+            `increase(pegana_jupiter_unavailable_publish_errors_total[10m]) > 0`.
+            A dark-market signal could not be published to Redis, so the engine may
+            keep an old market leg. Check Redis health and the indexer logs.
+
+      - alert: PeganaEngineDarkEnvelopeIgnored
+        expr: increase(pegana_engine_dark_envelope_ignored_total[10m]) > 0
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Engine ignored a dark-market envelope"
+          description: |
+            `increase(pegana_engine_dark_envelope_ignored_total[10m]) > 0`.
+            The engine received a market-unavailable envelope it did not act on
+            (gate off or malformed). Confirm DARK_MARKET_GATE_ENABLED is set as intended
+            on both indexer and engine.
+
+      - alert: PeganaJupiterMarketMissesSustained
+        expr: increase(pegana_jupiter_market_misses_total[10m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+          service: indexer
+        annotations:
+          summary: "Jupiter quote misses sustained for 30 minutes"
+          description: |
+            `increase(pegana_jupiter_market_misses_total[10m]) > 0` for 30m. Some
+            assets keep failing to quote. Check the Jupiter API status, the key
+            quota, and the assets listed in the indexer logs.
+
+      - alert: PeganaJupiterWideOutage
+        expr: count(increase(pegana_engine_market_unavailable_unknown_total[10m]) > 0) > 5
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "Jupiter-wide outage: more than 5 assets have no market leg"
+          description: |
+            `count(increase(pegana_engine_market_unavailable_unknown_total[10m]) > 0) > 5`.
+            More than five assets went UNKNOWN because their market leg is unavailable
+            within ten minutes. This is a fleet-wide quote outage, not one thin market:
+            check Jupiter, the API key and outbound network first. This alert is
+            inert while DARK_MARKET_GATE_ENABLED=false (the engine does not emit the
+            metric until the gate is on).
+
+      - alert: PeganaEngineIntrinsicDrop
+        expr: increase(pegana_engine_intrinsic_drop_total[1h]) > 0
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Engine dropped an intrinsic reading"
+          description: |
+            `increase(pegana_engine_intrinsic_drop_total[1h]) > 0`. The engine
+            discarded an intrinsic value it judged implausible. Inspect the
+            engine logs for the asset and compare with the issuer's published NAV.
+
+      - alert: PeganaDispatcherAlertPoison
+        expr: increase(pegana_dispatcher_alert_poison_total[10m]) > 0
+        labels:
+          severity: warning
+          service: dispatcher
+        annotations:
+          summary: "Dispatcher skipped a poison alert-stream entry"
+          description: |
+            `increase(pegana_dispatcher_alert_poison_total[10m]) > 0`. A stream
+            entry could not be decoded or processed and was set aside so it cannot
+            block the others. Inspect the dispatcher logs for the entry id and check
+            who writes to the stream.

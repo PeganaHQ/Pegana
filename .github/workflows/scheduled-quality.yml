@@ -1,0 +1,154 @@
+name: scheduled-quality
+
+# Weekly deep checks that are too slow for pull requests:
+#   - fuzz:     cargo-fuzz targets `decoders` and `parsers` in crates/indexer-rs/fuzz
+#   - coverage: cargo llvm-cov over the workspace (report only, no threshold gate)
+#   - mutants:  cargo mutants on the methodology crate (report only)
+# Findings are uploaded as artifacts. None of these jobs gates a merge.
+
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-quality
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    # The private repository only: fuzzing needs the full workspace.
+    if: github.repository == 'lrafasouza/pegana'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [decoders, parsers]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+        with:
+          toolchain: nightly-2026-10-15
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          shared-key: "fuzz"
+          workspaces: "crates/indexer-rs/fuzz -> target"
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked --quiet
+      - name: Fuzz ${{ matrix.target }} (5 minutes)
+        working-directory: crates/indexer-rs
+        run: |
+          if [ ! -d fuzz ]; then
+            echo "::warning::crates/indexer-rs/fuzz does not exist yet; nothing to fuzz."
+            exit 0
+          fi
+          cargo +nightly-2026-10-15 fuzz run "${{ matrix.target }}" -- -max_total_time=300
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crashes-${{ matrix.target }}
+          path: crates/indexer-rs/fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: warn
+
+  coverage:
+    if: github.repository == 'lrafasouza/pegana'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Same Postgres and Redis the integration tests expect (mirrors ci.yml), so
+    # the coverage run exercises them instead of self-skipping.
+    services:
+      postgres:
+        image: timescale/timescaledb@sha256:fd28d07eab916c2eade574fcbe49cd19fe11ea8fdb9d1c0902470cc4bedd23cc # latest-pg16, linux/amd64
+        env:
+          POSTGRES_USER: pegana
+          POSTGRES_PASSWORD: pegana
+          POSTGRES_DB: pegana
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pegana"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      REDIS_PASSWORD: ci-redis-pw
+      PEGANA_INTEGRATION_DB: postgres://pegana:pegana@localhost:5432/pegana
+      PEGANA_INTEGRATION_PG_URL: postgres://pegana:pegana@localhost:5432/pegana
+      PEGANA_INTEGRATION_REDIS: redis://default:ci-redis-pw@localhost:6379
+    steps:
+      - name: Free disk space
+        # The workspace build overflows the runner disk without this (same as ci.yml).
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+        with:
+          toolchain: "1.90"
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          shared-key: "coverage"
+      - name: Start Redis (password-protected)
+        run: |
+          docker run -d --name ci-redis -p 6379:6379 redis@sha256:9702d01c1f10c3ea9f48211b4362e44f154ff02d063e6f7268eba804059f53bf \
+            redis-server --requirepass "$REDIS_PASSWORD"
+          for ((i = 0; i < 20; i++)); do
+            if docker exec ci-redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG; then break; fi
+            sleep 1
+          done
+      - name: Apply all migrations
+        env:
+          PGPASSWORD: pegana
+        run: |
+          for f in migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -h localhost -p 5432 -U pegana -d pegana -f "$f"
+          done
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked --quiet
+      - name: Coverage report (no threshold)
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+      - name: Summary
+        run: cargo llvm-cov report --summary-only | tee coverage-summary.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: |
+            lcov.info
+            coverage-summary.txt
+
+  mutants:
+    if: github.repository == 'lrafasouza/pegana'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+        with:
+          toolchain: "1.90"
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          shared-key: "mutants"
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked --quiet
+      - name: Mutation testing (methodology)
+        # Survivors are reported, not failed on: the exit code is 2 when mutants
+        # survive, which is information for this weekly job, not a gate.
+        run: cargo mutants -p pegana-methodology --timeout 60 --no-shuffle || [ "$?" -eq 2 ]
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mutants
+          path: mutants.out
+          if-no-files-found: warn

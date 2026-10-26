@@ -1,0 +1,114 @@
+# Overlay for testing the production docker-compose.yml locally.
+#
+# Usage (from repo root):
+#   docker compose -p pegana-prodlocal -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#   curl http://localhost:8081/healthz
+#   curl http://localhost:8081/v1/stats
+#
+# Then stop with:
+#   docker compose -p pegana-prodlocal -f docker-compose.yml -f docker-compose.local.yml down
+#
+# The `-p pegana-prodlocal` project name keeps the prod-local containers
+# separate from the dev compose (project name `pegana`). Without it the
+# postgres/redis volumes would collide with the dev stack.
+#
+# What this overlay changes vs the base docker-compose.yml:
+# - Exposes Postgres on host :5434 and Redis on :6381 — keeps dev compose
+#   (:5433/:6380) and local `cargo run` (:8080) free.
+# - Exposes api on host :8081 directly (bypassing Caddy — no real domain
+#   here, no need for TLS termination).
+# - Disables Caddy (sets a no-op command). Production keeps Caddy for the
+#   real pegana.xyz / api.pegana.xyz TLS.
+# - Overrides DATABASE_URL / REDIS_URL so the Rust services point at
+#   the in-network hostnames (postgres / redis) instead of localhost:5433.
+# - STAGING ISOLATION (added 2026-05-31): this overlay no longer borrows
+#   production's shared secrets from .env. Sentry is disabled (SENTRY_DSN="")
+#   so a prod-local error never lands in the `pegana-prod` Sentry project; and
+#   the dispatcher gets a throwaway PEGANA_WEBHOOK_SIGNING_KEY so it boots
+#   without prod's key. Net: `docker compose -p pegana-prodlocal ... up` can be
+#   run anytime without touching production.
+#
+# Production deploys to the Hostinger box use the base docker-compose.yml ONLY
+# (with real Caddyfile + DNS). This overlay only exists to smoke the prod
+# stack on your laptop before pushing to the server.
+
+services:
+  postgres:
+    ports: ["5434:5432"]
+
+  redis:
+    ports: ["6381:6379"]
+
+  api:
+    ports: ["8081:8080"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD:-pegana}@postgres:5432/${POSTGRES_DB:-pegana}
+      REDIS_URL: redis://admin:${REDIS_PASSWORD}@redis:6379
+      API_BIND: 0.0.0.0:8080
+      RUST_LOG: info,sqlx=warn,pegana=debug
+      # Staging isolation — never report local errors to the prod Sentry project.
+      SENTRY_DSN: ""
+      SENTRY_ENVIRONMENT: staging
+      # Public key of the staging dummy seed used by the dispatcher below.
+      PEGANA_WEBHOOK_PUBKEYS_B64: "R6DbvomiiNMAJuKhFFNY4NNqiEMXKz0+ny9gTt2shtI="
+
+  indexer:
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD:-pegana}@postgres:5432/${POSTGRES_DB:-pegana}
+      REDIS_URL: redis://admin:${REDIS_PASSWORD}@redis:6379
+      RUST_LOG: info,sqlx=warn,pegana=debug
+      SENTRY_DSN: ""
+      SENTRY_ENVIRONMENT: staging
+
+  engine:
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD:-pegana}@postgres:5432/${POSTGRES_DB:-pegana}
+      REDIS_URL: redis://admin:${REDIS_PASSWORD}@redis:6379
+      RUST_LOG: info,sqlx=warn,pegana=debug
+      SENTRY_DSN: ""
+      SENTRY_ENVIRONMENT: staging
+
+  # Dispatcher boots with a THROWAWAY webhook signing key (staging dummy, not a
+  # secret) so it doesn't need prod's PEGANA_WEBHOOK_SIGNING_KEY from .env, and
+  # with Sentry disabled.
+  dispatcher:
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-pegana}:${POSTGRES_PASSWORD:-pegana}@postgres:5432/${POSTGRES_DB:-pegana}
+      REDIS_URL: redis://admin:${REDIS_PASSWORD}@redis:6379
+      RUST_LOG: info,sqlx=warn,pegana=debug
+      SENTRY_DSN: ""
+      SENTRY_ENVIRONMENT: staging
+      # Staging dummy: base64 of 32 random bytes. NOT a production key.
+      PEGANA_WEBHOOK_SIGNING_KEY: "58cfYmBQIHiL4sGXhFWhyK9KlVaywKGT+th3BIerM8A="
+      PEGANA_WEBHOOK_PUBKEYS_B64: "R6DbvomiiNMAJuKhFFNY4NNqiEMXKz0+ny9gTt2shtI="
+
+  # Inert channels so a local stack never posts to a real alert channel even
+  # when the local .env carries prod values: no Telegram token, no chat id, and
+  # a Discord webhook nothing listens on (:9). Delivery failures show up only
+  # in the local Alertmanager log. See the top-level `configs:` block below.
+  alertmanager:
+    environment:
+      ALERTMANAGER_TELEGRAM_CHAT_ID: ""
+
+  # No host backup cron locally: serve an empty textfile dir instead of the
+  # deploy user's ~/.pegana-metrics.
+  node-exporter:
+    volumes: !reset []
+    tmpfs: [/textfile]
+
+  caddy:
+    # No-op locally — production keeps Caddy for TLS termination.
+    image: alpine:3@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+    command: ["sh", "-c", "echo 'caddy disabled in local overlay'; sleep infinity"]
+    ports: !reset []
+    restart: "no"
+
+# Overrides the prod channel secrets (docker-compose.yml) with inert values.
+configs:
+  alertmanager_telegram_bot_token:
+    content: "\n"
+  alertmanager_discord_webhook_url:
+    content: "https://127.0.0.1:9/disabled\n"
+  # A laptop must never ping the prod dead-man heartbeat.
+  alertmanager_deadman_url:
+    content: "\n"

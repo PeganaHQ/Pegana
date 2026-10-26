@@ -1,0 +1,83 @@
+name: Weekly DAST baseline
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  baseline:
+    if: github.repository == 'PeganaHQ/Pegana'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Scan public endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          chmod 777 reports
+          for host in www api docs mcp; do
+            target="https://${host}.pegana.xyz"
+            set +e
+            docker run --rm -v "$PWD/reports:/zap/wrk/:rw" \
+              ghcr.io/zaproxy/zaproxy:stable@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 \
+              zap-baseline.py -t "$target" -m 2 -I \
+              -r "${host}.html" -J "${host}.json" \
+              > "reports/${host}.log" 2>&1
+            result=$?
+            set -e
+            cat "reports/${host}.log"
+            # ZAP returns 1 for configured FAIL rules; report them through one issue.
+            # Exit 3 means the scan itself failed and must fail this workflow.
+            if (( result > 2 )); then
+              echo "ZAP scan failed for $target (exit $result)" >&2
+              exit "$result"
+            fi
+          done
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dast-weekly-reports
+          path: reports/
+          if-no-files-found: warn
+
+      - name: Open or update DAST issue for new failures
+        if: always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const hosts = ['www', 'api', 'docs', 'mcp'];
+            const failures = [];
+            for (const host of hosts) {
+              const path = `reports/${host}.log`;
+              if (!fs.existsSync(path)) continue;
+              const lines = fs.readFileSync(path, 'utf8').split('\n');
+              const count = lines.find(line => /^FAIL-NEW:\s*[1-9][0-9]*/.test(line));
+              if (count) {
+                const details = lines.filter(line => /^FAIL-NEW: (?!0\b)/.test(line));
+                failures.push(`### https://${host}.pegana.xyz\n\n${details.join('\n')}`);
+              }
+            }
+            if (failures.length === 0) return;
+            const { owner, repo } = context.repo;
+            const title = 'Weekly DAST baseline: new FAIL findings';
+            const body = `ZAP reported FAIL-NEW in [run ${context.runId}](${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}). Download the \`dast-weekly-reports\` artifact for full reports.\n\n${failures.join('\n\n')}`;
+            const labels = await github.paginate(github.rest.issues.listLabelsForRepo, { owner, repo });
+            if (!labels.some(label => label.name === 'dast')) {
+              await github.rest.issues.createLabel({ owner, repo, name: 'dast', color: 'b60205' });
+            }
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', labels: 'dast' });
+            const existing = issues.find(issue => !issue.pull_request && issue.title === title);
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body, labels: ['dast'] });
+            }

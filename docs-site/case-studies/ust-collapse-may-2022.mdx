@@ -1,0 +1,59 @@
+---
+title: "UST: how an algorithmic peg unwinds in 72 hours"
+description: "Terra's UST broke from $1 on May 9 and never came back. Required reading for anyone holding any algorithmic or yield-bearing stable on Solana."
+---
+
+<Warning>
+  **Asset**: UST · **Class**: Algorithmic synthetic · **Date**: 2022-05-09
+  **Worst spread**: −7000 bps · **Duration**: Terminal — never recovered
+  **Detected live**: No (pre-Pegana retrospective)
+</Warning>
+
+## Background
+
+UST was an algorithmic stable backed by LUNA mint/burn. Anchor Protocol offered ~19.5%
+yield on UST — most of UST's supply sat there. By Q1 2022 the system was a reflexive
+flywheel: LUNA holders trusted UST because UST holders trusted LUNA.
+
+## Trigger
+
+A series of large UST exits from Curve's 4pool started May 7 2022. The depth dropped
+enough that UST printed $0.985 in liquid venues — a 1.5% spread for a stable. That
+should have been a strong `DRIFT` signal.
+
+## Cascade
+
+- UST holders rushed to mint LUNA to exit — burn the stable, mint the volatile.
+- LUNA supply went from ~340M to >6.5B in 72 hours. Price collapsed >99%.
+- The reflexive backstop broke: minting more LUNA to defend UST destroyed both at once.
+- Pegana would have stayed in `DEPEG → CRITICAL` with no recovery transitions — the
+  worst alerting band reachable for a spread-priced asset.
+
+## Recovery
+
+There is no recovery. UST trades fractions of a cent. The protocol was relaunched as
+Terra 2.0 without the algorithmic stable.
+
+## What Pegana would have shown
+
+- **May 7, ~12:00 UTC** — Curve imbalance; smoothed spread crosses 30 bps.
+  **`PEGGED → DRIFT`**.
+- **May 8, ~18:00 UTC** — Spread crosses 100 bps despite continued exits.
+  **`DRIFT → DEPEG`**.
+- **May 9, ~06:00 UTC** — Spread crosses 500 bps. **`DEPEG → CRITICAL`**.
+- **May 9, ~14:00 UTC** — Spread blows past 1000+ bps, well beyond `2× critical`.
+  **`CRITICAL → BLACK_SWAN`** — the terminal-grade band.
+- **No recovery** — UST never re-pegs, so the spread never decays; the asset stays in
+  `BLACK_SWAN`. (BLACK_SWAN auto-exits via the normal hysteresis *if* the spread genuinely
+  recovers — it is not a no-reset terminal state; ADR-0025.)
+
+## Lesson
+
+Algorithmic stables print false `PEGGED` for months at a time. The signal isn't the
+daily noise, it's **the depth at which arbitrage stops working**. Pegana now reports
+liquidity quality alongside spread (see [confidence score](/concepts/confidence-score))
+for exactly this reason.
+
+## Sources
+
+- [Coindesk — Anatomy of the UST crash](https://www.coindesk.com/learn/the-fall-of-terra-a-timeline-of-the-meteoric-rise-and-crash-of-ust-and-luna/)

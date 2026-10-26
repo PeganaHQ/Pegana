@@ -1,0 +1,183 @@
+---
+title: "FAQ"
+description: "Common questions about scope, sources, pricing, reliability, and how Pegana compares to other oracle products."
+---
+
+<AccordionGroup>
+
+<Accordion title="What chains does Pegana support?">
+  Solana mainnet only, today. Other chains are not on the roadmap until we close the
+  Solana coverage to >90% of the addressable peg-bearing supply. See
+  the [source repository](https://github.com/PeganaHQ/Pegana) for context.
+</Accordion>
+
+<Accordion title="How is Pegana different from Pyth or Switchboard?">
+  Pyth and Switchboard are **price oracles**: "what is the dollar price of X right
+  now?" Pegana is a **state oracle**: "is X still doing what it promises?"
+
+  A price oracle answers a continuous numeric question. A state oracle answers a
+  categorical one — `PEGGED` / `DRIFT` / `DEPEG` / `CRITICAL` / `UNKNOWN`. The
+  consumer of a state oracle wants a sticky event ("USDC just entered DRIFT"), not
+  a continuous number to liquidate against.
+
+  Pegana reads from Pyth (we use SOL/USD and other spot feeds, plus some Redemption
+  Rate feeds). They're upstream, not competitors.
+</Accordion>
+
+<Accordion title="What's the difference from Chaos Labs?">
+  [Chaos Labs](https://chaoslabs.xyz) is a multi-chain risk platform with a broad
+  product suite (AI, analytics, oracles). Their oracle product overlaps conceptually
+  with Pegana, but their public surface is the enterprise integration tier and their
+  oracle isn't Solana-specific.
+
+  Pegana is a focused, Solana-native peg-risk oracle with an MIT verifier and
+  source-available FSL-1.1-MIT service code, a public API without keys, and per-asset calibration for Solana's LST and
+  yield-bearing landscape. The two products coexist at different scopes — Chaos
+  enterprises don't ship their own MCP server; Pegana doesn't compete on EVM risk.
+</Accordion>
+
+<Accordion title="What about stableguard.org?">
+  [stableguard.org](https://stableguard.org) covers fiat stables across multiple
+  chains. Their coverage of Solana is a sub-set of ours; we cover 7 fiat stables
+  (USDC, USDT, PYUSD, USDG, USD1, USDu, CASH) plus EURC (EUR) on Solana.
+  Pegana also covers 43 LSTs, 10 yield-bearing assets, CDPs (`hyUSD`), and
+  delta-neutral synthetics (`USDe`, `USX`), which stableguard does not.
+
+  Both products are valid; choose by audience. If you operate cross-chain, use
+  stableguard for stable coverage plus Pegana for Solana-specific LST and
+  yield-bearing. If you're Solana-native, Pegana covers more of your asset surface.
+</Accordion>
+
+<Accordion title="Is Pegana production-ready?">
+  Pegana Trust Layer went **live and public on 2026-06-11**, after calibration
+  v1 passed (verdict computed 2026-06-10). The read paths (REST, WebSocket, MCP) and
+  the state-transition feed (`/v1/audit`, `subscribe_peg_events`) are all live in production. The initial post-launch stability lock has since closed and the
+  methodology has continued to harden (Pyth confidence-gate and NAV-sanity fixes are
+  live; an intrinsic-liveness gate is shipped but opt-in, off by default). **Versioning:** the API is additive-only — new fields may appear
+  on responses/payloads but existing fields never change type or disappear without a
+  new versioned path, so integrations don't break on an upgrade.
+
+  Reach `rafael@pegana.xyz` for early integration conversations.
+</Accordion>
+
+<Accordion title="What's the rate limit?">
+  Per-IP sliding window on the REST API, currently **240 requests a minute per IP** (see the
+  `RateLimit-Limit` header); `/v1/audit.csv` is stricter at **10/min**. WebSocket allows
+  **20 concurrent connections per IP**. MCP calls are rate-limited per agent.
+  Handle `429` and back off on `Retry-After`.
+
+  Hit the limit? Contact `rafael@pegana.xyz`.
+</Accordion>
+
+<Accordion title="Do I need an API key?">
+  **No.** There are no API keys, accounts or sign-in. REST, WebSocket, Embed and all MCP
+  tools are public and free.
+</Accordion>
+
+<Accordion title="Is it free?">
+  Yes, everything. There are no paid tiers and no per-call payments. See
+  [pricing](/pricing).
+</Accordion>
+
+<Accordion title="What happens during a Solana network outage?">
+  Source freshness depends on Solana. If RPC stops responding, our on-chain decoders
+  (Hylo CR, LST stake pool reads) stall. When a source side goes stale, the engine
+  does **not** invent a value: it skips the recompute and holds the last published
+  state rather than emitting a fresh verdict on degraded inputs. Stale assets are
+  flagged via freshness buckets, and high-risk illiquid/single-source assets are
+  flagged `monitoring_only` (beta) — their alerts are live but carry a provisional-
+  calibration label, and a detectably broken anchor maps to UNKNOWN (the NAV-sanity
+  gate) rather than a false reading.
+  (UNKNOWN is published at cold-start or when an anchor is detectably broken — the
+  NAV-sanity gate — not on routine staleness, which holds the last state.)
+
+  Some NAV sources do not depend on Solana RPC (USDY and sUSDe are read from Ethereum,
+  EURC from public FX venues) and may continue updating, so those signals can stay live
+  while LST intrinsic stales out.
+  We do not invent values for the stale fields.
+</Accordion>
+
+<Accordion title="How do you decide which assets to track?">
+  Criteria:
+  - **Mainnet only** — no devnet feeds
+  - **Verified mechanism** — there must be a canonical intrinsic source (Sanctum,
+    Pyth, on-chain decode). No "we'll figure it out" assets
+  - **Liquidity threshold** — at least one DEX route at $10k notional with `<50 bps` slippage
+  - **Operator trust** — assets whose issuer has visibly defaulted or had a recent
+    exploit are frozen (e.g., `dSOL` after Drift 2026-04-01, now removed entirely).
+    Frozen assets stay in `assets.toml` with `active = false` for historical
+    continuity — the engine no longer polls them and they don't count toward the
+    active set.
+
+  Add requests via [GitHub Issues](https://github.com/PeganaHQ/Pegana/issues).
+</Accordion>
+
+<Accordion title="What's the confidence label?">
+  A discrete label — `high` / `medium` / `low` / `unknown` — derived from the Pyth
+  oracle's confidence interval (`conf / price` ratio), not a numeric score. The default
+  rule is to act only on `confidence: "high"`. See
+  [confidence label](/concepts/confidence-score).
+</Accordion>
+
+<Accordion title="Where's the changelog?">
+  [/changelog](/changelog) is the canonical developer changelog — API contracts, MCP
+  tools, SDK and CLI releases. For the verdict logic specifically, the
+  [methodology version history](https://pegana.xyz/methodology) records every release and
+  the ADR behind it; that's what a receipt's `methodology_version` points at.
+</Accordion>
+
+<Accordion title="What's open source?">
+  The methodology, `pegana-replay` verifier and SDKs are open source under MIT.
+  The indexers, engine, API, dispatcher, MCP server and other service code are
+  source-available under FSL-1.1-MIT at
+  [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana).
+  The `web/` app is proprietary. Every version published before this licensing change
+  remains MIT in the repository history. See the
+  [license map](https://github.com/PeganaHQ/Pegana/blob/main/LICENSING.md). The
+  `pegana-replay` CLI is also mirrored on its own at
+  [`github.com/PeganaHQ/ReplayCLI`](https://github.com/PeganaHQ/ReplayCLI), so you can
+  independently re-derive and audit Pegana receipts without trusting our
+  infrastructure (use the release matching a receipt's methodology version; 0.4.0 onward).
+</Accordion>
+
+<Accordion title="Can I self-host Pegana?">
+  Yes, the oracle. The repository ships a `docker-compose.yml` for the oracle stack
+  (Postgres with TimescaleDB, Redis, indexer, engine, API, dispatcher, MCP server); the
+  website is not included. There is also a
+  `docker-compose.dev.yml` for local development; see the README at
+  [`github.com/PeganaHQ/Pegana`](https://github.com/PeganaHQ/Pegana). Separately, the
+  [`pegana-replay`](https://github.com/PeganaHQ/ReplayCLI) verifier lets you reproduce
+  and check an alert receipt (with the release matching its methodology version, 0.4.0 onward) against the public methodology (you re-derive the verdict
+  from the recorded inputs; anchored severe transitions add on-chain input
+  verification). Questions: `rafael@pegana.xyz`.
+</Accordion>
+
+<Accordion title="How accurate is the methodology?">
+  Reproducible to the last bit. Every input (Sanctum `sol_value`, Pyth feeds,
+  Jupiter quotes, Hylo IDL decode) is logged with millisecond timestamps. The EWMA
+  α, threshold tables, and dwell timers are in `assets.toml` — open the repo, read
+  the parameters, re-run from any historical snapshot.
+
+  We don't claim to predict. We claim to reproduce.
+</Accordion>
+
+<Accordion title="Why is the methodology open?">
+  Trust. A peg-risk oracle has to be auditable. Closing the methodology would ask
+  consumers to take "we computed `discount = 1 − market / intrinsic`" on faith.
+  Instead, every threshold and smoothing parameter is public, and the `pegana-replay`
+  verifier lets any consumer reproduce a recorded receipt and check the verdict math for
+  themselves, with no trust in our compute required (it re-derives from the recorded inputs,
+  using the release that matches the receipt's methodology version, 0.4.0 onward; a receipt's
+  hash also checks in the browser on its audit page, for every version).
+
+  Also, more practically: the team is one person. An open, verifiable methodology is
+  the cheapest path to ecosystem trust.
+</Accordion>
+
+</AccordionGroup>
+
+## Still have a question?
+
+Open an issue at
+[github.com/PeganaHQ/Pegana/issues](https://github.com/PeganaHQ/Pegana/issues),
+or email `rafael@pegana.xyz`.

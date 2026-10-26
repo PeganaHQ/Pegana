@@ -1,0 +1,231 @@
+---
+title: "WebSocket stream"
+description: "Live push of every peg reading on Solana mainnet, as the engine recomputes it. No polling, no per-message throttling (20 connections/IP)."
+---
+
+When you need state updates faster than 15-second polling allows, open a WebSocket.
+The server pushes a fresh reading for each asset every time the engine recomputes it (not
+only when the state changes), plus a heartbeat every 5 seconds.
+
+**Endpoint:** `wss://api.pegana.xyz/v1/ws`
+
+## Open a connection
+
+```bash
+wscat -c wss://api.pegana.xyz/v1/ws
+```
+
+```typescript
+import WebSocket from "ws";
+
+const ws = new WebSocket("wss://api.pegana.xyz/v1/ws");
+
+ws.on("open", () => console.log("connected"));
+ws.on("message", (data) => {
+  const msg = JSON.parse(data.toString());
+  console.log(msg);
+});
+```
+
+Prefer a typed helper? The first-party SDKs wrap this feed and handle the
+subscribe/heartbeat framing for you — TypeScript `PegFeed` / `connectPegFeed`
+(`@peganahq/sdk-ts`) and Python `peg_feed()` (`pegana-sdk`). Works from the browser
+too (`globalThis.WebSocket`), Node, and Bun.
+
+No auth, no key. Origin header is checked against an allowlist —
+`https://pegana.xyz`, `https://www.pegana.xyz`, `http://localhost:3000` by default.
+Add more origins via the `CORS_EXTRA_ORIGINS` env var on self-hosted instances.
+
+## Message shapes
+
+All messages are JSON, single-line per frame. The `op` field discriminates.
+
+### Server → client: state update
+
+```json
+{
+  "op": "update",
+  "asset": "jitoSOL",
+  "payload": {
+    "state": "DRIFT",
+    "discount": "0.0034",
+    "intrinsic_usd": "213.42",
+    "market_usd": "212.69",
+    "updated_at": "2026-05-26T14:32:11.204Z"
+  }
+}
+```
+
+Pushed on **every engine recompute** for the asset, typically several times a minute per
+asset, whether or not the state changed. Most frames repeat the previous `state`; to react
+only to transitions, compare `payload.state` with the last value you saw for that `asset`.
+The envelope carries the `asset` symbol; `payload` carries the current `state`, the
+smoothed `discount` (raw sign: `1 − market / intrinsic`, positive = below fair value), the
+two underlying values (`intrinsic_usd`, `market_usd`), and `updated_at`. There is no
+`previous_state` or `confidence` field on this frame — fetch the prior state from
+your own last-seen value, and use [`/v1/assets/{symbol}/state`](/guides/rest-api)
+for the confidence score.
+
+Two optional details on update frames:
+
+- `market_observed_at` is a nullable string in the same millisecond-precision UTC format as
+  `updated_at` (`YYYY-MM-DDTHH:MM:SS.mmmZ`). It appears only when the server has the
+  dark-market gate enabled, and tells you when the market price was last observed.
+- `state_reason` explains an `UNKNOWN` state; see the table below.
+
+| `state_reason` | Meaning (state is `UNKNOWN`) |
+| --- | --- |
+| `stale_source` | REST only. No fresh snapshot for 15 minutes: the data feed stopped. |
+| `premium_sanity` | A premium above 10% on an LST or yield-bearing stable, which points to a broken reference rather than a real price. |
+| `discount_sanity` | A discount above 30% on an LST or yield-bearing stable, which points to a broken reference price rather than a real depeg. |
+| `pyth_confidence_gate` | A Pyth price the asset depends on was too uncertain (confidence wider than 5% of the price) to trust. |
+| `intrinsic_liveness` | The asset's reference value (an LST's pool rate) stopped updating (guard off by default). |
+| `market_unavailable` | No usable market price was available (the engine's dark-market guard, when switched on). On REST it can also appear without any guard when the market feed has gone quiet. |
+| `market_reference_divergence` | The market price disagrees with the independent reference price too much to trust. |
+| `depth_below_floor` | The market's liquidity depth is below the minimum needed to trust its price. |
+| `premium_hold_timeout` | A premium that could not be independently confirmed was holding a depeg-level state for longer than the allowed window, so the state went unknown instead of relaxing to PEGGED. |
+
+`market_reference_divergence`, `depth_below_floor` and `premium_hold_timeout` come from guards that are **off by default**. `market_unavailable` can appear without any guard when the market feed has gone quiet, and the engine can also emit it when its dark-market guard (off by default) is switched on. Treat any `state_reason` you do not recognise as "state unknown, reason new".
+
+Values use the same wire format as REST: decimals are strings with trailing zeros
+trimmed, `discount` has the same 6-decimal precision `/v1/assets` serves, and
+timestamps are RFC 3339 UTC with millisecond precision.
+
+The stream covers every asset the engine computes, which can include assets that are not
+listed on `GET /v1/assets` (for example `xSOL`, which is computed but kept off the peg
+surface). If you only care about listed assets, filter frames against the symbols you got
+from `GET /v1/assets`.
+
+### Server → client: heartbeat
+
+```json
+{
+  "op": "heartbeat",
+  "ts": "2026-05-26T14:32:16.009Z"
+}
+```
+
+Every 5 seconds. Use this to detect connection death — if you go 15s without any
+frame (update or heartbeat), drop and reconnect.
+
+### Server → client: error
+
+```json
+{
+  "op": "error",
+  "msg": "malformed: unknown variant `subscribe_all`, expected one of …"
+}
+```
+
+Returned on bad input. Connection stays open.
+
+### Client → server: ping
+
+```json
+{ "op": "ping" }
+```
+
+Server responds with `{ "op": "pong" }`. Optional — heartbeats already keep the
+connection alive on most NAT/proxy configurations.
+
+### Client → server: subscribe / unsubscribe
+
+```json
+{ "op": "subscribe", "assets": ["USDC", "jitoSOL"] }
+```
+
+In v1 these do **not filter anything**: the server broadcasts updates for every asset to
+every connection. Filter client-side by inspecting `msg.asset`. Per-asset subscription is
+planned for v2.
+
+What the server answers today, so your parser is not surprised:
+
+- `subscribe` is acknowledged with an `update` frame whose `asset` is the literal string
+  `"system"` and whose `payload` has no `state`:
+
+  ```json
+  {
+    "op": "update",
+    "asset": "system",
+    "payload": {
+      "msg": "subscribed",
+      "count": 2,
+      "note": "v1 broadcasts all updates; client-side filter recommended"
+    }
+  }
+  ```
+
+  Skip frames with `asset === "system"` (or without `payload.state`) before treating a frame
+  as a peg reading, otherwise you will record a phantom asset named `system`.
+- `unsubscribe` is answered with `{ "op": "pong" }`.
+- A frame that is not valid JSON or has an unknown `op` gets an `error` frame
+  (`"msg": "malformed: …"`); the connection stays open.
+
+## Connection limits
+
+- **Per-IP cap:** 20 concurrent connections. Beyond that, handshakes return `429`.
+- **Handshake budget:** 30 accepted handshakes per minute per address. Exceeding it returns
+  `429` with `ws_rate_limited` and a `Retry-After` header. A connection rejected by a
+  concurrency cap does not use this budget.
+- **Client messages:** at most 4 KiB per message and frame. A `subscribe` request accepts
+  at most 256 asset names; a larger list receives an `error` frame.
+- **Capacity:** above 10,000 open sockets in total the server answers new handshakes with
+  `503`; retry with backoff.
+- **Slow readers:** a client that cannot receive an outbound frame within 10 seconds is
+  disconnected.
+- **Idle timeout:** if the server receives nothing from your client for 120 seconds, it
+  sends a WebSocket protocol ping and closes the connection if no frame arrives within the
+  next 30 seconds. Standard clients (browser `WebSocket`, `ws`, `websockets`) answer protocol
+  pings automatically, so they stay connected indefinitely; a hand-rolled client must reply
+  to the ping or send its own `{ "op": "ping" }` at least every two minutes.
+- **Shared IPs:** IPv6 addresses are grouped by their /64 prefix. The cap is per source
+  address or IPv6 /64, so every open Pegana dashboard tab, script and
+  notebook behind the same NAT or office network counts toward the same 20. If you get `429`
+  while developing, close other tabs or connections on that network first.
+
+## Reconnect strategy
+
+Recommended client logic:
+
+```typescript
+function connect() {
+  const ws = new WebSocket("wss://api.pegana.xyz/v1/ws");
+  let lastFrame = Date.now();
+
+  ws.on("message", (data) => {
+    lastFrame = Date.now();
+    // handle msg
+  });
+
+  // Hardstop if no frame in 15s
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastFrame > 15_000) {
+      ws.terminate();
+    }
+  }, 5_000);
+
+  ws.on("close", () => {
+    clearInterval(watchdog);
+    setTimeout(connect, jitter(1_000, 5_000));   // backoff with jitter
+  });
+}
+
+connect();
+```
+
+## What about historical data?
+
+The WebSocket is **stream-only**. For history, use
+[`/v1/assets/{symbol}/history`](/guides/rest-api). A common pattern is to fetch the
+last 24h via REST on connect, then maintain real-time via WebSocket.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="REST API" icon="arrow-up-right-from-square" href="/guides/rest-api">
+    Poll state, history and audit receipts.
+  </Card>
+  <Card title="MCP for agents" icon="code" href="/guides/mcp">
+    Native MCP tool for Claude, Cursor, Cline.
+  </Card>
+</CardGroup>

@@ -1,0 +1,37 @@
+{
+  "assets_toml_canonical": "[[assets]]\nclass = \"lst\"\ndecimals = 9\nmint = \"J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn\"\nname = \"Jito Liquid Staking\"\npeg_target = \"SOL\"\npyth_feed_id = \"0x67be9f519b95cf24338801051f9a808eff0a578ccb388db73b7f6fe1de019ffb\"\nsymbol = \"jitoSOL\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nkind = \"sanctum_lst\"\nsymbol = \"jitoSOL\"\n\n[assets.market]\nkind = \"jupiter_usd\"\nnumeraire = \"SOL\"\nnumeraire_feed = \"SOL/USD\"\n\n[assets.thresholds_bps]\ncritical = 250\ndepeg = 110\ndrift = 45\n\n[[assets]]\nclass = \"lst\"\ndecimals = 9\nmint = \"mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So\"\nname = \"Marinade staked SOL\"\npeg_target = \"SOL\"\npyth_feed_id = \"0xc2289a6a43d2ce91c6f55caec370f4acc38a2ed477f58813334c6d03749ff2a4\"\nsymbol = \"mSOL\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nkind = \"sanctum_lst\"\nsymbol = \"mSOL\"\n\n[assets.market]\nkind = \"jupiter_usd\"\nnumeraire = \"SOL\"\nnumeraire_feed = \"SOL/USD\"\n\n[assets.thresholds_bps]\ncritical = 250\ndepeg = 100\ndrift = 40\n\n[[assets]]\nclass = \"lst\"\ndecimals = 9\nmint = \"bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1\"\nname = \"BlazeStake Staked SOL\"\npeg_target = \"SOL\"\npyth_feed_id = \"0x89875379e70f8fbadc17aef315adf3a8d5d160b811435537e03c97e8aac97d9c\"\nsymbol = \"bSOL\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nkind = \"sanctum_lst\"\nsymbol = \"bSOL\"\n\n[assets.market]\nkind = \"jupiter_usd\"\nnumeraire = \"SOL\"\nnumeraire_feed = \"SOL/USD\"\n\n[assets.thresholds_bps]\ncritical = 250\ndepeg = 110\ndrift = 45\n\n[[assets]]\nclass = \"lst\"\ndecimals = 9\nmint = \"5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm\"\nname = \"Infinity\"\npeg_target = \"SOL\"\npyth_feed_id = \"0xf51570985c642c49c2d6e50156390fdba80bb6d5f7fa389d2f012ced4f7d208f\"\nsymbol = \"INF\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nkind = \"sanctum_lst\"\nsymbol = \"INF\"\n\n[assets.market]\nkind = \"jupiter_usd\"\nnumeraire = \"SOL\"\nnumeraire_feed = \"SOL/USD\"\n\n[assets.thresholds_bps]\ncritical = 560\ndepeg = 280\ndrift = 140\n\n[[assets]]\nclass = \"stable_fiat\"\ndecimals = 6\nmint = \"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\"\nname = \"USD Coin\"\npeg_target = \"USD\"\npyth_feed_id = \"0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a\"\nsymbol = \"USDC\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nkind = \"fixed_1_usd\"\n\n[assets.market]\nfeed = \"USDC/USD\"\nkind = \"pyth_spot\"\n\n[assets.thresholds_bps]\ncritical = 200\ndepeg = 50\ndrift = 15\n\n[[assets]]\nclass = \"stable_fiat\"\ndecimals = 6\nmint = \"Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB\"\nname = \"Tether\"\npeg_target = \"USD\"\npyth_feed_id = \"0x2b89b9dc8fdf9f34709a5b106b472f0f39bb6ca9ce04b0fd7f2e971688e2e53b\"\nsymbol = \"USDT\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nkind = \"fixed_1_usd\"\n\n[assets.market]\nfeed = \"USDT/USD\"\nkind = \"pyth_spot\"\n\n[assets.thresholds_bps]\ncritical = 200\ndepeg = 50\ndrift = 15\n\n[[assets]]\nclass = \"stable_fiat\"\ndecimals = 6\nmint = \"2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo\"\nname = \"PayPal USD\"\npeg_target = \"USD\"\npyth_feed_id = \"0xc1da1b73d7f01e7ddd54b3766cf7fcd644395ad14f70aa706ec5384c59e76692\"\nsymbol = \"PYUSD\"\ntoken_program = \"token_2022\"\nverified = true\n\n[assets.intrinsic]\nkind = \"fixed_1_usd\"\n\n[assets.market]\nkind = \"jupiter_usd\"\nnumeraire = \"USDC\"\nnumeraire_feed = \"USDC/USD\"\n\n[assets.thresholds_bps]\ncritical = 200\ndepeg = 50\ndrift = 15\n\n[[assets]]\nclass = \"stable_dn\"\ndecimals = 9\nmint = \"DEkqHyPN7GMRJ5cArtQFAWefqbZb33Hyf6s5iCwjEonT\"\nname = \"Ethena USDe\"\npeg_target = \"USD\"\npyth_feed_id = \"0x6ec879b1e9963de5ee97e9c8710b742d6228252a5e2ca12d4ae81d7fe5ee8c5d\"\nsymbol = \"USDe\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nkind = \"fixed_1_usd\"\n\n[assets.market]\nkind = \"jupiter_usd\"\nnumeraire = \"USDC\"\nnumeraire_feed = \"USDC/USD\"\n\n[assets.thresholds_bps]\ncritical = 300\ndepeg = 100\ndrift = 25\n\n[[assets]]\nclass = \"stable_cdp\"\ndecimals = 6\nmint = \"USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA\"\nname = \"Sky Dollar\"\npeg_target = \"USD\"\npyth_feed_id = \"0x77f0971af11cc8bac224917275c1bf55f2319ed5c654a1ca955c82fa2d297ea1\"\nsymbol = \"USDS\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nkind = \"fixed_1_usd\"\n\n[assets.market]\nkind = \"jupiter_usd\"\nnumeraire = \"USDC\"\nnumeraire_feed = \"USDC/USD\"\n\n[assets.thresholds_bps]\ncritical = 250\ndepeg = 75\ndrift = 20\n\n[[assets]]\nclass = \"stable_yield\"\ndecimals = 9\nmint = \"Eh6XEPhSwoLv5wFApukmnaVSHQ6sAnoD9BmgmwQoN2sN\"\nname = \"Ethena Staked USDe\"\npeg_target = \"USD\"\npyth_feed_id = \"0xca3ba9a619a4b3755c10ac7d5e760275aa95e9823d38a84fedd416856cdba37c\"\nsymbol = \"sUSDe\"\ntoken_program = \"spl\"\nverified = true\n\n[assets.intrinsic]\nfeed = \"SUSDE/USDE.RR\"\nkind = \"pyth_redemption_rate\"\n\n[assets.market]\nfeed = \"SUSDE/USD\"\nkind = \"pyth_spot\"\n\n[assets.thresholds_bps]\ncritical = 300\ndepeg = 100\ndrift = 30\n",
+  "expected_computed": {
+    "confidence_label": "unknown",
+    "discount_raw": "0.0082557586977244053493377456",
+    "discount_smooth": "0.0064046360963308508497910607",
+    "final_state": "DRIFT"
+  },
+  "expected_receipt_sha256": "aa9574ab07f553663a237fa4b77950958f3a0de7cf842bc5bb3f4a7fa4223d1e",
+  "inputs_frozen": {
+    "alpha": "0.3",
+    "asset": "mSOL",
+    "candidate_since": "2025-10-10T21:41:00Z",
+    "candidate_state": "DRIFT",
+    "class": "lst",
+    "confirm_up_secs": 30,
+    "decay_down_secs": 120,
+    "ewma_prev": "0.0056112978385907560642710528",
+    "hyusd_cr": null,
+    "intrinsic_sol": "1.3315534",
+    "intrinsic_usd": "247.302225216800198",
+    "market_sol": "1.3205604164364654957941111371",
+    "market_usd": "245.26055772",
+    "now": "2025-10-10T21:42:00Z",
+    "previous_state": "PEGGED",
+    "pyth_entries": {},
+    "threshold_kind": "bps",
+    "thresholds": {
+      "critical": 250,
+      "depeg": 100,
+      "drift": 40
+    }
+  },
+  "methodology_git_sha": null,
+  "methodology_version": "0.8.0",
+  "schema_version": "v2"
+}

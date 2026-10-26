@@ -1,0 +1,83 @@
+[package]
+name        = "pegana-replay"
+# CLI release version. The CLI's verify-IDENTITY is the embedded
+# `pegana_methodology::methodology_version()` — verify() matches
+# receipt.methodology_version against that embedded value, else exit(3)
+# VERSION_MISMATCH (no in-binary multi-version dispatch — ADR-0028).
+# v0.4.4 (2026-07-08) embeds methodology 0.6.1 (checked bps-scaling in the
+# NAV-sanity + classification path — three more sites of the same overflow
+# class fixed in 0.6.0) so it verifies 0.6.1 receipts. Exact-match version
+# check (ADR-0028) means even a same-day 0.6.0 receipt needs pinning: `cargo
+# install pegana-replay@0.4.3` for 0.6.0, `@0.4.2` for 0.5.0, `@0.4.1` for
+# 0.4.0. The installer fetches the LATEST release so `curl|sh` ships this
+# (0.6.1) binary; older receipts need the pin.
+# v0.5.0 (ADR-0033): --alert-id now verifies the on-chain anchor BY DEFAULT
+# (was opt-in via --verify-onchain). --offline is the new escape hatch for
+# CI / air-gapped hosts. --verify-onchain is kept as a back-compat no-op.
+# New exit code 5 = ONCHAIN_INCOMPLETE (RPC down, or anchor still pending
+# its 24h commit window) — distinct from exit 4 ONCHAIN_MISMATCH (a real
+# signer/memo failure). No methodology or receipt-schema change.
+# @0.5.0 also now embeds methodology 0.7.0 (Pyth confidence-gate, ADR-0032) —
+# same CLI binary/version as the ADR-0033 on-chain-by-default change above;
+# only the `pegana-methodology` dependency pin moved 0.6.1 -> 0.7.0. No CLI
+# behavior change; verify() still exact-matches receipt.methodology_version
+# (ADR-0028) against the embedded 0.7.0. Older 0.6.1 receipts still need
+# `cargo install pegana-replay@0.4.4` pinned, same as before this bump.
+# v0.5.1 (2026-07-23): VERSION_MISMATCH hint now points to `cargo install
+# pegana-replay` (crates.io) instead of the dead `releases.pegana.xyz/install.sh`
+# (DNS 404) piped with a `PEGANA_REPLAY_VERSION` var the installer ignored — the
+# "verify it yourself" remediation was broken for the common mismatch case. Docs-
+# /hint-only; no methodology, receipt-schema, or verify behavior change (still
+# embeds methodology 0.7.0, exact-match per ADR-0028).
+# v0.5.2 (2026-07-30): --json emits ONE machine-readable verdict on stdout
+# ({status, exit_code, alert_id, methodology_version, receipt_sha256, onchain})
+# at every terminal point, and PASS/FAIL is colored on TTYs (honors NO_COLOR).
+# Purely additive: exit codes 0-5 and the verify path are untouched, and it
+# still embeds methodology 0.7.0 (exact-match per ADR-0028), so 0.5.1 and 0.5.2
+# verify exactly the same receipts. Cut as 0.5.2 rather than re-tagging 0.5.1
+# because 0.5.1 is already published to crates.io WITHOUT --json.
+version     = "0.6.0"
+edition     = "2021"
+description = "Recomputes a Pegana alert receipt's canonical SHA-256 and, by default, cross-checks its on-chain SPL Memo anchor against a pinned signer (skip via --offline); re-derives the verdict from frozen inputs for schema-v2 receipts."
+license     = "MIT"
+repository  = "https://github.com/PeganaHQ/ReplayCLI"
+keywords    = ["pegana", "audit", "verify", "solana"]
+categories  = ["command-line-utilities"]
+
+[features]
+# Enables tests that read files from the workspace root (e.g. ../../docs/backtests/...).
+# Off by default so the published crate on crates.io is self-contained.
+workspace-tests = []
+
+[[bin]]
+name = "pegana-replay"
+path = "src/main.rs"
+
+[dependencies]
+pegana-methodology   = { path = "../methodology", version = "0.8.0" }
+# Public carve-out (replaces pegana-common). The replay CLI only touches the
+# verifier-safe types (AssetsFile parsing, AlertEvidence deserialization);
+# server-side primitives stay in the closed pegana-common crate.
+pegana-common-verify = { path = "../common-verify", version = "0.1.1" }
+clap               = { version = "4", features = ["derive", "env"] }
+reqwest            = { workspace = true }
+serde_json         = { workspace = true }
+rust_decimal       = { workspace = true }
+toml               = { workspace = true }
+tokio              = { workspace = true, features = ["rt-multi-thread", "macros"] }
+anyhow             = { workspace = true }
+uuid               = { workspace = true }
+solana-rpc-client       = { workspace = true }
+solana-sdk               = { workspace = true }
+# Wave 8 review fix: needed for --verify-onchain memo decode (JsonParsed encoding).
+solana-transaction-status = "2"
+
+[dev-dependencies]
+tempfile     = "3"
+chrono       = { workspace = true }
+tokio        = { workspace = true, features = ["macros", "rt-multi-thread"] }
+wiremock     = "0.6"
+# Test-only: builds a real EncodedConfirmedTransactionWithStatusMeta fixture
+# for the mocked Solana JSON-RPC getTransaction response (ParsedAccount /
+# ParsedInstruction aren't re-exported by solana-transaction-status itself).
+solana-transaction-status-client-types = "2"

@@ -1,0 +1,42 @@
+# gitleaks false positives, verified 2026-08-10 by `scripts/secret-scan.sh`.
+#
+# DISCIPLINE (adopted from solana-foundation/tokens): every entry is an EXACT
+# `commit:path:rule:line` fingerprint. Never ignore a whole rule, and never a
+# whole file — either would silently swallow a future real leak in the same
+# place. Entries stay even after the file changes or is deleted, because the
+# history scan still walks the commit that contained them.
+#
+# Before adding a line here, confirm the value is genuinely not a credential.
+# If it IS one, the fix is to ROTATE it. Adding it here instead just hides a
+# live leak: anything ever pushed remains recoverable from any clone, and
+# rewriting history does not un-leak what has already been fetched.
+#
+# All 7 entries below are hardcoded test fixtures with self-evident dummy
+# values ("test-secret-at-l…", "dummy…") or an explicitly documented staging
+# placeholder. None has ever been a production credential.
+
+# dispatcher-rs webhook tests — `bot_internal_secret: "test-secret-at-l…"`,
+# a fixture literal in a test that never touches a live service.
+34c19e3d06a142f9fde92e1bd937974f1c5bc603:crates/dispatcher-rs/tests/webhook_dispatch_headers.rs:generic-api-key:59
+34c19e3d06a142f9fde92e1bd937974f1c5bc603:crates/dispatcher-rs/tests/webhook_dispatch_headers.rs:generic-api-key:160
+1907080d45aed10b542bef769f0411b2f3f07396:crates/dispatcher-rs/tests/webhook_channel_dispatch.rs:generic-api-key:45
+
+# mcp-ts middleware unit test — `"dummy"` auth values used to exercise the
+# rejection paths.
+1afbe20eb4a49b6bbcd1b7cf0112830c2b69d70a:mcp-ts/test/unit/middleware.test.ts:generic-api-key:219
+1afbe20eb4a49b6bbcd1b7cf0112830c2b69d70a:mcp-ts/test/unit/middleware.test.ts:generic-api-key:220
+
+# docker-compose.local.yml — PEGANA_WEBHOOK_SIGNING_KEY for the local prod-like
+# overlay. The line above it in the file reads "Staging dummy: base64 of 32
+# random bytes. NOT a production key."
+7f7a9a7605cc9d3daa0cf43b6377a5d2d310f919:docker-compose.local.yml:generic-api-key:86
+
+# web-e2e workflow — a placeholder value in a CI job's env block.
+eddb228feb3bb46a034a2e06d2d420e58d40ddfb:.github/workflows/web-e2e.yml:generic-api-key:136
+
+# tokens_xyz_risk.rs test fixture — the jitoSOL MINT ADDRESS
+# (J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn) inside the decoded-payload
+# test. A base58 Solana mint is 32-44 chars and pattern-matches gitleaks'
+# generic-api-key heuristic. It is public on-chain data, not a credential:
+# it is the same string that appears in assets.toml and every explorer.
+0ac4c0067e5f6aae808a959a0ca962fdf07d54d7:crates/indexer-rs/src/sources/tokens_xyz_risk.rs:generic-api-key:429

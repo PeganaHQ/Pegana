@@ -1,0 +1,87 @@
+---
+title: "Peg risk 101"
+description: "What it means for an asset to be 'pegged', why pegs break, and how peg risk shows up across the Solana asset classes Pegana tracks."
+---
+
+A "peg" is a promise. An asset is **pegged** to a target — $1, the SOL it represents,
+or the NAV of an underlying fund — because there is some mechanism that lets a holder
+redeem the asset for that target value, or arbitrage the price back when it drifts.
+
+**Peg risk** is the gap between the promise and the redemption path actually working.
+
+## Why pegs break
+
+In every depeg event we've documented, the cause is one of three things:
+
+1. **The redemption mechanism failed.** USDC during the SVB weekend (the bank holding
+   the reserves was in receivership). UST in May 2022 (the mint/burn flywheel went
+   reflexive). Any LST whose stake pool pauses redemptions.
+
+2. **The market priced doubt faster than redemption could catch up.** mSOL in June
+   2022 — Marinade's on-chain redemption never moved, but a thin DEX pool printed a
+   panic price for four minutes and an oracle ingested it.
+
+3. **The mechanism was always asymmetric.** Aave's GHO at launch (mint cap, no PSM)
+   floated below par for 8 months because arbitrage could only push the price down.
+
+The first kind is the one most monitors are designed for. The second and third hurt
+more, because they look like normal market noise until they don't.
+
+## Seven asset classes, seven peg shapes
+
+Pegana tracks 66 assets across all seven peg shapes below
+(`assets.toml` keys in parentheses) — FX-pegged is live too (`EURC`).
+Each shape has a different way of breaking.
+
+| Class | Peg target | Common break mode |
+| --- | --- | --- |
+| **SOL-pegged LSTs** (`lst`) | Stake-pool `sol_value` | Thin venue stress, validator slashing |
+| **Fiat stables** (`stable_fiat`) | $1 redemption claim | Reserve composition shock (SVB-style) |
+| **Yield-bearing** (`stable_yield`) | Issuer-published NAV | NAV itself drops; negative funding for sUSDe |
+| **CDP-collateralized** (`stable_cdp`) | $1 backed by collateral above CR floor | CR slides below 130%; SOL volatility |
+| **Delta-neutral** (`stable_dn`) | $1 via funding-arb perp short | Funding regime flip; basis shock |
+| **FX-pegged** (`stable_fx`) | Issuer redemption claim in non-USD currency | FX volatility, issuer liquidity |
+| **Leveraged synthetic** (`synth_lev`) | Design-intended leverage ratio | Mechanism re-balance, oracle stress |
+
+See [LST peg drift](/concepts/lst-peg-drift) for a deep read on the SOL-pegged LST
+case, and [yield-bearing NAV oracles](/concepts/yield-bearing-nav-oracles) for the
+yield-bearing case.
+
+## "Depeg" isn't binary
+
+A USDC trading at $0.998 has a small temporary spread driven by a Curve pool
+imbalance — not a depeg. USDC trading at $0.87 over a weekend, with intrinsic at
+$1.00 and no redemption path until Monday — that's a depeg.
+
+The difference is **state** and **persistence**. Pegana resolves this with a
+5-state FSM (PEGGED / DRIFT / DEPEG / CRITICAL / BLACK_SWAN), hysteresis dwell timers
+(30s entry, 120s exit), and per-asset thresholds calibrated to each asset's noise
+profile. A 30 bps spread is DRIFT on jitoSOL and noise on INF.
+
+See [state machine](/concepts/state-machine) for the FSM, and
+[hysteresis FSM](/concepts/hysteresis-fsm) for why entry and exit thresholds differ.
+
+## What Pegana is not
+
+- **Not a stop-loss oracle.** We publish state, not "sell now" signals.
+- **Not a single-source liquidation feed.** Cross-check with Pyth/Switchboard for
+  liquidation pricing. See [honesty about limits](/methodology/honesty).
+- **Not a price oracle.** For "fair price," use Pyth or Switchboard. We are a *state*
+  oracle — the question we answer is "is this asset still doing what it promises."
+
+## Where to read next
+
+<CardGroup cols={2}>
+  <Card title="Intrinsic vs market" icon="scale-balanced" href="/concepts/intrinsic-vs-market">
+    The two-numbers framing every Pegana signal is built on.
+  </Card>
+  <Card title="State machine" icon="diagram-project" href="/concepts/state-machine">
+    The five states, transitions, and what each state means.
+  </Card>
+  <Card title="LST peg drift" icon="layer-group" href="/concepts/lst-peg-drift">
+    Why LSTs drift differently from stables, and what the signal looks like.
+  </Card>
+  <Card title="Case studies" icon="book-open" href="/case-studies/overview">
+    Five real depegs analyzed end-to-end.
+  </Card>
+</CardGroup>

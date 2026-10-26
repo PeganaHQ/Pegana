@@ -1,0 +1,156 @@
+---
+title: "Intrinsic value"
+description: "What an asset is supposed to be worth, per its own mechanism. Different formula per asset class."
+---
+
+Intrinsic value is the answer to "what should 1 unit of this asset return if I redeem
+it through the canonical path?" — not the secondary market, not the DEX, the redemption
+mechanism itself.
+
+It is **always quoted in USD** at the engine boundary (so spreads are comparable), but
+each asset class has a different source of truth.
+
+## SOL-pegged LSTs
+
+Source: **Sanctum's** `sol_value` per LST mint — or, for LSTs outside the Sanctum
+registry, a direct **on-chain SPL stake-pool read** (`total_lamports / pool_token_supply`).
+
+```text
+intrinsic_sol(LST) = sanctum.sol_value(LST mint)
+intrinsic_usd(LST) = intrinsic_sol × pyth.SOL/USD
+```
+
+Polled every 15s. Each LST has its own deterministic `sol_value` — for jitoSOL today,
+1 jitoSOL ≈ 1.18 SOL because the underlying stake pool has accrued staking + MEV
+rewards since the asset was minted.
+
+We track **43 LSTs** — major Sanctum-registry pools (`jitoSOL`, `mSOL`, `bSOL`, `INF`,
+`JupSOL`, `BNSOL`, `PSOL`, `JSOL`, `hSOL`, …) plus the Hylo LSTs (`hyloSOL`, `hyloSOL+`).
+LSTs not in Sanctum's registry — e.g. `STKESOL`, `rkuSOL`, `corvusSOL` — use the
+on-chain stake-pool read described above instead. The full live list is always
+[`GET /v1/assets`](/guides/rest-api).
+
+## Fiat stables
+
+Source: the **issuer's contract** = `$1`, no exception.
+
+USDC, USDT, PYUSD, USDG, USD1, USDu, CASH peg to $1 by design. The intrinsic is therefore
+constant. The signal lives entirely on the market side — if USDC trades at $0.998, that's
+a `-2 bps` spread; if it trades at $0.87 (the 2023 SVB weekend), that's `-1300 bps`.
+
+`USDS` (a CDP-style stable, `stable_cdp`) and `USDe` (a delta-neutral synthetic stable,
+`stable_dn`) are **not** fiat stables — their intrinsic is not a flat issuer-contract $1.
+They are covered by the CDP and delta-neutral paths, not this group.
+
+We do not introduce a hardcoded `1.0` in the schema — the intrinsic comes from the
+configured peg target (`USD`, `EUR`, etc.) and is read like any other FX rate.
+
+## Yield-bearing NAV stables
+
+Source: the issuer's own NAV, read from wherever the issuer publishes it:
+
+- **Issuer contract on Ethereum**, read with a plain `eth_call` (USDY, sUSDe). USDY
+  uses Ondo's `RWADynamicOracle.getPrice()`; sUSDe uses the sUSDe ERC-4626 vault's
+  `convertToAssets(1e18)` (USDe per sUSDe, with USDe treated as $1). The call is pinned
+  to a block no more than 180s old. At least two of three independent public RPCs
+  must agree within 10 bps, or nothing is published; one answering RPC is never enough.
+- **On-chain Solana decode**: the Jupiter Perpetuals pool (JLP:
+  `aum_usd / JLP supply`, read together in one call, refused if the pool's AUM has not
+  been refreshed for 5 minutes), the mint's Token-2022 InterestBearing extension
+  (sUSD), or the Perena vault's `mint_share_price` (`USD*`, with the vault's
+  `last_update_ts` as the liveness signal).
+- **Pyth Redemption Rate** feeds, for issuers that still publish one there (for
+  example syrupUSDC).
+
+```text
+intrinsic_usd(USDY)  = eth_call(ondo.RWADynamicOracle.getPrice()) / 1e18
+intrinsic_usd(sUSDe) = eth_call(sUSDe.convertToAssets(1e18)) / 1e18
+intrinsic_usd(JLP)   = perps_pool.aum_usd / jlp_mint.supply
+intrinsic_usd(sUSD)  = decode_token_2022_rebasing(sUSD_mint)
+```
+
+The market leg never comes from the issuer's own mint or redeem route: the Jupiter
+quote for `USD*` excludes `Perena Star V2`, Perena's own share swap. `USD*` has no
+independent deep market yet, so it stays monitoring-only and reads `UNKNOWN`.
+
+JLP is the exception to read with care. Its market leg is the Pyth JLP/USD spot price,
+whose derivation Pyth does not document, and JLP can be minted and redeemed at the pool
+NAV through the Jupiter Perpetuals program. That market price is therefore likely
+arbitrage-coupled to the NAV rather than independent of it, so a JLP discount is weaker
+evidence than for an asset with its own market. The wide 200 bps drift band is the guard. sUSDe has only about $2.4k of
+liquidity on Solana, so its market leg is a **global** sUSDe price, not a Solana-venue
+price.
+
+The NAV grows over time: USDY's NAV sat around $1.15 as of 2026-10 because the
+underlying T-bill strategy has kept earning since launch. Treating these as $1-pegged would systematically
+under-value the position.
+
+For issuers that haven't published a Pyth feed yet, we scrape the dashboard NAV and tag
+the asset `verified=false` in `assets.toml` until a real feed lands. (Piggybank `pbUSDC`
+was an example of this path but was **deactivated 2026-06-01** — only a thin dust DEX pair
+remained, so its prices were no longer reliable.)
+
+## CDP-style stables
+
+Source: **on-chain decode** of the protocol's collateral state.
+
+For Hylo's hyUSD:
+
+```text
+total_sol = decode(hylo.exchange_pda.total_sol_cache.total_sol)
+collateral_usd = total_sol × pyth.SOL/USD
+intrinsic_usd(hyUSD) = collateral_usd / supply(hyUSD mint)
+```
+
+Polled every 30s. The intrinsic here is effectively the collateral ratio — a hyUSD
+that trades at $1.000 with a 130% CR is in a different risk state than a hyUSD that
+trades at $1.000 with a 160% CR.
+
+See [Hylo CDP CR signal](/concepts/hylo-cdp-cr-signal) for the alert mapping.
+
+## FX-pegged assets
+
+Source: the **EUR/USD spot rate from two free public venues**, multiplied by the
+issuer's redemption claim.
+
+A EUR-pegged stable should redeem at `EUR/USD` per token. Drift from that is the spread.
+
+```text
+eur_usd = median(kraken.EURUSD mid(bid, ask), coinbase.exchange_rates(EUR).USD)
+```
+
+Both venues must answer and agree within 10 bps. If either one is missing or they
+disagree, nothing is published and the asset ages out to stale. We track EURC (Circle
+Euro Coin), the live EUR-pegged asset: its intrinsic redeems at `eur_usd` per token.
+EURC is monitoring_only and dark on the forex weekend. Spot FX does not trade from
+Friday ~22:00 to Sunday ~22:00 UTC, so we do not publish an FX intrinsic between
+Fri 20:30 and Sun 22:30 UTC (a buffer that covers both DST regimes), even though crypto
+venues keep quoting. That staleness is expected, not an outage.
+
+## Why one source per class
+
+Two reasons:
+
+1. **Determinism.** When you ship a single alert that says "USDC entered DEPEG at
+   14:32:11," subscribers need to be able to reproduce that decision from raw inputs.
+   A blended price (Pyth + DEX1 + DEX2, weighted somehow) is reproducible only with
+   the weighting algorithm published — and even then is harder to argue from.
+
+2. **Failure mode honesty.** If Sanctum's `sol_value` is wrong, every Pegana LST signal
+   is wrong, and we want to know loudly. If we blended Sanctum with a DEX-side LST
+   redemption proxy, a Sanctum bug would be masked by the proxy. We prefer the loud
+   failure.
+
+The cost is dependency on a single upstream. We accept it — and on divergence
+(IDL drift on Hylo, a stale Pyth push account, polling staleness on Sanctum) the engine
+**skips the recompute and holds the last published state** rather than emitting a
+confident-but-wrong number. (`UNKNOWN` is published at cold-start and as honest-dark on a
+detectably broken anchor — a >10% premium on a NAV-priced asset, via the NAV-sanity gate
+(ADR-0025) — not on routine staleness; containment of unreliable sources is via
+`monitoring_only` — ADR-0024.)
+
+## Next
+
+<Card title="Market value" icon="chart-line" href="/methodology/market-value">
+  How we read what the asset actually trades for.
+</Card>

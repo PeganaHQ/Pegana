@@ -1,0 +1,10 @@
+# Waiver expiry tracker — read by calibration-watch.sh --watch.
+#
+# Format: name|expiry_utc_iso|doc_path
+# The script computes days/hours until each expiry and alerts at T-7d, T-1d, T-0d.
+#
+# To add a new waiver: append a line here when a new waiver is signed.
+# To remove a waiver: delete its line when the advisory is patched or the waiver is retired.
+
+bigint-buffer-gate5|2026-12-15T00:00:00Z|docs/security/protocol-indexer-bigint-buffer-waiver.md
+rustsec-advisories|2026-12-15T00:00:00Z|docs/security/rustsec-waivers.md

@@ -1,0 +1,251 @@
+{
+	email admin@pegana.xyz
+	servers {
+		timeouts {
+			# Header read only. No body/write/idle timeouts: the API vhost
+			# proxies WebSockets that are legitimately silent for minutes,
+			# and a global idle value would close them.
+			read_header 10s
+		}
+	}
+}
+
+# Backend TLS edge on the Hostinger box (api.pegana.xyz, mcp.pegana.xyz).
+# The marketing/dashboard frontend (Next.js) is hosted on Vercel; pegana.xyz
+# and www.pegana.xyz resolve to Vercel directly and never reach this Caddy.
+# Keep Caddy single-purpose: terminate TLS for the API, WebSocket and MCP.
+#
+# Grafana is deliberately NOT served here. A grafana.pegana.xyz vhost existed,
+# but that name resolves to Vercel, so Caddy failed its ACME challenge on every
+# retry and the vhost never served. Reach Grafana over an SSH tunnel instead
+# (see the grafana service in docker-compose.yml).
+#
+# Deploy overlap: `docker compose up --force-recreate` stops the old api/mcp
+# container before the new one listens, and during that gap the upstream name
+# does not resolve ("lookup api ... server misbehaving" -> 502). lb_try_duration
+# makes Caddy hold and retry the dial for up to 30s instead of failing at once,
+# so requests wait through the swap. Retries only happen while the connection
+# cannot be established, so no request is ever sent twice.
+#
+# A request with a body (every MCP JSON-RPC call is a POST /) cannot be retried
+# unless Caddy keeps a copy of the body: the first failed dial consumes it and
+# the retry then fails with "invalid Read on closed Body" -> 502.
+# `request_buffers 1MiB` buffers the body in memory so the retry can resend it.
+# 1MiB is well above the api's 64KiB body cap (MAX_REQUEST_BODY_BYTES in
+# crates/api-rs/src/main.rs); a larger body would stream past the buffer and
+# lose the retry, but the api rejects it anyway. The @ws upgrade carries no
+# body and does not need it.
+#
+# Oversized bodies: the upstream answered a body over its 64KiB cap and closed
+# the socket while Caddy was still streaming the rest, which Caddy logged as
+# "write: broken pipe" and returned as a 502 (a misleading 5xx that counts
+# against error-rate alerting). `request_body max_size 64KiB` makes Caddy stop
+# reading at the cap and answer 413 itself, before proxying; handle_errors 413
+# gives that 413 the same JSON envelope as every other error on the vhost.
+
+api.pegana.xyz {
+	encode gzip zstd
+
+	# JSON access log (method, URI, status, duration, client IP) for the edge:
+	# per-status 429/5xx counts and per-client volume. It goes to stdout so the
+	# container's log driver (json-file, 50m x 5) rotates it and the read-only
+	# root filesystem needs no writable log volume. Credentials never reach it.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			request>headers>X-Pegana-Ssr-Token delete
+			request>headers>Authorization delete
+			request>headers>Cookie delete
+			resp_headers>Set-Cookie delete
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# This vhost only serves the JSON/WebSocket API — there is no HTML,
+		# no scripts, no images, no fonts. Defaulting every fetch directive
+		# to 'none' means a browser that lands on api.pegana.xyz (e.g.
+		# following a buggy redirect) cannot load any subresource and
+		# cannot be iframed.
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+		-Server
+	}
+
+	request_body {
+		max_size 64KiB
+	}
+	handle_errors 429 {
+		header Content-Type application/json
+		header ?Retry-After 60
+		respond `{"error":"rate_limited","message":"rate limit exceeded; retry after the window resets (see Retry-After)"}` 429
+	}
+	handle_errors 413 {
+		header Content-Type application/json
+		respond `{"error":"payload_too_large","message":"request body exceeds the 64 KiB limit"}` 413
+	}
+
+	# Vendored token and partner logos for www.pegana.xyz, served from the
+	# repo checkout instead of Vercel. On the Hobby plan every request that
+	# reaches Vercel counts against 1M CDN requests a month (cache HITs
+	# included) and a page view loads 9 to 30 of these icons. Same files, ONE
+	# source of truth: web/public/tokens and web/public/logos, bind-mounted
+	# read-only as DIRECTORIES (see the caddy service in docker-compose.yml), so
+	# a deploy's `git reset --hard` is picked up without a recreate.
+	#
+	# Only exact file names are served: tokens/<mint>.webp and logos/<slug>.svg.
+	# Anything else under /static (a directory, a dotfile, another extension) is
+	# a 404, so there is no listing and nothing else in the checkout leaks. So
+	# is a well-formed name with no file behind it, and that 404 carries no
+	# Cache-Control. A newly vendored icon is served once a box deploy (any
+	# mode) has put the file in the checkout.
+	# Only GET and HEAD. The response keeps the vhost security headers above,
+	# including CSP `default-src 'none'`, which makes an SVG opened as a
+	# top-level document inert; an <img> embed is unaffected by it.
+	#
+	# These handle blocks are mutually exclusive, so a /static request never
+	# reaches the API proxy and an API request never touches the file server.
+	# request_body stays at the site level and still caps every API request.
+	handle_path /static/* {
+		@method_not_allowed not method GET HEAD
+		handle @method_not_allowed {
+			header Allow "GET, HEAD"
+			respond 405
+		}
+
+		# The name must match AND the file must exist. Without the `file`
+		# check a missing icon reached file_server, whose 404 is an error
+		# response: it kept the cache headers below (so a browser held the
+		# 404 for days after the icon was added) but lost the site headers.
+		# A missing file now falls through to the plain 404 below.
+		@asset {
+			path_regexp ^/(tokens/[A-Za-z0-9]{32,44}\.webp|logos/[a-z0-9][a-z0-9-]*\.svg)$
+			file {
+				root /srv/static
+			}
+		}
+		handle @asset {
+			header {
+				# Keyed by mint / slug, not content-hashed: a day fresh plus a
+				# week of stale-while-revalidate, the same policy Vercel used.
+				Cache-Control "public, max-age=86400, stale-while-revalidate=604800"
+				Access-Control-Allow-Origin *
+				Cross-Origin-Resource-Policy cross-origin
+			}
+			root * /srv/static
+			file_server
+		}
+
+		handle {
+			respond 404
+		}
+	}
+
+	handle {
+		# Flood backstop only, far above the api-rs per-IP limit (300/min), so
+		# api-rs stays the authority. Requests from the web tier are exempt:
+		# Vercel egress IPs are shared and api-rs has its own SSR token budget.
+		# A request counts as the web tier only when X-Pegana-Ssr-Token equals
+		# the configured PEGANA_WEB_SSR_TOKEN exactly. With the variable unset
+		# or empty nothing is exempt, and every request gets the edge limit
+		# (the non-empty header test keeps an empty variable from matching a
+		# request that sends no header).
+		@nossr {
+			not {
+				header X-Pegana-Ssr-Token {env.PEGANA_WEB_SSR_TOKEN}
+				expression `{http.request.header.X-Pegana-Ssr-Token} != ''`
+			}
+		}
+		rate_limit @nossr {
+			zone api_clients {
+				key {remote_host}
+				events 1200
+				window 1m
+				ipv6_prefix 64
+			}
+		}
+		@ws {
+			header Connection *Upgrade*
+			header Upgrade websocket
+		}
+		reverse_proxy @ws api:8080 {
+			header_up X-Forwarded-For {remote_host}
+			lb_try_duration 30s
+			lb_try_interval 250ms
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 35s
+			}
+		}
+
+		reverse_proxy api:8080 {
+			header_up X-Forwarded-For {remote_host}
+			request_buffers 1MiB
+			lb_try_duration 30s
+			lb_try_interval 250ms
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 35s
+			}
+		}
+	}
+}
+
+# Hosted MCP server (every tool is free). Lives on the same box as the API;
+# reverse-proxies to the Bun process started by the `mcp-ts` service in
+# docker-compose.yml.
+mcp.pegana.xyz {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# The vhost serves MCP JSON-RPC (POST /), health (GET /health) and
+		# the human landing (GET /). GET /metrics is blocked below (403):
+		# Prometheus scrapes mcp-ts:8090 on the internal network. The
+		# landing uses inline styles only — no scripts, no images, no
+		# iframes. `style-src 'unsafe-inline'` permits it while keeping
+		# everything else locked down.
+		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"
+		-Server
+	}
+
+	# NOTE: no per-IP rate limit at this proxy on this vhost. mcp-ts enforces,
+	# per client IP (keyed on the X-Forwarded-For this proxy sets): 300
+	# JSON-RPC messages/min (every message and batch entry counts), 100 tool
+	# calls/min, and a batch cap of 10 entries. Over a limit it answers HTTP
+	# 429 with Retry-After: 60 (see mcp-ts/README.md, "Limits"). The custom
+	# Caddy build (ops/caddy/Dockerfile) includes the rate_limit module used
+	# on the API vhost if a proxy-level limit is ever needed here.
+
+	@metrics path /metrics
+	respond @metrics 403
+
+	# Same 64KiB cap as mcp-ts (MAX_BODY_BYTES), enforced at the edge so an
+	# oversized POST is a 413, never a "broken pipe" 502. JSON-RPC error shape,
+	# matching what mcp-ts itself returns for an oversized body.
+	request_body {
+		max_size 64KiB
+	}
+	handle_errors 413 {
+		header Content-Type application/json
+		respond `{"jsonrpc":"2.0","error":{"code":-32600,"message":"Request body exceeds 65536 bytes"},"id":null}` 413
+	}
+
+	reverse_proxy mcp-ts:8090 {
+		request_buffers 1MiB
+		lb_try_duration 30s
+		lb_try_interval 250ms
+		transport http {
+			dial_timeout 3s
+			response_header_timeout 35s
+		}
+	}
+}

@@ -1,0 +1,306 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["web/**", "*.md"]
+  pull_request:
+    branches: [main]
+    paths-ignore: ["web/**", "*.md"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Keep the runner disk in check: no debuginfo, no incremental artifacts.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_INCREMENTAL: 0
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (fmt · clippy · check · test)
+    runs-on: ubuntu-latest
+
+    # Stand up the same Postgres + Redis the integration tests expect so they
+    # actually run instead of self-skipping on unset PEGANA_INTEGRATION_*.
+    #   - Postgres: TimescaleDB image (matches prod) — migrations need the
+    #     `timescaledb` + `pgcrypto` extensions (0001_initial.sql).
+    #   - Redis: started as a step below (NOT a service container) because
+    #     service containers can't override the command to set --requirepass,
+    #     and we want the same authed URL shape as prod.
+    services:
+      postgres:
+        image: timescale/timescaledb@sha256:fd28d07eab916c2eade574fcbe49cd19fe11ea8fdb9d1c0902470cc4bedd23cc # latest-pg16, linux/amd64
+        env:
+          POSTGRES_USER: pegana
+          POSTGRES_PASSWORD: pegana
+          POSTGRES_DB: pegana
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pegana"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      REDIS_PASSWORD: ci-redis-pw
+      PEGANA_INTEGRATION_DB: postgres://pegana:pegana@localhost:5432/pegana
+      PEGANA_INTEGRATION_PG_URL: postgres://pegana:pegana@localhost:5432/pegana
+      PEGANA_INTEGRATION_REDIS: redis://default:ci-redis-pw@localhost:6379
+
+    steps:
+      - name: Free disk space
+        # The workspace build overflowed the runner disk ("No space left on
+        # device" compiling api-rs). Drop preinstalled toolchains we never use.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          shared-key: "ci-rust"
+
+      - name: Start Redis (password-protected, prod-shaped URL)
+        # Vanilla `redis` as a GH service container can't take --requirepass,
+        # so run it directly. Matches REDIS_PASSWORD / PEGANA_INTEGRATION_REDIS.
+        run: |
+          # redis:7-alpine, linux/amd64
+          docker run -d --name ci-redis -p 6379:6379 redis@sha256:9702d01c1f10c3ea9f48211b4362e44f154ff02d063e6f7268eba804059f53bf \
+            redis-server --requirepass "$REDIS_PASSWORD"
+          for ((i = 0; i < 20; i++)); do
+            if docker exec ci-redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG; then
+              echo "redis up"; break
+            fi
+            sleep 1
+          done
+
+      - name: Apply all migrations
+        # Apply migrations/*.sql in lexical order via psql. The 0021 number is
+        # intentionally skipped in the repo (0020 → 0022) — the glob simply
+        # never sees a 0021 file, so the gap is a no-op, not a failure.
+        env:
+          PGPASSWORD: pegana
+        run: |
+          for f in migrations/*.sql; do
+            echo "==> applying $f"
+            psql -v ON_ERROR_STOP=1 -h localhost -p 5432 -U pegana -d pegana -f "$f"
+          done
+
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: check
+        run: cargo check --workspace --all-targets
+
+      - name: test
+        run: cargo test --workspace --all-targets
+
+  verify-assets:
+    name: Verify mint addresses against mainnet RPC
+    runs-on: ubuntu-latest
+    needs: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          shared-key: "ci-rust"
+
+      - name: Run cargo xtask verify-assets
+        # Strict: every asset in assets.toml carries `verified = true` (no
+        # TODO entries remain), so validate them ALL against mainnet RPC —
+        # `--strict` makes an unverified mint a hard CI failure instead of a
+        # silent skip. Drop back to non-strict only if a `verified = false`
+        # entry is ever reintroduced.
+        run: cargo xtask verify-assets --file assets.toml --strict
+
+  mcp-ts:
+    name: mcp-ts (typecheck · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-ts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - name: Lint
+        run: bun run lint
+      - run: bun run test
+
+  # protocol-indexer-ts had NO CI job at all, while CLAUDE.md claimed its
+  # k-anonymity invariant was "CI-enforced by a grep-guard". It wasn't — the
+  # guard existed but nothing ran it. ADR-0036 is a PRIVACY invariant (never
+  # persist per-wallet position data), so "enforced by whoever remembers to run
+  # bun test" is not enforcement. This job makes the claim true.
+  protocol-indexer-ts:
+    name: protocol-indexer-ts (typecheck · test · ADR-0036 guard)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: protocol-indexer-ts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - name: Lint
+        run: bun run lint
+      # Runs the whole suite, which includes test/adr-0036-guard.test.ts —
+      # the grep-guard banning .owner/.authority/*ByWallet* in src/sources/.
+      - run: bun run test
+
+  # Protocol-indexer production dependency audit. BLOCKING. The one waived
+  # advisory is bigint-buffer (GHSA-3gc7-fjrx-p6mg, CVE-2025-3194): no patched
+  # upstream, and removal would strip required Kamino/Jupiter HF source
+  # behavior (ADR-0036). Compensating controls are documented in
+  # docs/security/protocol-indexer-bigint-buffer-waiver.md. Every other high
+  # advisory fails this job; upgrade the dependency instead of adding an ignore.
+  audit-protocol-indexer:
+    name: bun audit (protocol-indexer)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: protocol-indexer-ts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - run: bun install --frozen-lockfile
+      - run: bun audit --prod --audit-level=high --ignore=GHSA-3gc7-fjrx-p6mg
+
+  # mcp-ts production dependency audit. BLOCKING, no waivers: a high advisory
+  # fails the job, so upgrade the dependency instead of adding an ignore.
+  audit-mcp-ts:
+    name: bun audit (mcp-ts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mcp-ts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.14 }
+      - run: bun install --frozen-lockfile
+      - run: bun audit --prod --audit-level=high
+
+  # Mintlify serves the last good build of a page whose MDX fails to parse,
+  # silently. A stray `<1s` froze the live changelog for months (2026-07-26 to
+  # 2026-10-21). Compile every page, validate docs.json and resolve internal
+  # links so a broken page fails here instead.
+  docs-site:
+    name: docs-site (MDX compile · docs.json · internal links)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install the MDX compiler (pinned, outside the repo)
+        run: |
+          mkdir -p "$RUNNER_TEMP/docs-check"
+          cp tools/check-docs-site.mjs "$RUNNER_TEMP/docs-check/"
+          npm install --prefix "$RUNNER_TEMP/docs-check" --no-audit --no-fund \
+            @mdx-js/mdx@3.1.1 remark-gfm@4.0.1
+      - name: Check docs-site
+        run: node "$RUNNER_TEMP/docs-check/check-docs-site.mjs" docs-site
+
+  # docs/ is mirrored to the public repo. Fail if a mirrored doc names the
+  # production SSH host, a user@IP login or the deploy key path. docs/ops/,
+  # docs/runbooks/ and scripts/ are withheld from the mirror, so this job only
+  # runs on the private repository.
+  public-docs-redaction:
+    name: public docs redaction (no prod host in mirrored docs)
+    if: github.repository == 'lrafasouza/pegana'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan mirrored docs
+        if: hashFiles('scripts/tests/public-docs-redaction.test.sh') != ''
+        run: bash scripts/tests/public-docs-redaction.test.sh
+      - name: Mirror script tests (exclude parsing, leak grep, link guard)
+        if: hashFiles('scripts/tests/mirror-public.test.sh') != ''
+        run: bash scripts/tests/mirror-public.test.sh
+
+  # Shell tests for the ops scripts and promtool checks for the alert rules.
+  ops-tests:
+    name: ops scripts and alert rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Script tests
+        if: hashFiles('scripts/tests/pg-backup.test.sh') != ''
+        run: |
+          for t in pg-backup pg-restore deploy alertmanager-render provision-credentials compose-env redis-acl; do
+            echo "== $t"
+            bash "scripts/tests/$t.test.sh"
+          done
+      - name: promtool check and unit tests
+        if: hashFiles('scripts/tests/pg-backup.test.sh') != ''
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/ops/alerts:/rules:ro" -w /rules \
+            prom/prometheus:v2.55.1@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3 \
+            check rules pegana.yml
+          docker run --rm --entrypoint promtool -v "$PWD/ops/alerts:/rules:ro" -w /rules \
+            prom/prometheus:v2.55.1@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3 \
+            test rules pegana_test.yml
+
+  audit-rust:
+    name: cargo-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          shared-key: "ci-rust"
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.1 --locked --quiet
+      - name: cargo audit
+        # `.cargo/audit.toml` is the machine-readable source of enforcement;
+        # ownership, reachability, controls, and review dates are recorded in
+        # `docs/security/rustsec-waivers.md`.
+        run: cargo audit

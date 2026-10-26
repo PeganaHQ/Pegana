@@ -1,0 +1,820 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/v10.0.0/public/api/schemas/dashboard.schema.json",
+  "uid": "pegana-overview",
+  "title": "Pegana \u2014 Live Pipeline Overview",
+  "tags": [
+    "pegana",
+    "live",
+    "pegwatch"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        }
+      },
+      {
+        "name": "asset",
+        "label": "Asset",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "qryType": 1,
+          "refId": "PrometheusVariableQueryEditor-VariableQuery",
+          "query": "label_values(pegana_engine_recompute_seconds_count, asset)"
+        },
+        "includeAll": true,
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Engine publish rate",
+      "description": "Recompute updates per second. Should be > 0 always. Heartbeat ticks every 5s separately.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.01
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(pegana_engine_publishes_total{kind=\"update\"}[2m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "WS clients",
+      "description": "Live WebSocket connections to /v1/ws. Each browser tab on the dashboard or any asset page counts.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(pegana_ws_clients_active)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Jupiter 429 rate",
+      "description": "429s per second. Sustained >0.1 means we're crossing the keyless budget.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(pegana_jupiter_429_total[5m])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Pyth stale rejections / min",
+      "description": "Engine refusing Pyth readings older than PYTH_STALENESS_SECS. A few per hour for slow NAV feeds is normal; multiple per minute across feeds is degradation.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(pegana_engine_pyth_stale_total[5m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Engine recompute latency (p50 / p95)",
+      "description": "Per-asset try_recompute duration. p95 > 500ms means Postgres or Redis publish is becoming a bottleneck.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(pegana_engine_recompute_seconds_bucket{asset=~\"$asset\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(pegana_engine_recompute_seconds_bucket{asset=~\"$asset\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Source poll rates (ok)",
+      "description": "Successful polls per second per source. Flat-lining means that source has stopped.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(pegana_jupiter_polls_total{status=\"ok\"}[2m]))",
+          "legendFormat": "jupiter",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(pegana_sanctum_polls_total{status=\"ok\"}[2m]))",
+          "legendFormat": "sanctum",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(pegana_hylo_polls_total{status=\"ok\"}[2m]))",
+          "legendFormat": "hylo",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(pegana_solayer_polls_total{status=\"ok\"}[2m]))",
+          "legendFormat": "solayer",
+          "refId": "D"
+        },
+        {
+          "expr": "sum(rate(pegana_piggybank_polls_total{status=\"ok\"}[2m]))",
+          "legendFormat": "piggybank",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(pegana_dexscreener_polls_total{status=\"ok\"}[2m]))",
+          "legendFormat": "dexscreener",
+          "refId": "F"
+        },
+        {
+          "expr": "sum(rate(pegana_pyth_updates_total[2m]))",
+          "legendFormat": "pyth (updates)",
+          "refId": "G"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Alert transitions",
+      "description": "State-change events emitted by the engine. A spike here means a depeg event is in progress somewhere in the universe.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (transition) (rate(pegana_alerts_emitted_total[5m]))",
+          "legendFormat": "{{transition}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Webhook dispatch outcomes",
+      "description": "Webhook dispatch outcomes. Dead letters mean a subscriber exhausted its retry ladder.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(pegana_webhook_dispatches_total{status=\"ok\"}[5m]))",
+          "legendFormat": "ok",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(pegana_webhook_dispatches_total{status=\"dead_letter\"}[5m]))",
+          "legendFormat": "dead_letter",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 100,
+      "type": "timeseries",
+      "title": "Phase 0 calibration \u2014 p99 |discount| for new assets",
+      "description": "Trust Layer v0.1.0 Phase 0 \u2014 passive calibration for JupUSD, EURC, dzSOL, vSOL (JLP deferred). Window 2026-05-28 \u2192 2026-06-10. Threshold lines at 50bps (yellow) and 200bps (red) frame the per-asset depeg threshold from assets.toml. See docs/pegana-trust-layer-v0.1.0/AMENDMENTS.md.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum(rate(pegana_engine_discount_raw_bucket{asset=~\"JupUSD|EURC|dzSOL|vSOL\"}[1h])) by (asset, le))",
+          "legendFormat": "{{asset}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 0.005,
+                "color": "yellow"
+              },
+              {
+                "value": 0.02,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Trust Layer — audit persistence",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 201,
+      "type": "timeseries",
+      "title": "Audit persist rate by outcome",
+      "description": "Counter: pegana_audit_persist_total{outcome}. Every push_alert insert is recorded — ok vs failed. A non-zero 'failed' line means alerts are shipping without an evidence row (receipts return 202 evidence_missing).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(pegana_audit_persist_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "type": "timeseries",
+      "title": "Audit persist latency p50 / p95 / p99",
+      "description": "Histogram: pegana_audit_persist_seconds. Target p99 < 50ms; sustained > 200ms indicates Postgres contention on alert_evidence inserts.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(pegana_audit_persist_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(pegana_audit_persist_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(pegana_audit_persist_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 203,
+      "type": "stat",
+      "title": "Audit persist hard failures (total)",
+      "description": "Counter: pegana_audit_persist_total{outcome=\"failed\"}. Non-recoverable insert errors (even the alert_evidence_pending fallback failed). Any non-zero number warrants an investigation.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 38 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      },
+      "targets": [{ "expr": "sum(pegana_audit_persist_total{outcome=\"failed\"})", "refId": "A" }]
+    },
+    {
+      "id": 204,
+      "type": "stat",
+      "title": "Methodology broken (startup refusals)",
+      "description": "Counter: pegana_engine_methodology_broken_total. Engine refused to start because the active methodology version is marked broken in manifest. Should always be 0; >0 means deploy needs to roll back methodology.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 38 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      },
+      "targets": [{ "expr": "sum(pegana_engine_methodology_broken_total)", "refId": "A" }]
+    },
+    {
+      "id": 205,
+      "type": "stat",
+      "title": "Receipt hash fallback (total)",
+      "description": "Counter: pegana_receipt_hash_fallback_total{kind}. Canonical hash computation failed, so the receipt was DROPPED (no all-zero sentinel is emitted) and the alert was NOT dispatched this tick — it retries on the next tick (H10). Should be 0 in steady state — every >0 increment means a delayed/dropped alert, NOT a poisoned receipt on-chain.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 38 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (kind) (pegana_receipt_hash_fallback_total)",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 206,
+      "type": "timeseries",
+      "title": "State snapshot persist failures by asset",
+      "description": "Counter: pegana_state_snapshot_failed_total{asset}. EWMA + hysteresis snapshot to PG failed for an asset — non-fatal but state will reset on engine restart for that asset.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 38 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum by (asset) (rate(pegana_state_snapshot_failed_total[10m]))",
+          "legendFormat": "{{asset}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 210,
+      "type": "row",
+      "title": "Trust Layer — on-chain SAS commits",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 42 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 211,
+      "type": "timeseries",
+      "title": "On-chain commit outcomes",
+      "description": "Counter: pegana_onchain_commit_total{outcome}. SAS memo commit attempts split by outcome (ok | rpc_error | timeout | semaphore_closed). Sustained failure ratio drives the PeganaOnchainCommitDegraded alert.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 43 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(pegana_onchain_commit_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 212,
+      "type": "timeseries",
+      "title": "On-chain commit retries by kind",
+      "description": "Counter: pegana_onchain_commit_retry_total{kind}. Per-attempt retries (rpc | timeout). Spike here precedes a degraded outcome ratio.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 43 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum by (kind) (rate(pegana_onchain_commit_retry_total[5m]))",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 213,
+      "type": "stat",
+      "title": "Commit wallet balance (SOL)",
+      "description": "Gauge: pegana_commit_wallet_balance_sol. SAS commit wallet. Auto-refund when < 0.5 SOL; alert fires < 0.1 SOL.",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 51 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.1, "color": "yellow" },
+              { "value": 0.5, "color": "green" }
+            ]
+          }
+        }
+      },
+      "targets": [{ "expr": "pegana_commit_wallet_balance_sol", "refId": "A" }]
+    },
+    {
+      "id": 214,
+      "type": "stat",
+      "title": "Commit queue depth (available permits)",
+      "description": "Gauge: pegana_commit_queue_depth. Available semaphore permits for on-chain commits. 0 = saturated; consistently 0 means RPC is the bottleneck.",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 51 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [{ "expr": "pegana_commit_queue_depth", "refId": "A" }]
+    },
+    {
+      "id": 215,
+      "type": "stat",
+      "title": "On-chain commit success ratio (30m)",
+      "description": "ok ratio over 30m. Drives the PeganaOnchainCommitDegraded alert when < 80% sustained.",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 51 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.8, "color": "yellow" },
+              { "value": 0.95, "color": "green" }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(pegana_onchain_commit_total{outcome=\"ok\"}[30m])) / sum(rate(pegana_onchain_commit_total[30m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 220,
+      "type": "row",
+      "title": "Trust Layer — retraction + API rate limiting",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 221,
+      "type": "timeseries",
+      "title": "Retractions dispatched by methodology version",
+      "description": "Counter: pegana_retraction_dispatched_total{version}. One increment per retracted methodology version per dispatcher pass. Should be near-zero in steady state.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 56 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum by (version) (rate(pegana_retraction_dispatched_total[1h]))",
+          "legendFormat": "{{version}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 222,
+      "type": "timeseries",
+      "title": "Retraction subscribers per version (p95)",
+      "description": "Histograms: pegana_retraction_subscribers_per_version + pegana_retraction_bot_subscribers_per_version. p95 fanout per retracted methodology version (webhook + bot).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 56 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (version, le) (rate(pegana_retraction_subscribers_per_version_bucket[1h])))",
+          "legendFormat": "webhook · {{version}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (version, le) (rate(pegana_retraction_bot_subscribers_per_version_bucket[1h])))",
+          "legendFormat": "bot · {{version}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 223,
+      "type": "timeseries",
+      "title": "API rate-limited requests by route",
+      "description": "Counter: pegana_api_rate_limited_total{route}. 429s emitted by the per-IP token bucket. Persistent climbing on a single route means a specific consumer is hot or limit is too tight.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 64 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(pegana_api_rate_limited_total[5m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 230,
+      "type": "row",
+      "title": "Trust Layer — engine freshness + receipt integrity (H10/H12b)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 72 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 231,
+      "type": "timeseries",
+      "title": "Active-asset freshness (fresh / stale / dead)",
+      "description": "Gauges: pegana_engine_{fresh,stale,dead}_assets. Emitted every ~30s by the H12b sweep (observability-only — never flips state, ADR-0019). 'dead' counts active assets that have stopped publishing entirely (snapshot gating can't catch a never-recomputing asset). Any sustained dead > 0 is a silent source outage.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 73 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "expr": "sum(pegana_engine_fresh_assets)",
+          "legendFormat": "fresh",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(pegana_engine_stale_assets)",
+          "legendFormat": "stale",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(pegana_engine_dead_assets)",
+          "legendFormat": "dead",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 232,
+      "type": "stat",
+      "title": "Dead assets (current)",
+      "description": "Gauge: pegana_engine_dead_assets. Active assets that have stopped publishing entirely. Should be 0; >0 drives PeganaDeadAssets (warn).",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 73 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      },
+      "targets": [{ "expr": "sum(pegana_engine_dead_assets)", "refId": "A" }]
+    },
+    {
+      "id": 233,
+      "type": "stat",
+      "title": "Stale assets (current)",
+      "description": "Gauge: pegana_engine_stale_assets. Active assets whose latest publish is older than STALE_AFTER_SECS but not yet dead.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 73 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "yellow" }
+            ]
+          }
+        }
+      },
+      "targets": [{ "expr": "sum(pegana_engine_stale_assets)", "refId": "A" }]
+    },
+    {
+      "id": 234,
+      "type": "timeseries",
+      "title": "Receipt hash fallback by kind (dropped audit receipts)",
+      "description": "Counter: pegana_receipt_hash_fallback_total{kind}. Canonical hash computation failed so the receipt was DROPPED (no sentinel emitted) and the alert was NOT dispatched this tick (H10). Every >0 increment is a delayed/dropped audit receipt — a core-trust failure. Drives PeganaReceiptHashFallback (page).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 81 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum by (kind) (rate(pegana_receipt_hash_fallback_total[5m]))",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 235,
+      "type": "timeseries",
+      "title": "hyUSD collateral-ratio unavailable by asset (H2)",
+      "description": "Counter: pegana_engine_cr_unavailable_total{asset}. hyUSD CR couldn't be derived so the engine SKIPPED the recompute (prior state preserved) rather than publishing over missing data. Sustained = Hylo/CR source degraded. Drives PeganaCrUnavailable (warn).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 81 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        {
+          "expr": "sum by (asset) (rate(pegana_engine_cr_unavailable_total[5m]))",
+          "legendFormat": "{{asset}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

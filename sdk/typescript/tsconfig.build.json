@@ -1,0 +1,18 @@
+{
+  // Publish build: emit JS + .d.ts to dist/. The base tsconfig has
+  // noEmit:true (it only typechecks the raw-TS dev surface); this override
+  // turns emit back on so `npm publish` / `bun publish` ship transpiled code
+  // and declarations instead of un-transpiled .ts (B-???/3.5). Local
+  // file:/bun installs keep importing ./src/index.ts directly — see the
+  // publishConfig block in package.json.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"]
+}

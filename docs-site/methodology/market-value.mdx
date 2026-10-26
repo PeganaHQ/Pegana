@@ -1,0 +1,89 @@
+---
+title: "Market value"
+description: "What you'd actually get swapping the asset. Jupiter routed quote, USDC numeraire, repriced via Pyth."
+---
+
+Market value is what the secondary market is willing to pay right now. We read it from
+**Jupiter's routing engine** — the same way an actual swap would execute.
+
+## The query
+
+```text
+market_quote = jupiter.quote(
+  input_mint  = asset.mint,
+  output_mint = USDC.mint,
+  amount      = asset.market_probe_size,   # per-asset, ~$10k notional
+  slippage_bps = 50,
+)
+market_usdc(asset) = market_quote.out_amount / asset.market_probe_size
+market_usd(asset)  = market_usdc(asset) × pyth.USDC/USD
+```
+
+The probe size is configured per asset to be large enough that we sample real
+depth, but small enough that we don't move the market. For deep assets like USDC
+↔ USDT it's higher; for thinner assets like Hylo's `hyloSOL+` it's smaller.
+
+We always swap *to* USDC and then convert USDC → USD via Pyth. This keeps the
+numeraire consistent: every asset's `market_usd` is denominated the same way, and
+USDC's own market price (a depeg signal) doesn't contaminate other assets'
+spreads.
+
+## Why Jupiter and not a single DEX
+
+Jupiter's router aggregates depth across Orca, Raydium, Phoenix, Meteora and the
+LST-specialized AMMs. Reading a single DEX gives you that DEX's idiosyncratic
+liquidity profile. Reading Jupiter's route gives you the price an actual user
+would receive — which is what matters for the alert.
+
+The [mSOL/Pyth case study](/case-studies/msol-pyth-may-2022) is the canonical
+counter-example: one shallow pool (Mango) was the entire oracle input. The
+resulting flash crash liquidated $21M of healthy collateral. If the oracle had
+read a routed quote, that pool would have weighted accordingly and the print
+would not have happened.
+
+## Polling cadence
+
+- **Jupiter market quote**: a single round-robin loop ticks every `jupiter_tick_ms`
+  (≈2.5s) and fires a small batch of quotes per tick. Across the ~19 Jupiter-backed
+  slots this works out to **≈50s per asset** — the cadence stays under the keyless
+  `lite-api` RPS budget.
+- **Sanctum LST intrinsic**: a single batch call for all LSTs at once every **15s**
+  (`sanctum_poll_ms`).
+
+We do not query Jupiter on every Pyth tick — that would melt the API quota and
+generate noise on micro-prints. The round-robin pacing keeps the market poll
+time-aligned with the intrinsic feeds the engine's recompute consumes.
+
+The Pyth intrinsic stream reconnects on transport errors with exponential backoff
+(500ms → 30s) plus ±50% jitter — that jitter applies to the **stream reconnect**, not
+to the Jupiter market poll.
+
+## What we don't model
+
+**Slippage at size.** Pegana's probe is fixed; if you intend to swap $5M of an
+asset, your effective market price will be worse than what we publish. The signal
+is calibrated for small-to-medium trades and for state monitoring. For large
+trades, use Jupiter's quote API directly with your real size.
+
+**Routing instability.** A route may exist this second and not the next. We accept
+that as long as Jupiter returns *some* quote. If routing fails entirely (no path
+to USDC), the engine **skips the recompute and holds the last published state** until a
+route returns — it does not flip the asset to `UNKNOWN`.
+
+**MEV-extracted user price.** Our quote is what the route returns. A real swap
+may receive a slightly worse price because of MEV between submission and inclusion.
+We do not adjust for this — the gap is typically small enough not to matter for
+peg state, though it matters a lot for actual execution.
+
+## Caching and freshness
+
+- The router's quote is cached for the polling interval (no double-call inside 15s)
+- The engine refuses to consume a quote older than 30s (staleness gate)
+- On a stale quote the engine **skips the recompute and holds the last published state**
+  rather than emitting a fresh verdict on degraded input (it does not flip to `UNKNOWN`)
+
+## Next
+
+<Card title="The spread" icon="equals" href="/methodology/spread">
+  The formula, EWMA smoothing, per-asset thresholds, the 5-state FSM.
+</Card>

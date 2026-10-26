@@ -1,0 +1,163 @@
+# Keeps the @sha256-pinned Docker base images fresh.
+#
+# The Dockerfiles pin every FROM to an image DIGEST (tag kept for
+# readability) so the deploy build is reproducible and can't be swapped by
+# a registry-side tag move (AC72, supply-chain integrity). The trade-off of
+# pinning is that a frozen digest stops receiving upstream security patches
+# — this config closes that gap: Dependabot re-pins each base image to the
+# latest digest for its SAME tag on a monthly cadence, grouped into one PR
+# so the noise stays low. PRs are proposals only (never auto-merged); the
+# founder reviews + merges. Delete this file to turn the automation off.
+version: 2
+updates:
+  - package-ecosystem: "docker"
+    directories:
+      - "/mcp-ts"
+      - "/crates/api-rs"
+      - "/crates/engine-rs"
+      - "/crates/indexer-rs"
+      - "/crates/dispatcher-rs"
+      - "/protocol-indexer-ts"
+      - "/ops/caddy"
+    schedule:
+      interval: "monthly"
+    groups:
+      docker-base-images:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+
+  # Rust dependencies of the three crates that are MIRRORED to the public
+  # PeganaHQ/ReplayCLI repo. They must be watched HERE, not there: the mirror
+  # is rebuilt from an empty index and force-pushed on every sync, so a
+  # Dependabot PR opened against it could never be merged.
+  #
+  # These crates are the trust anchor — a compromised transitive dep in the
+  # verifier is worth more to an attacker than one in the API.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      cargo-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+
+  # The MIRROR's own workspace + lockfile. This is a second, independent Cargo
+  # workspace (tools/pegana-replay-public/Cargo.toml) whose Cargo.lock is the
+  # one published to PeganaHQ/ReplayCLI and consumed by `cargo install
+  # --locked`. The `/` entry above does NOT cover it.
+  #
+  # It must be watched HERE rather than on the mirror: the mirror is rebuilt
+  # from an empty index and force-pushed, so a Dependabot PR opened against it
+  # could never be merged. Fixes land in this file and reach users on the next
+  # sync.
+  - package-ecosystem: "cargo"
+    directory: "/tools/pegana-replay-public"
+    schedule:
+      interval: "monthly"
+    groups:
+      mirror-cargo:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+
+  # Actions used by this repo's workflows, including the release pipeline
+  # that is mirrored into the public repo. Keeps the SHA pins fresh — pinning
+  # without an updater just means running stale, unpatched actions forever.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "ci(deps)"
+
+  # The workflows that get MIRRORED into PeganaHQ/ReplayCLI. Dependabot's
+  # github-actions ecosystem scans "<directory>/.github/workflows/", so this
+  # second entry is what keeps the public repo's CI + Scorecard pins fresh.
+  # (release.yml sits at the root of that folder rather than under
+  # .github/workflows/, so it is not covered here — bump it by hand.)
+  - package-ecosystem: "github-actions"
+    directory: "/tools/pegana-replay-public"
+    schedule:
+      interval: "monthly"
+    groups:
+      mirror-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "ci(deps)"
+
+  # web: JavaScript dependencies (bun.lock). Monthly; minor/patch are grouped so
+  # the PR count stays low, majors arrive one by one for review.
+  - package-ecosystem: "bun"
+    directory: "/web"
+    schedule:
+      interval: "monthly"
+    groups:
+      web-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+
+  # mcp-ts: JavaScript dependencies (bun.lock). Monthly; minor/patch are grouped so
+  # the PR count stays low, majors arrive one by one for review.
+  - package-ecosystem: "bun"
+    directory: "/mcp-ts"
+    schedule:
+      interval: "monthly"
+    groups:
+      mcp-ts-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+
+  # protocol-indexer-ts: JavaScript dependencies (bun.lock). Monthly; minor/patch are grouped so
+  # the PR count stays low, majors arrive one by one for review.
+  - package-ecosystem: "bun"
+    directory: "/protocol-indexer-ts"
+    schedule:
+      interval: "monthly"
+    groups:
+      protocol-indexer-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+
+  # sdk/typescript: JavaScript dependencies (bun.lock). Monthly; minor/patch are grouped so
+  # the PR count stays low, majors arrive one by one for review.
+  - package-ecosystem: "bun"
+    directory: "/sdk/typescript"
+    schedule:
+      interval: "monthly"
+    groups:
+      sdk-ts-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+
+  # Images referenced by docker-compose.yml (postgres, redis, prometheus,
+  # alertmanager, grafana, node-exporter, caddy). They are pinned by digest, so
+  # without this they never receive patches.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      compose-images:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"

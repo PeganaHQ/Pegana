@@ -1,0 +1,7 @@
+# Review gate for the files that define or run the release and drift gates.
+# Enforced only together with a ruleset on main that requires code-owner review.
+/.github/workflows/**        @lrafasouza
+/crates/xtask/**             @lrafasouza
+/crates/methodology/**       @lrafasouza
+/crates/pegana-replay-cli/** @lrafasouza
+/docs/backtests/**           @lrafasouza

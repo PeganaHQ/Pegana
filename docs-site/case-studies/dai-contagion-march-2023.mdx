@@ -1,0 +1,68 @@
+---
+title: "DAI took the same wave as USDC — and proved CDP-collateral isn't bullet-proof"
+description: "MakerDAO's DAI traded below $0.89 alongside USDC during the SVB weekend. Half its backing was USDC; when USDC bled, DAI bled."
+---
+
+<Info>
+  **Asset**: DAI · **Class**: CDP · **Date**: 2023-03-11
+  **Worst spread**: −1100 bps · **Duration**: ≈ 56 h outside `PEGGED`
+  **Detected live**: No (pre-Pegana retrospective)
+</Info>
+
+## Background
+
+By Q1 2023 the Maker PSM (Peg Stability Module) had absorbed enough USDC to push
+USDC's share of DAI's reserves to about 52%. The PSM converts 1 USDC → 1 DAI 1:1,
+which is great for the peg until the asset on the other side of the conversion is
+the one breaking.
+
+## Trigger
+
+Circle's SVB disclosure on March 10 sent USDC into a freefall. DAI followed within
+the hour — the market priced DAI as if it were a 50%-USDC-backed claim, because that's
+what it was. Worst prints landed near $0.885 on Sunday March 12 across Curve and
+several CEX venues.
+
+## Cascade
+
+- MakerDAO emergency-paused USDC-side PSM swaps to stop USDC from being dumped into
+  the peg module at par.
+- DAI lending protocols (Aave, Compound) saw collateral re-valued; some borrowers
+  were liquidated against intra-incident lows.
+- Curve's 3pool absorbed enormous imbalance flows — LPs printed losses on both legs
+  (USDC down, DAI down).
+- Tether and other USDC-light stables briefly traded above $1 as a flight-to-quality bid.
+
+## Recovery
+
+Once the FDIC/Treasury backstop landed on Sunday evening and USDC began re-pegging
+Monday morning, DAI converged within hours. The full episode lasted ~60 hours
+start-to-finish.
+
+## What Pegana would have shown
+
+- **Friday ~22:30 UTC** — USDC enters `DRIFT`. **DAI follows within minutes** — its
+  intrinsic-equivalent (the reserve composition) was visibly impaired. **`PEGGED →
+  DRIFT`** on DAI fires shortly after USDC's.
+- **Saturday ~04:00 UTC** — Spread crosses 100 bps on DAI. **`DRIFT → DEPEG`**.
+- **Sunday ~04:00 UTC** — Thin Sunday DEX prints push DAI below $0.89. **`DEPEG →
+  CRITICAL`** (or stays in `DEPEG` depending on per-asset critical threshold).
+- **Monday ~15:00 UTC** — Sustained recovery. Hysteresis exit cascade.
+  **`CRITICAL → DEPEG → DRIFT → PEGGED`** over ~3 hours.
+
+The DAI alert would have been correlated with USDC's by timing alone — a useful
+signal that the contagion was crossing assets.
+
+## Lesson
+
+CDP-style stables built on top of fiat-stable collateral inherit that collateral's
+tail risk. The peg holds only as well as what backs it. Pegana tracks Hylo's
+collateral ratio on-chain for exactly this reason — a SOL-collateralized CDP doesn't
+share USDC's fiat-bank tail, but it has its own SOL-volatility tail you need a
+number for. See [Hylo CDP CR signal](/concepts/hylo-cdp-cr-signal).
+
+## Sources
+
+- [MakerDAO emergency PSM proposal (March 2023)](https://forum.makerdao.com)
+- [Curve 3pool depth during the incident](https://curve.fi/3pool)
+- [DefiLlama — DAI reserves composition](https://defillama.com/stablecoin/dai)

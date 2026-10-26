@@ -1,0 +1,111 @@
+---
+title: "What is LST peg drift?"
+description: "Liquid Staking Tokens like jitoSOL and mSOL don't peg to $1. They peg to the SOL they accrue inside the stake pool. When market price diverges from that intrinsic SOL value, you're looking at peg drift — and it's a very different signal from a stablecoin depeg."
+---
+
+If you've spent time on Ethereum, the depeg conversation is usually about stablecoins:
+USDC at $0.87, DAI catching the same wave, UST going to zero. Solana's stable market
+behaves similarly. But Solana also has a second large peg-bearing asset class that
+doesn't get the same attention: **Liquid Staking Tokens (LSTs)**.
+
+Ten SOL-pegged LSTs are actively tracked on Pegana — jitoSOL, mSOL, bSOL, INF, bbSOL,
+JupSOL, dzSOL, vSOL — plus two Hylo LSTs (hyloSOL, hyloSOL+). Together they hold tens
+of millions of SOL in stake pools. Every one of them is silently drifting, all the
+time. Most of the time it doesn't matter. When it does matter, it matters fast.
+
+## How an LST is supposed to behave
+
+An LST is a receipt: you deposit SOL into a stake pool, you get back X units of the
+LST. Behind the scenes, the pool stakes your SOL to validators and accrues staking
+rewards (plus, for jitoSOL, MEV rewards). As rewards accumulate, the SOL backing each
+LST share grows — so the redemption price of 1 LST in terms of SOL slowly rises over
+time.
+
+[Sanctum](https://docs.sanctum.so) publishes this value as `sol_value`. For jitoSOL
+right now, 1 jitoSOL ≈ 1.18 SOL — meaning each jitoSOL you redeem returns 1.18 SOL of
+underlying stake. That ratio is what Pegana calls the **intrinsic value**: the
+on-chain truth of what the asset is worth in its denominator (SOL).
+
+## How the market actually prices it
+
+Most users don't redeem through the stake pool. They swap on Jupiter, Orca, Raydium,
+or one of the LST-specialized AMMs. The price they get is the **market value**:
+1 jitoSOL might trade for 1.179 SOL, or 1.176 SOL, or — during stress — 1.16 SOL.
+
+The gap between intrinsic and market is the **discount**. A small positive discount
+(market trades 0.05–0.30% below intrinsic, so `1 − market / intrinsic` is above zero) is
+normal — arbitrageurs need a small spread to redeem-and-sell profitably. A large positive
+discount is news.
+
+## What causes LST peg drift
+
+- **Network congestion.** If Solana slows down, arbitrageurs can't close the gap
+  quickly. Drift widens until the network catches up.
+- **Stake pool program upgrades.** Any LST whose pool is mid-upgrade may pause
+  redemptions; secondary market discounts to compensate.
+- **Validator slashing** (rare today, but landing in 2026 per Anza's roadmap). A
+  slashed validator means the pool loses some underlying SOL. The LST's intrinsic
+  falls; if the market doesn't immediately reprice, the gap inverts.
+- **MEV regime change.** jitoSOL's intrinsic includes captured MEV rewards. If MEV
+  economics shift, the implied yield drops and the market can repress the price.
+- **Large redemption queue.** Marinade's mSOL has a multi-day unstake queue. Holders
+  who need SOL now sell into the secondary market at a discount.
+- **Whale exit into thin venues.** The classic [mSOL flash-crash in June 2022](/case-studies/msol-pyth-may-2022)
+  was one whale selling 88k mSOL into a thin Mango pool, dragging a Pyth feed and
+  triggering $21M of cascade liquidations on otherwise-healthy positions.
+
+## What it isn't
+
+LST drift is **not stablecoin depeg**. There's no central issuer to credibly defend a
+$1 number; there's no Treasury reserve. The peg is a market-clearing mechanism, not a
+contractual promise. "Depeg" in the LST context means the market refuses to honor the
+intrinsic SOL value — usually temporarily.
+
+## How Pegana detects it
+
+Pegana polls Sanctum every 15 seconds for each LST's intrinsic SOL value and converts
+it to USD via Pyth's SOL/USD feed. In parallel, it polls Jupiter for the best swap
+rate (also normalized to USD). Discount = `1 − market / intrinsic`, smoothed with a
+30% EWMA, and bucketed into per-asset thresholds (drift / depeg / critical) calibrated
+to each LST's 24h p99.
+
+**Calibrated thresholds matter.** INF runs hot — its p99 drift is ~1.12%, four times
+jitoSOL's ~0.37%. A 1.00% alert on INF is noise; on jitoSOL it's a real signal. The
+[methodology](/methodology/overview) page documents every threshold.
+
+## Why this matters for builders
+
+If you're running a **lending protocol** that accepts LST collateral, your liquidation
+engine reads a price oracle. If the oracle gets one bad print from a thin venue (the
+mSOL/Mango case), you can liquidate positions that have nothing wrong with them.
+Cross-checking against Pegana's intrinsic feed lets you reject divergent oracle prints
+before they hit your liquidation queue.
+
+If you're **underwriting LST risk** — insurance, prediction market, structured
+product — you need a credible third-party event source for what counts as a "depeg."
+Pegana's class-aware state machine emits `AlertEvent` with a clear from→to transition,
+plus the intrinsic and market values at the time. The methodology is open; you can
+reproduce every alert from raw inputs.
+
+## Read next
+
+<CardGroup cols={2}>
+  <Card title="Live LST states" icon="chart-line" href="https://pegana.xyz/dashboard">
+    See the current state of every tracked LST.
+  </Card>
+  <Card title="How Pegana computes" icon="equals" href="/methodology/overview">
+    Sources, formula, thresholds, FSM.
+  </Card>
+  <Card title="mSOL flash-crash post-mortem" icon="bolt" href="/case-studies/msol-pyth-may-2022">
+    The canonical "market lied" case study.
+  </Card>
+  <Card title="REST API" icon="code" href="/guides/rest-api">
+    Read live state programmatically.
+  </Card>
+</CardGroup>
+
+### Sources
+
+- [Sanctum docs — `sol_value`](https://docs.sanctum.so)
+- [Helius — Bringing Slashing to Solana](https://www.helius.dev/blog/bringing-slashing-to-solana)
+- [Galaxy Research — Staking and onchain credit](https://www.galaxy.com/insights/research/defi-staking-interest-rate-spread-yield-ethereum-solana)

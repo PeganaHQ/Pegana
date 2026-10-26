@@ -1,0 +1,126 @@
+---
+title: "Hylo CDP CR — the under-collateralization signal"
+description: "Hylo's hyUSD is a CDP-style stablecoin on Solana. Its peg holds as long as the collateral ratio (CR) stays above the protocol's floor. When CR drops below 130%, Stability Mode triggers — and that's the alert you actually want."
+---
+
+Hylo runs a CDP-style stablecoin (**hyUSD**) collateralized by a basket of Solana LSTs
+(hyloSOL, hyloSOL+). Unlike USDC, hyUSD doesn't claim to be backed 1:1 by a dollar in a
+bank. It claims to be backed by SOL collateral worth more than the hyUSD outstanding.
+The exact ratio — how much collateral per dollar of hyUSD — is the **collateral
+ratio**, or CR.
+
+The peg holds because if hyUSD trades below $1, an arbitrageur can buy hyUSD on the
+market, redeem it for $1 of LST collateral, and pocket the difference. If hyUSD trades
+above $1, they can mint by depositing collateral and sell. Either side closes the gap.
+But only when CR is healthy.
+
+## What CR actually measures
+
+```
+CR = total_collateral_value_usd / hyUSD_supply
+```
+
+If Hylo holds 500,000 SOL worth $80M and 50M hyUSD are outstanding, CR = 160%. Every
+dollar of hyUSD is backed by $1.60 of collateral. That cushion is what lets the
+system absorb a SOL price drop without becoming undercollateralized.
+
+Hylo's protocol parameters define the floor:
+
+- **CR < 130%** → **Stability Mode / DRIFT**: minting is paused, redemptions are throttled,
+  and the Stability Pool (eHYUSD) starts absorbing liquidations of the riskiest positions
+- **CR < 105%** → **CRITICAL**
+- **CR < 100%** → **BLACK_SWAN**: the system is genuinely undercollateralized and
+  recovery depends on collateral recovery, not arbitrage
+
+## Why market price is the wrong signal here
+
+For USDC, watching market price is sufficient — a sub-$1 print is the alert. For
+hyUSD, **market price can stay at $1.000 for hours while CR quietly grinds down from
+160% to 135%**. By the time market price reacts, you're already inside Stability Mode
+and the protocol is making forced unwind decisions.
+
+CR is the **leading indicator**. Market price is the **lagging indicator**. If you're
+watching the wrong one, you'll get to the alert too late.
+
+## How Pegana reads CR
+
+There's no API for this — you have to decode it from on-chain state. Hylo publishes
+an IDL for its Exchange program. Pegana's `indexer-rs` reads Hylo's root Exchange PDA
+every 30s and decodes the protocol's own canonical `total_sol_cache.total_sol` — the
+same field Hylo's own app uses for pricing.
+
+Multiply by Pyth's SOL/USD live, divide by hyUSD supply, and you get CR with no
+source-of-truth lag.
+
+Per-asset thresholds for hyUSD use **CR** (not spread %). The live bands
+(`assets.toml:228` — `drift=130, depeg=115, critical=105, black_swan=100`) are:
+
+| State | CR band |
+| --- | --- |
+| `PEGGED` | CR ≥ 130% |
+| `DRIFT` | 115% ≤ CR < 130% |
+| `DEPEG` | 105% ≤ CR < 115% |
+| `CRITICAL` | 100% ≤ CR < 105% |
+| `BLACK_SWAN` | CR < 100% |
+
+
+## The IDL drift risk
+
+Reading on-chain state via a hardcoded layout has a known failure mode: the protocol
+upgrades, the account layout changes, and your decoder silently produces garbage. We
+guard against it by validating the account's 8-byte Anchor discriminator and layout on
+every read — if the discriminator doesn't match (an IDL upgrade or the wrong PDA), the
+read fails fast instead of decoding garbage. On that failure, Pegana
+does **not** flip hyUSD to a separate state: it skips the recompute and holds the last
+good CR rather than publishing a confidently-wrong number. That path emits a warn log
+and increments a Prometheus counter. Better to hold a stale-but-true read than report
+a confidently-wrong CR.
+
+## Adjacent assets in the Hylo system
+
+- **hyloSOL** — the LST that backs hyUSD. Behaves like any other LST (drift in SOL terms).
+- **hyloSOL+** — yield-amplified Hylo LST that captures CDP-mint fees. Grows faster
+  than hyloSOL when the system is healthy.
+- **eHYUSD** (formerly `sHYUSD`) — staked hyUSD in the Stability Pool. NAV grows when liquidations earn
+  yield; can drop sharply during black-swan absorption events.
+- **xSOL** — the leveraged-SOL synthetic that absorbs the volatility hyUSD sheds.
+  Intentionally volatile; "peg" here means the design-intended leverage ratio.
+
+Pegana publishes peg state for four of them on the public surface (hyUSD, hyloSOL, hyloSOL+
+and eHYUSD, listed in the API as `sHYUSD`). xSOL is still computed by the engine, but as a
+leveraged synthetic it is kept off `GET /v1/assets` and the peg feed: a design-intended
+leverage ratio is not a peg a holder can rely on. The Hylo design is interlocking: stress on hyUSD shows up first in
+CR, then in xSOL repricing, then in eHYUSD's absorption mechanic.
+
+## What this means for builders
+
+If your protocol accepts hyUSD as collateral, you want to know the moment CR
+breaches 130% — when Hylo enters Mode 2 and redemptions get re-prioritised. The Pegana API
+does not serve the raw CR value today. What it does publish:
+
+- `GET /v1/assets/hyUSD` carries the CR bands Pegana classifies against, as
+  `thresholds.cr_drift`, `cr_depeg`, `cr_critical` and `cr_black_swan` (percent).
+- `GET /v1/assets/hyUSD/state` returns the current CR-driven `state` and `since`, the moment
+  the current state began.
+- `GET /v1/audit?asset=hyUSD` lists every hyUSD transition with its public receipt, and the
+  WebSocket `/v1/ws` pushes a hyUSD reading on every engine recompute, so a band crossing
+  shows up as a `state` change on the next frame.
+
+If you need the CR number itself, decode Hylo's Exchange account as described above.
+
+## Read next
+
+<CardGroup cols={2}>
+  <Card title="hyUSD live" icon="chart-line" href="https://pegana.xyz/asset/hyUSD">
+    Current CR, history, threshold visualization.
+  </Card>
+  <Card title="DAI / SVB contagion" icon="bolt" href="/case-studies/dai-contagion-march-2023">
+    What can happen when CDP collateral itself depegs.
+  </Card>
+</CardGroup>
+
+### Sources
+
+- [Hylo docs](https://docs.hylo.so)
+- [Hylo Exchange program (Solscan)](https://solscan.io)
+- [Sanctum docs — `sol_value`](https://docs.sanctum.so)

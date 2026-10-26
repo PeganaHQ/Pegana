@@ -1,0 +1,51 @@
+---
+title: "Versioning & stability"
+description: "The v1 read surface is a stable, additive-only contract. Breaking changes ship under a new prefix."
+---
+
+The `v1` read surface is a **stable, versioned contract** you can wire a risk engine against.
+
+## The additive-only promise
+
+Going forward we make only **additive** changes within `v1` — new fields and new endpoints —
+**never a breaking rename or removal**. A breaking change would ship under a new prefix (`v2`)
+with `v1` left working. Concretely, you can rely on:
+
+- Existing field names and their JSON types never change.
+- New fields may appear at any time — tolerate unknown keys (don't use strict/`deny_unknown`
+  parsing).
+- Values are formatted per the [Response format](/guides/rest-api#response-format) conventions
+  (decimal strings, RFC3339 millisecond-`Z` timestamps) — a representation refinement is not a
+  breaking change; parse numbers/dates, never compare exact byte strings.
+
+<Note>
+**One-time exception (2026-07-24).** Before the first external integration, `v1` had a single
+coordinated reshape to its final form — list endpoints gained the `{ ok, generated_at, count,
+data }` envelope, the peg feed became a `data` array, and a few fields were renamed. This was a
+pre-integration cleanup, done in place because no external consumer had integrated yet; the
+[changelog](/changelog) has the migration. The additive-only promise holds from that point on.
+</Note>
+
+<Note>
+**Second exception (2026-10-20): the open-source release.** When Pegana became open source and
+free, the account-bound surfaces were removed in place, with no `v2` prefix and no `Sunset`
+period: `GET /v1/alerts`, `/v1/me/*` and `/v1/auth/*` now return `404 not_found`. The public
+ledger that replaces `GET /v1/alerts` is `GET /v1/audit`. The
+[migration table](/changelog#migrating-from-removed-endpoints) maps each removed route to its
+replacement. Every other `v1` endpoint and field was left unchanged, and the additive-only
+promise applies to the surface documented today. See the 2026-10-22 open-core entry in the [changelog](/changelog): the methodology, verifier and SDKs stay MIT; current service code is FSL-1.1-MIT, and the website is proprietary.
+</Note>
+
+<Note>
+This is distinct from the **methodology version** (e.g. `0.7.0`), which describes the risk
+model, not the wire contract. Read it at [`GET /v1/methodology/current`](https://api.pegana.xyz/v1/methodology/current);
+every receipt is pinned to the methodology version that produced it.
+</Note>
+
+## Deprecation
+
+If an endpoint is ever slated for retirement, it will advertise it with standard HTTP
+signals — a `Deprecation` header and a `Sunset` date — well ahead of any change, so pollers
+have a window to migrate. None are deprecated today. The 2026-10-20 removals above did not
+follow this process; they are documented as an exception rather than presented as a
+deprecation.

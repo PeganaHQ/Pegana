@@ -1,0 +1,410 @@
+name: Sync pegana-replay
+
+# Path-filtered subtree sync from this (private) repo to PeganaHQ/ReplayCLI
+# (public). Manual dispatch only; routine sync uses scripts/mirror-replaycli.sh.
+#
+# What flows to public (whitelist):
+#   - assets.toml
+#   - crates/common-verify/
+#   - crates/methodology/
+#   - crates/pegana-replay-cli/
+#
+# What stays private (everything else): engine, dispatcher, API, indexer,
+# bot, MCP server, web/, runbooks, infra config, AND docs/ — the ADRs
+# (including calibration-window notes) are intentionally NOT exposed publicly
+# (2026-06-03). Removing docs/adr from the whitelist makes the next sync
+# force-push a public tree without them, deleting them from the mirror.
+#
+# Mechanism: for each whitelisted path, `git subtree split --prefix=PATH`
+# generates a synthetic linear branch containing just that subtree's
+# history. We then merge the splits onto a single staging branch (using
+# git read-tree) and force-push to pegana-replay's main.
+#
+# Delivery is a PR (branch + one commit chained on main, merged when green):
+# the ReplayCLI main ruleset forbids force-pushes and direct pushes.
+#
+# Why not a single `git subtree push --prefix=` per path? subtree push
+# rejects when paths overlap or when force is needed (which it is here,
+# because every run rehashes). We do the split-then-tree dance instead.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why are you running this manually?"
+        required: false
+        default: "ad-hoc resync"
+
+concurrency:
+  group: sync-pegana-replay
+  cancel-in-progress: false  # serialize — concurrent pushes would race
+
+jobs:
+  sync:
+    name: Subtree-split + push
+    # This workflow is mirrored into the public PeganaHQ/Pegana repository,
+    # which has no PEGANA_REPLAY_PUSH_TOKEN secret, so every run there failed at the push
+    # step ("could not read Username") and showed red on public main. Only the
+    # private source repository may push the ReplayCLI mirror.
+    # The push token comes from the replay-sync environment (deployment
+    # branches: main only). The secret MUST exist only in the replay-sync
+    # environment; a repository-level copy defeats this gate.
+    if: github.repository == 'lrafasouza/pegana' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: replay-sync
+    permissions:
+      contents: read   # only read needed locally; push uses PAT
+      issues: write    # used by the on-failure step to open a tracking issue
+    steps:
+      - name: Require replay push token
+        env:
+          PEGANA_PUSH_TOKEN: ${{ secrets.PEGANA_REPLAY_PUSH_TOKEN }}
+        run: |
+          if [[ -z "$PEGANA_PUSH_TOKEN" ]]; then
+            echo 'PEGANA_REPLAY_PUSH_TOKEN is empty. Use scripts/mirror-replaycli.sh for the manual sync.' >&2
+            exit 1
+          fi
+
+      - name: Checkout (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # subtree split needs the full commit graph
+          persist-credentials: false
+
+      - name: Configure git identity
+        run: |
+          git config user.name "pegana-sync-bot"
+          git config user.email "ops+sync@pegana.xyz"
+
+      - name: Subtree split each whitelisted directory
+        id: split
+        run: |
+          set -euo pipefail
+          # `git subtree split` only works on directories (it errors with
+          # "tree entry is of type blob, expected tree or commit" on single
+          # files). Loose files like assets.toml are handled in the next
+          # step as a direct blob copy.
+          declare -A SPLITS
+          for path in \
+              crates/common-verify \
+              crates/methodology \
+              crates/pegana-replay-cli ; do
+            if [[ -d "$path" ]]; then
+              sha="$(git subtree split --prefix="$path" HEAD)"
+              SPLITS["$path"]="$sha"
+              echo "  split $path → $sha"
+            else
+              echo "  WARN $path missing in this checkout — skipping"
+            fi
+          done
+          : > /tmp/splits.tsv
+          for path in "${!SPLITS[@]}"; do
+            printf '%s\t%s\n' "$path" "${SPLITS[$path]}" >> /tmp/splits.tsv
+          done
+
+      - name: Assemble the public tree
+        run: |
+          set -euo pipefail
+          # Build an empty index, then mount each split's tree at its
+          # canonical prefix. Each subtree-split SHA points at a commit
+          # whose tree is the carved subtree, so we resolve it to a tree
+          # object first.
+          git read-tree --empty
+          while IFS=$'\t' read -r path sha; do
+            tree="$(git rev-parse "${sha}^{tree}")"
+            git read-tree --prefix="$path/" "$tree"
+          done < /tmp/splits.tsv
+          # Overlay single-file whitelist members directly from the working
+          # tree (subtree split rejects single files). assets.toml lands at
+          # the public repo root, bit-identical to the private source.
+          if [[ -f assets.toml ]]; then
+            blob="$(git hash-object -w assets.toml)"
+            git update-index --add --cacheinfo 100644,"$blob",assets.toml
+            echo "  copied assets.toml → blob $blob"
+          else
+            echo "  WARN assets.toml missing — public repo will lack canonical asset list"
+          fi
+
+      - name: Stage repo metadata from tools/pegana-replay-public/
+        run: |
+          set -euo pipefail
+          # Everything in tools/pegana-replay-public/ lands at the public repo
+          # root, with one exception (release.yml → .github/workflows/). This
+          # is generic so adding a new public file (CHANGELOG.md, SECURITY.md,
+          # METHODOLOGY.md, etc.) only requires dropping it in the directory —
+          # no sync-action edit needed.
+          if [[ -d tools/pegana-replay-public ]]; then
+            while IFS= read -r -d '' src; do
+              # Path relative to the templates dir.
+              rel="${src#tools/pegana-replay-public/}"
+              # release.yml is the only non-root destination.
+              if [[ "$rel" == "release.yml" ]]; then
+                dst=".github/workflows/release.yml"
+              else
+                dst="$rel"
+              fi
+              blob="$(git hash-object -w "$src")"
+              git update-index --add --cacheinfo 100644,"$blob","$dst"
+              echo "  overlaid $rel → $dst (blob $blob)"
+            done < <(find tools/pegana-replay-public -type f -print0)
+          else
+            echo "WARN tools/pegana-replay-public/ missing — public repo will lack README/LICENSE"
+          fi
+
+      - name: Snapshot the commit
+        id: snapshot
+        env:
+          # Security audit 2026-10-18 finding #7: the PAT must never appear in
+          # a remote URL — URLs land in process args (`git remote -v`, error
+          # output, `ps`). The credential store (a 0600 file) authenticates
+          # every git call without the token touching argv. `x-access-token:`
+          # user form is REQUIRED for Fine-Grained PATs; the legacy bare-token
+          # URL form only worked with Classic tokens and silently failed to
+          # authenticate (the root-commit hazard handled below).
+          PUBLIC_REMOTE: https://github.com/PeganaHQ/ReplayCLI.git
+          PEGANA_PUSH_TOKEN: ${{ secrets.PEGANA_REPLAY_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.pegana-cred" && chmod 700 "$HOME/.pegana-cred"
+          printf 'protocol=https\nhost=github.com\nusername=x-access-token\npassword=%s\n' \
+            "${PEGANA_PUSH_TOKEN}" > "$HOME/.pegana-cred/store"
+          chmod 600 "$HOME/.pegana-cred/store"
+          git config --global credential.helper \
+            "store --file=$HOME/.pegana-cred/store"
+          tree="$(git write-tree)"
+          parent_arg=()
+          # Chain the new snapshot onto the current head of ReplayCLI/main.
+          #
+          # SAFETY: a root commit here is DESTRUCTIVE — the next step
+          # force-pushes, so a parentless commit silently erases the mirror's
+          # entire history. That must therefore happen ONLY when the remote is
+          # genuinely empty, never because auth or the network hiccuped. The
+          # old code used `|| true` + a soft rev-parse, so an auth failure
+          # degraded straight into history loss with no error. It now fails
+          # loudly instead.
+          if git ls-remote --exit-code "${PUBLIC_REMOTE}" refs/heads/main >/dev/null 2>&1; then
+            # main exists → chaining onto it is MANDATORY. No `|| true`.
+            git fetch --no-tags "${PUBLIC_REMOTE}" main
+            parent_arg=(-p "$(git rev-parse FETCH_HEAD)")
+            echo "  chaining onto existing ReplayCLI/main"
+          elif git ls-remote "${PUBLIC_REMOTE}" >/dev/null 2>&1; then
+            # Reachable and authenticated, but no main ref → true first run.
+            echo "  remote has no refs/heads/main — first run, root commit"
+          else
+            echo "FATAL: cannot reach ReplayCLI (auth or network failure)." >&2
+            echo "Refusing to build a parentless commit: force-pushing one" >&2
+            echo "would destroy the mirror's history. Check that" >&2
+            echo "PEGANA_REPLAY_PUSH_TOKEN is valid and not expired." >&2
+            exit 1
+          fi
+          # Build a commit message that summarises which private commits
+          # are reflected in this snapshot. Last 10 commits touching the
+          # whitelisted paths. We avoid a HEREDOC here because GitHub
+          # Actions YAML parsing trips on column-1 lines inside the run:
+          # block scalar — easier to assemble with printf.
+          touched_commits=$(git log -n 10 --oneline -- \
+            assets.toml \
+            crates/common-verify \
+            crates/methodology \
+            crates/pegana-replay-cli \
+            | sed 's/^/    /')
+          msg_file=$(mktemp)
+          {
+            printf 'sync: mirror methodology + replay + assets\n\n'
+            printf 'Subtree-split + read-tree assembly from lrafasouza/pegana@%s.\n\n' "$GITHUB_SHA"
+            printf 'Recent private commits reflected here:\n'
+            printf '%s\n\n' "$touched_commits"
+            printf 'Autogenerated by .github/workflows/sync-pegana-replay.yml in\n'
+            printf 'PeganaHQ/Pegana (verifier subset mirror). Do not edit ReplayCLI\n'
+            printf 'directly: every mirror change goes through a pull request.\n'
+          } > "$msg_file"
+          export GIT_AUTHOR_NAME="PeganaHQ" GIT_COMMITTER_NAME="PeganaHQ"
+          export GIT_AUTHOR_EMAIL="69092895+lrafasouza@users.noreply.github.com"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit="$(git commit-tree "$tree" "${parent_arg[@]+${parent_arg[@]}}" < "$msg_file")"
+          echo "  new public commit: $commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Diagnose PAT permissions
+        env:
+          TOKEN: ${{ secrets.PEGANA_REPLAY_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "===== PAT-as-user (whoami) ====="
+          curl -sS -H "Authorization: Bearer ${TOKEN}" \
+            https://api.github.com/user -w "\nHTTP %{http_code}\n" \
+            -o /tmp/whoami.json
+          cat /tmp/whoami.json | jq -r '"login=\(.login) id=\(.id)"' || true
+          echo ""
+          echo "===== response headers (x-oauth-scopes shows token scope) ====="
+          curl -sS -D - -o /dev/null -H "Authorization: Bearer ${TOKEN}" \
+            https://api.github.com/user 2>&1 | grep -iE "(oauth|github-authentication|x-accepted)" || echo "  (no scope headers — likely a Fine-Grained PAT)"
+          echo ""
+          echo "===== REST: token permissions on pegana-replay ====="
+          curl -sS -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/PeganaHQ/ReplayCLI \
+            | jq '{permissions, default_branch, private, archived, disabled}' || true
+          echo ""
+          echo "===== WRITE test: try to create a temp ref via REST ====="
+          # Probe whether the TOKEN itself can mutate refs. The repo
+          # permissions block above shows what the USER can do; that's
+          # ambiguous for Fine-Grained PATs whose scope is independent.
+          # A successful POST proves the token has Contents:write.
+          # Uses the empty-tree SHA (4b825dc...) so we don't depend on
+          # any commit existing.
+          BLOB_SHA=$(curl -sS -X POST -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/PeganaHQ/ReplayCLI/git/blobs \
+            -d '{"content":"diagnostic write probe","encoding":"utf-8"}' | jq -r '.sha // empty')
+          if [[ -n "$BLOB_SHA" ]]; then
+            echo "  ✓ blob created: $BLOB_SHA (token CAN write)"
+          else
+            echo "  ✗ blob creation failed (token CANNOT write — Contents scope missing)"
+            curl -sS -X POST -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/PeganaHQ/ReplayCLI/git/blobs \
+              -d '{"content":"diagnostic write probe","encoding":"utf-8"}' | jq '.message // .'
+          fi
+
+      - name: Push branch, open PR, merge when green
+        env:
+          PUBLIC_COMMIT: ${{ steps.snapshot.outputs.commit }}
+          GH_TOKEN: ${{ secrets.PEGANA_REPLAY_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          # ReplayCLI/main is protected by rulesets (PR required, no
+          # non-fast-forward pushes). Ship the snapshot as a normal commit on a
+          # fresh branch, open a PR, and merge it once checks pass. Never force.
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          PUBLIC_REMOTE="https://github.com/PeganaHQ/ReplayCLI.git"
+          SLUG="PeganaHQ/ReplayCLI"
+          BRANCH="mirror/${GITHUB_SHA::7}-$(date -u +%Y%m%d%H%M%S)"
+          git push "${PUBLIC_REMOTE}" "${PUBLIC_COMMIT}:refs/heads/${BRANCH}"
+          body="Mirror sync from the private repository at ${GITHUB_SHA::7}."
+          body="${body}"$'\n\n'"Autogenerated by sync-pegana-replay.yml. Do not edit ReplayCLI directly."
+          PR_URL="$(gh pr create --repo "$SLUG" --base main --head "$BRANCH" \
+            --title "sync: mirror methodology + replay + assets" --body "$body")"
+          echo "  opened $PR_URL"
+          # Poll the PR's checks; merge ONLY when every check settled as pass/skipping.
+          # Fails closed: a failed/cancelled check, a 25-minute overall timeout, or no
+          # check registering within the 3-minute grace window leaves the PR open and
+          # exits non-zero.
+          start=$SECONDS
+          while true; do
+            elapsed=$(( SECONDS - start ))
+            if buckets="$(gh pr checks "$PR_URL" --json bucket --jq '[.[].bucket] | join(" ")' 2>/dev/null)" && [[ -n "$buckets" ]]; then
+              if [[ " $buckets " == *" fail "* || " $buckets " == *" cancel "* ]]; then
+                gh pr checks "$PR_URL" || true
+                echo "FATAL: a check failed; PR left open: $PR_URL" >&2; exit 1
+              fi
+              if [[ " $buckets " != *" pending "* ]]; then
+                break  # every bucket is pass or skipping
+              fi
+            elif (( elapsed >= 180 )); then
+              echo "FATAL: no checks reported within 3 minutes; PR left open: $PR_URL" >&2; exit 1
+            fi
+            if (( elapsed >= 1500 )); then
+              echo "FATAL: checks did not settle within 25 minutes; PR left open: $PR_URL" >&2; exit 1
+            fi
+            sleep 20
+          done
+          gh pr merge "$PR_URL" --merge --delete-branch
+          echo "  merged $PR_URL"
+
+      # On-failure step — opens an issue on this repo so the operator is
+      # notified the next time they look at their notifications. Without this
+      # the sync can fail silently for weeks (the PAT expires on
+      # 2026-08-27 — without the issue we'd discover the silent break
+      # whenever someone finally checked pegana-replay/main and noticed it's
+      # stale). Uses the workflow's GITHUB_TOKEN, not the sync PAT, so the
+      # failure mode of "PAT expired" doesn't also prevent the notification.
+      - name: Open issue on failure
+        if: failure()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const title = `Sync to pegana-replay failed (run ${process.env.GITHUB_RUN_ID})`;
+            const body = [
+              `The \`sync-pegana-replay\` workflow run **failed** at \`${process.env.GITHUB_SHA}\` on \`${process.env.GITHUB_REF}\`.`,
+              ``,
+              `Failed run: ${runUrl}`,
+              ``,
+              `### Likely causes (most → least)`,
+              ``,
+              `- **PAT expired** — rotate the fine-grained token and update the PEGANA_REPLAY_PUSH_TOKEN secret in the replay-sync environment (not as a repository secret).`,
+              `- **PAT permissions changed** — Fine-Grained PATs require \`Contents: Read and write\` on pegana-replay. If write access was reduced, the diagnostic step prints \`✗ blob creation failed\`.`,
+              `- **pegana-replay was renamed / made private / archived** — check the live state at https://github.com/PeganaHQ/ReplayCLI.`,
+              `- **GitHub Actions billing limit** — if the run ended in seconds with \`The job was not started because recent account payments have failed\`, increase the spending limit at https://github.com/settings/billing/spending_limit.`,
+              `- **Transient GitHub Actions outage** — re-run the workflow once before debugging.`,
+              ``,
+              `### What to check`,
+              ``,
+              `1. Click the failed run URL above and inspect the \`Diagnose PAT permissions\` step — it prints \`login\`, repo \`permissions\`, and the write-probe result. Whatever broke usually shows up there.`,
+              `2. Open https://github.com/PeganaHQ/ReplayCLI/commits/main and confirm whether the latest mirrored commit is stale relative to the private repo.`,
+              ``,
+              `Re-run the workflow once the underlying issue is fixed; this issue auto-closes on the next successful run.`,
+            ].join("\n");
+
+            // Look for an existing open auto-issue (same title prefix) so we
+            // don't spam — update it instead.
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "sync-failure",
+              per_page: 5,
+            });
+
+            if (existing.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing[0].number,
+                body: `Another failure: ${runUrl} (commit \`${process.env.GITHUB_SHA.substring(0,7)}\`).`,
+              });
+              core.info(`Appended comment to existing issue #${existing[0].number}`);
+            } else {
+              const { data: created } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ["sync-failure", "ops"],
+              });
+              core.info(`Opened tracking issue #${created.number}`);
+            }
+
+      # Mirror of the on-failure step: when a run SUCCEEDS, close any open
+      # sync-failure issue. Keeps the issue tracker honest about whether the
+      # mirror is currently broken.
+      - name: Close sync-failure issue on success
+        if: success()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "sync-failure",
+              per_page: 5,
+            });
+            for (const issue of existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Sync recovered: run ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID} succeeded. Closing.`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: "closed",
+              });
+              core.info(`Closed issue #${issue.number}`);
+            }

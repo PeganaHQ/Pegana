@@ -1,0 +1,165 @@
+[[assets]]
+symbol         = "jitoSOL"
+name           = "Jito Liquid Staking"
+mint           = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn"
+verified       = true
+decimals       = 9
+token_program  = "spl"
+class          = "lst"
+peg_target     = "SOL"
+intrinsic      = { kind = "sanctum_lst", symbol = "jitoSOL" }
+market         = { kind = "jupiter_usd", numeraire = "SOL", numeraire_feed = "SOL/USD" }
+pyth_feed_id   = "0x67be9f519b95cf24338801051f9a808eff0a578ccb388db73b7f6fe1de019ffb"
+# Calibrated 2026-05-25 from 24h p99 ~36 bps × 1.25 buffer.
+thresholds_bps = { drift = 45, depeg = 110, critical = 250 }
+
+[[assets]]
+symbol         = "mSOL"
+name           = "Marinade staked SOL"
+mint           = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So"
+verified       = true   # confirmed via mainnet RPC + Sanctum LST list 2026-05-21
+decimals       = 9
+token_program  = "spl"
+class          = "lst"
+peg_target     = "SOL"
+intrinsic      = { kind = "sanctum_lst", symbol = "mSOL" }
+market         = { kind = "jupiter_usd", numeraire = "SOL", numeraire_feed = "SOL/USD" }
+pyth_feed_id   = "0xc2289a6a43d2ce91c6f55caec370f4acc38a2ed477f58813334c6d03749ff2a4"
+# Calibrated 2026-05-25 from 24h p99 ~33 bps.
+thresholds_bps = { drift = 40, depeg = 100, critical = 250 }
+# monitoring-only per ADR-0015 on 2026-06-10 — calibration v1: p95 48.5 bps > drift 40,
+# 0 transitions. 24h-sampled band too tight vs the 12.8d window. Stays active+monitored
+# but excluded from the launch verdict. Re-calibrate (drift→~61) + re-promote post-launch
+# after a clean 7-day run. See docs/CALIBRATION-v1.md.
+
+[[assets]]
+symbol         = "bSOL"
+name           = "BlazeStake Staked SOL"
+mint           = "bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1"
+verified       = true   # confirmed via mainnet RPC + Sanctum LST list 2026-05-21
+decimals       = 9
+token_program  = "spl"
+class          = "lst"
+peg_target     = "SOL"
+intrinsic      = { kind = "sanctum_lst", symbol = "bSOL" }
+market         = { kind = "jupiter_usd", numeraire = "SOL", numeraire_feed = "SOL/USD" }
+pyth_feed_id   = "0x89875379e70f8fbadc17aef315adf3a8d5d160b811435537e03c97e8aac97d9c"
+# Calibrated 2026-05-25 from 24h p99 ~37 bps.
+thresholds_bps = { drift = 45, depeg = 110, critical = 250 }
+
+[[assets]]
+symbol         = "INF"
+name           = "Infinity"
+mint           = "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm"
+verified       = true   # confirmed via mainnet RPC 2026-05-21
+decimals       = 9
+token_program  = "spl"
+class          = "lst"
+peg_target     = "SOL"
+intrinsic      = { kind = "sanctum_lst", symbol = "INF" }
+market         = { kind = "jupiter_usd", numeraire = "SOL", numeraire_feed = "SOL/USD" }
+pyth_feed_id   = "0xf51570985c642c49c2d6e50156390fdba80bb6d5f7fa389d2f012ced4f7d208f"
+# Calibrated 2026-05-25 from 24h p99 ~112 bps — INF runs hot vs the rest.
+thresholds_bps = { drift = 140, depeg = 280, critical = 560 }
+# monitoring-only per ADR-0015 on 2026-06-10 — calibration v1: p95 146.2 bps > drift 140,
+# 0 transitions. 24h-sampled band too tight. Stays active+monitored, excluded from the
+# launch verdict. Re-calibrate (drift→~183) + re-promote post-launch. See docs/CALIBRATION-v1.md.
+
+# Drift protocol was exploited 2026-04-01 ($285M, DPRK-linked admin key
+# compromise). TVL collapsed from $550M to <$10M; protocol is permanently
+# frozen. dSOL has no live counterparty for redemption. Soft-deactivated
+# 2026-05-26: entry preserved for historical snapshot continuity but the
+# indexer/engine skip it (active=false). See migration 0020 and
+# docs/incident-2026-04-01-drift.md.
+
+[[assets]]
+symbol         = "USDC"
+name           = "USD Coin"
+mint           = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+verified       = true
+decimals       = 6
+token_program  = "spl"
+class          = "stable_fiat"
+peg_target     = "USD"
+intrinsic      = { kind = "fixed_1_usd" }
+market         = { kind = "pyth_spot", feed = "USDC/USD" }  # H5: own Pyth USDC/USD spot — breaks the USDC<->USDT numéraire cycle (no degenerate same-mint Jupiter quote)
+pyth_feed_id   = "0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a"
+thresholds_bps = { drift = 15, depeg = 50, critical = 200 }
+
+[[assets]]
+symbol         = "USDT"
+name           = "Tether"
+mint           = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+verified       = true
+decimals       = 6
+token_program  = "spl"
+class          = "stable_fiat"
+peg_target     = "USD"
+intrinsic      = { kind = "fixed_1_usd" }
+market         = { kind = "pyth_spot", feed = "USDT/USD" }  # H5: own Pyth USDT/USD spot — breaks the USDC<->USDT numéraire cycle
+pyth_feed_id   = "0x2b89b9dc8fdf9f34709a5b106b472f0f39bb6ca9ce04b0fd7f2e971688e2e53b"
+thresholds_bps = { drift = 15, depeg = 50, critical = 200 }
+
+[[assets]]
+symbol         = "PYUSD"
+name           = "PayPal USD"
+mint           = "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"
+verified       = true
+decimals       = 6
+token_program  = "token_2022"  # ★ NOTE
+class          = "stable_fiat"
+peg_target     = "USD"
+intrinsic      = { kind = "fixed_1_usd" }
+market         = { kind = "jupiter_usd", numeraire = "USDC", numeraire_feed = "USDC/USD" }
+pyth_feed_id   = "0xc1da1b73d7f01e7ddd54b3766cf7fcd644395ad14f70aa706ec5384c59e76692"
+thresholds_bps = { drift = 15, depeg = 50, critical = 200 }
+
+[[assets]]
+symbol         = "USDe"
+name           = "Ethena USDe"
+mint           = "DEkqHyPN7GMRJ5cArtQFAWefqbZb33Hyf6s5iCwjEonT"
+verified       = true   # confirmed via Ethena docs + on-chain getMint 2026-05-21
+decimals       = 9      # NOTE: 9 on Solana (not 6) — Wormhole NTT bridged variant
+token_program  = "spl"
+class          = "stable_dn"
+peg_target     = "USD"
+intrinsic      = { kind = "fixed_1_usd" }
+market         = { kind = "jupiter_usd", numeraire = "USDC", numeraire_feed = "USDC/USD" }
+pyth_feed_id   = "0x6ec879b1e9963de5ee97e9c8710b742d6228252a5e2ca12d4ae81d7fe5ee8c5d"
+thresholds_bps = { drift = 25, depeg = 100, critical = 300 }
+
+[[assets]]
+symbol         = "USDS"
+name           = "Sky Dollar"
+mint           = "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA"
+verified       = true
+decimals       = 6
+token_program  = "spl"
+class          = "stable_cdp"
+peg_target     = "USD"
+intrinsic      = { kind = "fixed_1_usd" }
+market         = { kind = "jupiter_usd", numeraire = "USDC", numeraire_feed = "USDC/USD" }
+pyth_feed_id   = "0x77f0971af11cc8bac224917275c1bf55f2319ed5c654a1ca955c82fa2d297ea1"
+thresholds_bps = { drift = 20, depeg = 75, critical = 250 }
+
+[[assets]]
+symbol         = "sUSDe"
+name           = "Ethena Staked USDe"
+mint           = "Eh6XEPhSwoLv5wFApukmnaVSHQ6sAnoD9BmgmwQoN2sN"
+verified       = true    # mint confirmed via docs.ethena.fi + mainnet RPC; NAV source = Pyth SUSDE/USDE.RR
+decimals       = 9       # 9 on Solana (Wormhole NTT bridged variant, matches USDe Solana pattern)
+token_program  = "spl"
+class          = "stable_yield"
+peg_target     = "USD"
+# Task 9 resolution: Ethena publishes the official sUSDe redemption rate
+# (per-share NAV vs USDE) to Pyth as `Crypto.SUSDE/USDE.RR`. The feed is
+# Ethena-attested on Ethereum — Hermes redistributes it cross-chain, so
+# consuming it from Solana is equivalent to reading the source.
+# Note: feed is USDE-quoted, not USD-quoted. USDE is Ethena's delta-neutral
+# stablecoin that trades within ~1bp of $1; engine treats value as USD-denominated.
+# Drift threshold (30bps) absorbs USDE/USD slippage comfortably.
+# Same code path as USDY (Task 4) and syrupUSDC (Task 7) — no new adapter.
+intrinsic      = { kind = "pyth_redemption_rate", feed = "SUSDE/USDE.RR" }
+market         = { kind = "pyth_spot", feed = "SUSDE/USD" }   # Pyth spot price (USD-quoted secondary market).
+pyth_feed_id   = "0xca3ba9a619a4b3755c10ac7d5e760275aa95e9823d38a84fedd416856cdba37c"
+thresholds_bps = { drift = 30, depeg = 100, critical = 300 }

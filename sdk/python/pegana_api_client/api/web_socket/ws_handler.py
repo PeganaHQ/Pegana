@@ -1,0 +1,179 @@
+from http import HTTPStatus
+from typing import Any, cast
+
+import httpx
+
+from ... import errors
+from ...client import AuthenticatedClient, Client
+from ...models.api_error import ApiError
+from ...types import Response
+
+
+def _get_kwargs() -> dict[str, Any]:
+
+    _kwargs: dict[str, Any] = {
+        "method": "get",
+        "url": "/v1/ws",
+    }
+
+    return _kwargs
+
+
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Any | ApiError | None:
+    if response.status_code == 101:
+        response_101 = cast(Any, None)
+        return response_101
+
+    if response.status_code == 400:
+        response_400 = ApiError.from_dict(response.json())
+
+        return response_400
+
+    if response.status_code == 403:
+        response_403 = ApiError.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 429:
+        response_429 = ApiError.from_dict(response.json())
+
+        return response_429
+
+    if response.status_code == 503:
+        response_503 = ApiError.from_dict(response.json())
+
+        return response_503
+
+    if client.raise_on_unexpected_status:
+        raise errors.UnexpectedStatus(response.status_code, response.content)
+    else:
+        return None
+
+
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[Any | ApiError]:
+    return Response(
+        status_code=HTTPStatus(response.status_code),
+        content=response.content,
+        headers=response.headers,
+        parsed=_parse_response(client=client, response=response),
+    )
+
+
+def sync_detailed(
+    *,
+    client: AuthenticatedClient | Client,
+) -> Response[Any | ApiError]:
+    """`GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
+
+     Not a JSON endpoint: a successful handshake returns `101 Switching
+    Protocols`. After upgrade the server pushes `{op:"update", ...}` and
+    `{op:"heartbeat", ts}` frames; the client may send `{op:"ping"}` (→ `pong`)
+    and `{op:"subscribe"|"unsubscribe", assets:[...]}`. Browsers must present an
+    allowlisted `Origin`; server-to-server tools may omit it. Every rejection
+    is the JSON `{error, message}` envelope; the 429 and 503 also carry
+    `Retry-After`.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[Any | ApiError]
+    """
+
+    kwargs = _get_kwargs()
+
+    response = client.get_httpx_client().request(
+        **kwargs,
+    )
+
+    return _build_response(client=client, response=response)
+
+
+def sync(
+    *,
+    client: AuthenticatedClient | Client,
+) -> Any | ApiError | None:
+    """`GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
+
+     Not a JSON endpoint: a successful handshake returns `101 Switching
+    Protocols`. After upgrade the server pushes `{op:"update", ...}` and
+    `{op:"heartbeat", ts}` frames; the client may send `{op:"ping"}` (→ `pong`)
+    and `{op:"subscribe"|"unsubscribe", assets:[...]}`. Browsers must present an
+    allowlisted `Origin`; server-to-server tools may omit it. Every rejection
+    is the JSON `{error, message}` envelope; the 429 and 503 also carry
+    `Retry-After`.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Any | ApiError
+    """
+
+    return sync_detailed(
+        client=client,
+    ).parsed
+
+
+async def asyncio_detailed(
+    *,
+    client: AuthenticatedClient | Client,
+) -> Response[Any | ApiError]:
+    """`GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
+
+     Not a JSON endpoint: a successful handshake returns `101 Switching
+    Protocols`. After upgrade the server pushes `{op:"update", ...}` and
+    `{op:"heartbeat", ts}` frames; the client may send `{op:"ping"}` (→ `pong`)
+    and `{op:"subscribe"|"unsubscribe", assets:[...]}`. Browsers must present an
+    allowlisted `Origin`; server-to-server tools may omit it. Every rejection
+    is the JSON `{error, message}` envelope; the 429 and 503 also carry
+    `Retry-After`.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[Any | ApiError]
+    """
+
+    kwargs = _get_kwargs()
+
+    response = await client.get_async_httpx_client().request(**kwargs)
+
+    return _build_response(client=client, response=response)
+
+
+async def asyncio(
+    *,
+    client: AuthenticatedClient | Client,
+) -> Any | ApiError | None:
+    """`GET /v1/ws`; upgrade to a WebSocket carrying the live peg-state stream.
+
+     Not a JSON endpoint: a successful handshake returns `101 Switching
+    Protocols`. After upgrade the server pushes `{op:"update", ...}` and
+    `{op:"heartbeat", ts}` frames; the client may send `{op:"ping"}` (→ `pong`)
+    and `{op:"subscribe"|"unsubscribe", assets:[...]}`. Browsers must present an
+    allowlisted `Origin`; server-to-server tools may omit it. Every rejection
+    is the JSON `{error, message}` envelope; the 429 and 503 also carry
+    `Retry-After`.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Any | ApiError
+    """
+
+    return (
+        await asyncio_detailed(
+            client=client,
+        )
+    ).parsed

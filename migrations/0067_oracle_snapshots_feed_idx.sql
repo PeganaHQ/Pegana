@@ -1,0 +1,24 @@
+-- 0067: index oracle_snapshots(feed_id, publish_time DESC) — 2026-07-17.
+--
+-- Supports the 3-leg "source divergence" oracle leg on GET
+-- /v1/assets/{symbol}/history: for each discount_snapshots row we asof-join the
+-- most-recent Pyth oracle price at-or-before that timestamp
+--   (SELECT price FROM oracle_snapshots
+--    WHERE feed_id = lower(replace(<asset.pyth_feed_id>, '0x', ''))
+--      AND publish_time <= ds.ts
+--    ORDER BY publish_time DESC LIMIT 1)
+-- (feed_id is stored 0x-stripped + lowercased by the indexer; the asset column
+--  is seeded WITH the 0x prefix — normalize the asset side to match.)
+-- oracle_snapshots' PK is (feed, publish_time), so the join — which filters on
+-- feed_id, not feed — had no usable index and would seq-scan the hypertable.
+-- A composite (feed_id, publish_time DESC) index turns each asof lookup into an
+-- index scan (the TimescaleDB-recommended shape for a per-key latest-value
+-- lookup). Additive: no data change, read-path only.
+--
+-- NOTE: TimescaleDB hypertables do NOT support CREATE INDEX CONCURRENTLY. On a
+-- non-empty prod table apply this manually with
+--   ... WITH (timescaledb.transaction_per_chunk);
+-- (same as 0052). CREATE INDEX IF NOT EXISTS is correct on a fresh DB where the
+-- table is empty and the plain form is instant.
+CREATE INDEX IF NOT EXISTS oracle_snapshots_feed_id_publish_idx
+    ON oracle_snapshots (feed_id, publish_time DESC);

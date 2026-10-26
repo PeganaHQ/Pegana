@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16@sha256:d8336a5c9cc49bdbf1e935234e8c87ab64b6d6d195fd2ecedff7b00185557631
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pegana
+      POSTGRES_PASSWORD: pegana
+      POSTGRES_DB: pegana
+    ports: ["5433:5432"]   # 5433 on host (avoid clash with system postgres) → 5432 in container
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pegana"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    restart: unless-stopped
+    ports: ["6380:6379"]   # 6380 on host (avoid clash with system redis if any) → 6379 in container
+    volumes: [redisdata:/data]
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata: {}
+  redisdata: {}

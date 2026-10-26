@@ -1,0 +1,131 @@
+---
+title: "Quickstart"
+description: "Get a real Pegana response in 5 minutes. Pick your stack."
+---
+
+No signup. No API key. No wallet. Pick one of the snippets below and run it.
+
+## Read one peg state
+
+<CodeGroup>
+
+```bash curl
+curl https://api.pegana.xyz/v1/assets/USDC/state
+```
+
+```typescript Node / TypeScript
+const res = await fetch("https://api.pegana.xyz/v1/assets/USDC/state");
+const state = await res.json();
+console.log(state);
+```
+
+```python Python
+import requests
+state = requests.get("https://api.pegana.xyz/v1/assets/USDC/state").json()
+print(state)
+```
+
+```rust Rust
+let state: serde_json::Value = reqwest::get("https://api.pegana.xyz/v1/assets/USDC/state")
+    .await?
+    .json()
+    .await?;
+println!("{state:#}");
+```
+
+</CodeGroup>
+
+You get back (captured live on 2026-10-20):
+
+```json
+{
+  "asset": "USDC",
+  "state": "PEGGED",
+  "since": "2026-10-17T09:20:24.939Z",
+  "discount": "0.000185",
+  "intrinsic_usd": "1",
+  "market_usd": "0.99980022",
+  "updated_at": "2026-10-20T11:22:31.361Z",
+  "stale": false,
+  "confidence": "high"
+}
+```
+
+Numeric fields are returned as strings to preserve full on-chain precision —
+parse them with your language's decimal type, not a float.
+
+That's it. No auth, and no SDK required (requests are rate-limited per IP; see [rate limits](/guides/rate-limits)), though typed TypeScript (`@peganahq/sdk-ts`, `npm install @peganahq/sdk-ts`) and Python (`pegana-sdk`, `pip install pegana-sdk`) clients are generated from the OpenAPI spec if you want them. The published releases still include a few removed endpoints; see [SDKs](/api-reference/introduction#sdks).
+
+## Stream live readings
+
+If you want pushed updates instead of polling, open a WebSocket:
+
+<CodeGroup>
+
+```bash wscat
+wscat -c wss://api.pegana.xyz/v1/ws
+```
+
+```typescript Node / TypeScript
+import WebSocket from "ws";
+
+const ws = new WebSocket("wss://api.pegana.xyz/v1/ws");
+ws.on("message", (data) => {
+  const msg = JSON.parse(data.toString());
+  if (msg.op === "update") console.log(msg.asset, msg.payload);
+});
+```
+
+</CodeGroup>
+
+The server pushes `{op:"update", asset, payload}` for each asset every time the engine
+recomputes it (not only when the state changes), plus a heartbeat every 5 seconds. See [WebSocket guide](/guides/websocket) for
+filtering by asset.
+
+## Add Pegana to Claude / Cursor (MCP)
+
+If you're using an MCP-capable client, ask the model directly:
+
+```text Paste into Claude / Cursor
+"Check the current peg state for USDC, jitoSOL and hyUSD via Pegana.
+ Summarize anything in DRIFT or worse with the spread bps."
+```
+
+Configure your MCP host once. The server is **hosted at `https://mcp.pegana.xyz`** —
+no install, no clone:
+
+```json claude_desktop_config.json
+{
+  "mcpServers": {
+    "pegana": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.pegana.xyz"]
+    }
+  }
+}
+```
+
+`mcp-remote` is an official bridge that proxies the HTTP MCP transport into stdio
+for hosts that don't yet support HTTP natively (most as of 2026-05). It auto-installs
+via npx the first time it runs. Restart your MCP host and the Pegana tools appear.
+
+All 10 tools are free: `ping`, `ping_paid`, `get_assets`, `get_asset_state`,
+`get_methodology`, `get_loop_exposure`, `simulate_depeg_impact`, `verify_alert`,
+`get_asset_history`, `subscribe_peg_events`. See [MCP tools](/guides/mcp-free-tools).
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Pick your channel" icon="list-tree" href="/guides/rest-api">
+    Full reference for REST, WebSocket, MCP and Embed.
+  </Card>
+  <Card title="How peg state is computed" icon="equals" href="/methodology/overview">
+    The formula, sources and FSM thresholds.
+  </Card>
+  <Card title="Case studies" icon="book-open" href="/case-studies/overview">
+    Five real depegs in detail — USDC-SVB, UST, mSOL, DAI, GHO.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/introduction">
+    Live OpenAPI reference for annotated HTTP endpoints.
+  </Card>
+</CardGroup>

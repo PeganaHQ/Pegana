@@ -1,0 +1,46 @@
+{
+  "name": "pegana-protocol-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "description": "Sub-C Loop Intelligence indexer — polls Kamino + Jupiter Lend for anonymous, aggregate leverage exposure and k-floored health-factor distributions (ADR-0036 variant A). Writes to the shared TimescaleDB; never reads or persists position owners.",
+  "license": "FSL-1.1-MIT",
+  "author": "Pegana <hello@pegana.xyz> (https://pegana.xyz)",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "build": "bun build src/index.ts --outdir dist --target bun"
+  },
+  "dependencies": {
+    "@jup-ag/lend-read": "^0.0.14",
+    "@kamino-finance/klend-sdk": "^9.1.6",
+    "@sentry/node": "^10.76.2",
+    "hono": "^4.13.14",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/bn.js": "^5.2.0",
+    "@types/bun": "latest",
+    "@types/pg": "^8.23.1",
+    "eslint": "^9.39.5",
+    "globals": "^16.5.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "postcss": "^8.5.25",
+    "axios": "^1.20.0",
+    "follow-redirects": "^1.16.1",
+    "toml": "^5.0.1",
+    "vite": "^7.3.7",
+    "source-map-js": "^1.2.2",
+    "nanoid": "^3.3.20",
+    "svgo": "^4.1.0"
+  }
+}

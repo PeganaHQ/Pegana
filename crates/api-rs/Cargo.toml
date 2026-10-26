@@ -1,0 +1,70 @@
+[package]
+name = "api-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "api-rs"
+path = "src/main.rs"
+
+[dependencies]
+pegana-common = { path = "../common" }
+# risk_side derives from the same premium carve-out the engine classifies with.
+pegana-methodology = { path = "../methodology" }
+
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+toml = { workspace = true }
+tracing-subscriber = { workspace = true }
+sentry = { workspace = true }
+sqlx = { workspace = true }
+redis = { workspace = true }
+futures = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+metrics = { workspace = true }
+dotenvy = { workspace = true }
+envy = "0.4"
+# setrlimit: raise the nofile soft limit at startup (main.rs).
+libc = "0.2"
+
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "limit", "compression-gzip"] }
+
+# Trust Layer Phase 4 — /v1/audit.csv streams via chunked transfer encoding.
+# axum-streams bridges async-stream's yielded rows to a CSV body, so the
+# DB cursor and the HTTP response advance together without buffering the
+# full result set in memory. Pin to 0.19 — 0.20+ require axum 0.8 while
+# we're still on axum 0.7 (which workspace-wide upgrade is a separate task).
+axum-streams = { version = "0.19", features = ["csv"] }
+async-stream = "0.3"
+
+# OpenAPI auto-generation. derives + utoipa::path macros annotate the
+# handlers; the OpenApi struct in src/openapi.rs assembles everything and
+# is served at GET /openapi.json. Eventually Mintlify will consume that
+# URL instead of the hand-written docs-site/api-reference/openapi.yaml.
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid", "decimal"] }
+
+# Receipt hashing / feed-id hex (shared with the methodology contract).
+sha2 = "0.10"
+hex = "0.4"
+# Query-string parsing for the hot-cache key (hot_cache.rs); already in the
+# lockfile via url/reqwest, so no new crate is downloaded.
+form_urlencoded = "1"
+
+[dev-dependencies]
+reqwest = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+# In-process e2e/stress test of the middleware stack (DX headers + rate limit)
+# drives the real Router via `ServiceExt::oneshot` — no DB required.
+tower = { version = "0.5", features = ["util"] }
+# WebSocket client for the in-process ws fan-out resource test (ws.rs).
+tokio-tungstenite = "0.24"

@@ -1,0 +1,67 @@
+---
+title: "mSOL flash-crashed to 0.85× SOL on a single oracle update"
+description: "Solend's oracle priced mSOL off a thin Mango pool. One stale update + one whale exit = $21M of liquidations on otherwise-healthy collateral."
+---
+
+<Warning>
+  **Asset**: mSOL · **Class**: LST · **Date**: 2022-06-19
+  **Worst spread**: −1500 bps · **Duration**: ≈ 4 min outside `PEGGED`
+  **Detected live**: No (pre-Pegana retrospective)
+</Warning>
+
+## Background
+
+Solend used Pyth's mSOL/USD feed which composited from Mango Markets liquidity. mSOL
+had real depth on Saber and Marinade's redemption, but the Mango pool was thin.
+Healthy mSOL borrows used mSOL as collateral with conservative LTV.
+
+## Trigger
+
+A user exited Mango by selling ~88k mSOL into thin depth. The pool's mid-point
+printed mSOL at 0.85× SOL — accurate for *that* pool, wildly wrong for the actual
+asset.
+
+## Cascade
+
+- Solend's oracle ingested the print. mSOL collateral re-valued at 0.85×.
+- Liquidation engines triggered on ~$21M of positions that were nowhere near
+  liquidation against true intrinsic.
+- Liquidators sold the seized mSOL — also into thin venues — amplifying the
+  down-print.
+- Marinade's on-chain redemption never moved. **Intrinsic stayed pegged. Market lied
+  for 4 minutes.**
+
+## Recovery
+
+Mango depth recovered as the seller ran out of supply. The oracle re-converged. mSOL
+re-pegged inside 4 minutes. **Liquidated positions did not recover.**
+
+## What Pegana would have shown
+
+- **t=0** — Whale begins selling. Smoothed spread starts rising sharply.
+- **t≈30s** — Spread crosses 300 bps. **`PEGGED → DRIFT`** (would have notified
+  subscribers including Solend, if they were on Pegana).
+- **t≈45s** — Spread crosses 500 bps. **`DRIFT → DEPEG`**.
+- **t≈60s** — Spread crosses 1000 bps. **`DEPEG → CRITICAL`**.
+- **t≈4min** — Mango depth recovers. Smoothed spread falls back below thresholds.
+- **t≈5min** — After exit dwell, **`CRITICAL → DEPEG → DRIFT → PEGGED`**.
+
+The crucial fact: throughout the entire incident, Sanctum's `sol_value` for mSOL
+would have shown **no change** — Marinade's on-chain redemption was unaffected. The
+Jupiter routed quote, however, would have shown the dramatic drop. The
+`intrinsic_usd` / `market_usd` divergence in the alert payload would have made the
+"market is broken" framing obvious.
+
+Whether a lending protocol could have acted in 30 seconds is a different question.
+But the signal would have been there.
+
+## Lesson
+
+Intrinsic vs market is the right primitive for LSTs. If your monitor only watches a
+market price, you'll miss the case where market is the broken side. Pegana checks
+Sanctum's on-chain `sol_value` as ground truth and compares against Jupiter route
+quotes — exactly to catch this kind of incident.
+
+## Sources
+
+- [Solend governance — mSOL liquidation post](https://solend.fi/blog)

@@ -1,0 +1,112 @@
+# Rust
+/target
+**/*.rs.bk
+*.pdb
+Cargo.lock.bak
+
+# Node
+node_modules/
+bot-ts/dist/
+bot-ts/.next/
+*.log
+.pnpm-store/
+.bun/
+
+# Secrets & env
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+!.env.example
+# Key material — never commit (audit F-31; ops keypair lives off-repo on Hetzner)
+*.pem
+*keypair*.json
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+.secrets/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docker / runtime data
+data/
+!web/lib/data/
+volumes/
+pgdata/
+redisdata/
+caddydata/
+
+# Backups
+*.dump
+*.sql.gz
+backups/
+
+# Coverage
+tarpaulin-report.html
+*.profraw
+
+# OS
+Thumbs.db
+.superpowers/
+.playwright-mcp/
+
+# Screenshot artifacts from Playwright responsive validation
+*.png
+!web/public/**/*.png
+!web/app/opengraph-image.png
+!web/app/twitter-image.png
+!bot-ts/assets/**/*.png
+!docs-site/**/*.png
+!docs/strategy/assets/**/*.png
+*.jpeg
+*.jpg
+.playwright-mcp/
+
+# Design research shots — intermediate, not source of truth. Mocks +
+# findings markdowns are tracked; shots stay local.
+docs/design-research/**/shots/
+docs/design-research/**/logos/
+# Standalone HTML mocks — kept locally for diff reference per
+# project_landing_redesign_handoff memory ("failed mocks at ... for diff
+# reference only"). Don't pollute git status or commit history.
+docs/design-research/**/mock*.html
+
+# Leftover fixtures from earlier landing iterations — not used in build,
+# not part of any test. Safe to delete; gitignore so future iterations
+# don't accidentally commit similar.
+/events_initial.txt
+
+# Playwright E2E artefacts
+web/test-results/
+web/playwright-report/
+
+# Plugin / agent caches
+.claude/
+.vercel
+.env*.local
+sdk/typescript/bun.lock
+web/bun.lock
+pegana.code-workspace
+
+# foglamp scan — edit token is a secret
+.foglamp/
+
+# Local media kit + artifacts
+pegana-media-kit/
+pegana-media-kit.zip
+
+# Root-level test results (web/ has its own gitignored)
+/test-results/
+
+# Video assets (local only)
+/video/
+
+# Lighthouse CI run output
+.lighthouseci/
+.maestri/

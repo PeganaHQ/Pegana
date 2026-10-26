@@ -1,0 +1,19 @@
+# Pegana - Alertmanager fallback config, used ONLY when no delivery channel is
+# configured or the start-time render fails (see ops/alertmanager/render-config.sh
+# and the alertmanager entrypoint in docker-compose.yml). Every alert goes to a
+# receiver with no integrations, so Alertmanager starts, stays healthy and
+# Prometheus keeps evaluating the rules (alerts remain visible in the Prometheus
+# and Alertmanager UIs), but nothing is delivered. The render script logs a
+# WARN and scripts/deploy.sh prints "ALERTMANAGER IS NOT DELIVERING ALERTS".
+# Set Telegram (ALERTMANAGER_TELEGRAM_BOT_TOKEN + ALERTMANAGER_TELEGRAM_CHAT_ID)
+# or Discord (ALERTMANAGER_DISCORD_WEBHOOK_URL) and recreate alertmanager.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: "null"
+  group_by: ['alertname', 'service']
+
+receivers:
+  - name: "null"

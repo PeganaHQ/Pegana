@@ -1,0 +1,29 @@
+[package]
+name = "indexer-rs-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+indexer-rs = { path = ".." }
+
+# Not part of the main workspace: fuzzing needs nightly + libFuzzer.
+[workspace]
+
+[[bin]]
+name = "decoders"
+path = "fuzz_targets/decoders.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parsers"
+path = "fuzz_targets/parsers.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,65 @@
+{
+  "name": "@peganahq/sdk-ts",
+  "version": "0.4.0",
+  "description": "Typed TypeScript client for the Pegana peg-risk oracle API — full OpenAPI-generated coverage of all /v1 endpoints, plus the stable v0.1 receipt-verification surface.",
+  "type": "module",
+  "//entrypoints": "These MUST point at the built dist/, not src/*.ts. 0.3.0 shipped broken because it declared the dist paths under `publishConfig`, which npm no longer honours for main/types/exports — it warns `Unknown publishConfig config` and publishes the src/*.ts paths verbatim, so `import` from node_modules throws ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING. `prepack` builds dist/ before packing. Repo-local development imports ../src/index.ts by relative path (see test/), so nothing here depends on these fields.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeganaHQ/Pegana.git",
+    "directory": "sdk/typescript"
+  },
+  "homepage": "https://docs.pegana.xyz",
+  "bugs": {
+    "url": "https://github.com/PeganaHQ/Pegana/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "gen": "openapi-typescript https://api.pegana.xyz/openapi.json -o src/schema.d.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src test",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc -p tsconfig.build.json && cp src/schema.d.ts dist/schema.d.ts",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^16.5.0",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^4.1.12"
+  },
+  "keywords": [
+    "pegana",
+    "solana",
+    "depeg",
+    "peg-risk",
+    "stablecoin",
+    "audit"
+  ],
+  "dependencies": {
+    "openapi-fetch": "^0.17.0"
+  },
+  "//build": "tsc does not emit declaration files for .d.ts INPUTS, so the OpenAPI-generated src/schema.d.ts never lands in dist/ — dist/typed.d.ts then imports './schema.js' and every consumer gets TS2307 'Cannot find module'. The runtime is unaffected (schema.d.ts is types-only), which is why only a real typed consumer catches it. Copy it explicitly."
+}

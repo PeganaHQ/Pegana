@@ -1,0 +1,21 @@
+# Provisioned dashboard loader — Grafana scans /var/lib/grafana/dashboards/
+# for *.json files and loads them on startup. The actual JSON is mounted
+# read-only from ./ops/grafana/dashboard.json via docker-compose volume.
+# Edits via UI are saved into Grafana DB but the provisioned JSON wins
+# on every restart (disableDeletion=true keeps the dashboard in nav even
+# if the operator clicks delete).
+
+apiVersion: 1
+
+providers:
+  - name: pegana
+    orgId: 1
+    folder: ""
+    folderUid: ""
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 60
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

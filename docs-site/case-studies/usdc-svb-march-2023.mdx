@@ -1,0 +1,62 @@
+---
+title: "USDC slipped to $0.87 — the day a stable broke on a bank, not on chain"
+description: "Silicon Valley Bank held ~$3.3B of Circle's reserves. The peg held against intrinsic, but the orderbook didn't trust intrinsic for 36 hours."
+---
+
+<Info>
+  **Asset**: USDC · **Class**: Fiat stable · **Date**: 2023-03-11
+  **Worst spread**: −1300 bps · **Duration**: ≈ 36 h outside `PEGGED`
+  **Detected live**: No (pre-Pegana retrospective)
+</Info>
+
+## Background
+
+Circle disclosed late on Friday March 10, 2023 that ~$3.3B of USDC reserves sat at
+SVB, which had been placed into FDIC receivership. The intrinsic value of a USDC
+token still reflected $1 of redemption claim — but the secondary market refused to
+price it that way until guarantees arrived.
+
+## Trigger
+
+The first sub-$0.99 prints landed within an hour of the SVB-exposure disclosure.
+Within four hours USDC was trading $0.96 on Coinbase and $0.92 on DEXs, with
+worst-case prints near $0.87 in thin Sunday hours.
+
+## Cascade
+
+- DAI lost its peg simultaneously — its reserves were USDC-heavy.
+  (See [DAI / SVB contagion](/case-studies/dai-contagion-march-2023).)
+- MakerDAO emergency-paused USDC swaps via the PSM.
+- DEX pools rebalanced violently — large LPs printed losses on every imbalance.
+- Borrowing markets that priced collateral at $1.00 of USDC liquidated otherwise-healthy positions.
+
+## Recovery
+
+Treasury, the Fed and the FDIC announced full backstop on Sunday March 12. USDC
+re-pegged in under 4 hours of US market open Monday. The full episode lasted
+~60 hours.
+
+## What Pegana would have shown
+
+- **Friday ~22:30 UTC** — First Curve 3pool imbalance prints USDC at $0.989. Smoothed
+  spread crosses 30 bps after dwell. **`PEGGED → DRIFT`** transition fires.
+- **Saturday ~03:00 UTC** — Spread crosses 50 bps. **`DRIFT → DEPEG`**.
+- **Sunday ~04:00 UTC** — Thin-Sunday DEX prints push spread above 5%. **`DEPEG →
+  CRITICAL`**.
+- **Monday ~14:00 UTC** — Sustained recovery; exit dwell expires.
+  **`CRITICAL → DEPEG → DRIFT → PEGGED`** over ~3 hours of sustained sub-threshold readings.
+
+Each transition would have carried both `intrinsic_usd` (≈ $1.00 throughout) and
+`market_usd` (the actual print), letting downstream consumers reason about which
+side moved.
+
+## Lesson
+
+Pegana's two-numbers framing is built for exactly this case. Intrinsic was ~$1; market
+was not. A monitor that only watches one side prints either a false negative or a
+false positive — neither is useful when liquidation engines are pulling the trigger.
+
+## Sources
+
+- [Circle press release — SVB exposure](https://www.circle.com/blog/an-update-on-usdc-and-silicon-valley-bank)
+- [FDIC SVB Notice (Mar 10 2023)](https://www.fdic.gov/news/press-releases/2023/pr23016.html)

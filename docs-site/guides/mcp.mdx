@@ -1,0 +1,96 @@
+---
+title: "MCP for AI agents"
+description: "Pegana's Model Context Protocol server gives Claude, Cursor, Cline and Continue native access to live peg state. Ten tools, all free."
+---
+
+[Model Context Protocol](https://modelcontextprotocol.io) (MCP) is the standard
+agents use to discover and call tools. Pegana ships an MCP server that exposes peg
+state, history, methodology metadata, and a live event subscription — directly to
+the model, without needing a wrapper API call.
+
+**Hosted endpoint:** `https://mcp.pegana.xyz` (Streamable HTTP transport)
+**Source:** [`mcp-ts/`](https://github.com/PeganaHQ/Pegana/tree/main/mcp-ts) (TypeScript on Bun + Hono)
+
+Point your MCP host at the URL — no install, no clone, no API key. See
+[setup](/guides/mcp-setup-claude) for per-host config.
+
+## Why MCP
+
+If your agent already lives in Claude Code, Cursor, Cline, or Continue, MCP is the
+shortest path to "the model knows the peg state." No middleware, no toolchain — the
+model calls `get_asset_state("USDC")` and gets back JSON.
+
+The model also discovers methodology and asset metadata via `get_methodology` and
+`get_assets`, so it can reason about *why* an alert fires before reading any code you
+wrote.
+
+## Tools available
+
+<Card title="All 10 tools are free" icon="circle-check" href="/guides/mcp-free-tools">
+  `ping`, `ping_paid`, `get_assets`, `get_asset_state`, `get_methodology`, `get_loop_exposure`, `simulate_depeg_impact`, `verify_alert`, `get_asset_history`, `subscribe_peg_events`. No payment, no key.
+</Card>
+
+## Setup
+
+<Card title="Add Pegana to Claude / Cursor / Cline" icon="rocket" href="/guides/mcp-setup-claude">
+  One-time config in your MCP host's settings file.
+</Card>
+
+## A typical agent prompt
+
+Once configured:
+
+```text
+You have a Pegana MCP server. Before recommending any swap to or from a
+pegged asset on Solana, call get_asset_state({symbol}) and refuse if the
+state is not PEGGED (unless the user explicitly accepts the risk).
+```
+
+The model handles the rest. It will call `get_asset_state("USDC")` on its own,
+inspect the result, and refuse a swap if state is `DRIFT` or worse.
+
+## Tool list
+
+| Tool | Description |
+| --- | --- |
+| `ping` | Server liveness check |
+| `get_assets` | List every active asset with its latest snapshot, the same set as `GET /v1/assets` (`UNKNOWN` with null values when there is no live snapshot) |
+| `get_asset_state` | Current state, discount, intrinsic and market price for one asset |
+| `get_methodology` | This asset's intrinsic and market sources plus the state machine, for the model to reason from |
+| `get_loop_exposure` | Anonymous aggregate leverage/health-factor exposure for Kamino & Jupiter Lend (k-anonymity k≥5) |
+| `simulate_depeg_impact` | Estimated liquidatable collateral (`liquidatable_usd`, `positions`) across Kamino and Jupiter Lend for a preset depeg shock |
+| `verify_alert` | Fetch an alert's audit receipt as the API serves it (proxies `GET /v1/audit/:alert_id`). It recomputes no hash and checks no anchor; verify independently with [`pegana-replay`](/guides/mcp-free-tools) |
+| `ping_paid` | Legacy alias of `ping` (free; returns `paid pong`) |
+| `get_asset_history` | Bucketed discount history (1m/5m/15m/1h), up to 5,000 rows and 7 days |
+| `subscribe_peg_events` | Pull state transitions since a cursor (`since_ts` + `since_id`) (an unknown symbol is an error, not an empty batch) |
+
+## Hosted — no clone needed
+
+The server is hosted at `mcp.pegana.xyz`, so there is nothing to clone or install and
+no API key: point your MCP host at the URL (see [setup](/guides/mcp-setup-claude)). The
+runtime is [`mcp-ts/`](https://github.com/PeganaHQ/Pegana/tree/main/mcp-ts) (TypeScript
+on Bun + Hono), configured via env vars (`PEGANA_API`, `REDIS_URL`, `DATABASE_URL`).
+
+## Anti-prompt-injection note
+
+The MCP server returns structured JSON: no markdown, no nested instructions, no
+"ignore previous" payloads. The only caller-supplied string echoed back is the
+`symbol` (or `alert_id`) you passed, in `get_methodology`'s output and in error texts;
+it is length-capped by the input schema (20 characters for symbols, a UUID for alert
+IDs). For every asset in the registry, the `get_methodology` content is compiled into
+the server at build time, so an attacker compromising `api.pegana.xyz` cannot inject
+prompts via the methodology response.
+
+The values we *do* return (`asset`, `state`, decimal numbers, timestamps) are
+constrained shapes — your model can treat them as data, not prompts.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Free tools detail" icon="circle-check" href="/guides/mcp-free-tools">
+    Schemas + example calls for each free tool.
+  </Card>
+  <Card title="Setup" icon="rocket" href="/guides/mcp-setup-claude">
+    Per-host configuration.
+  </Card>
+</CardGroup>

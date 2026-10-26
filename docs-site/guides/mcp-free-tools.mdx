@@ -1,0 +1,338 @@
+---
+title: "MCP tools"
+description: "All 10 MCP tools are free, with no payment and no API key: ping, ping_paid, get_assets, get_asset_state, get_methodology, get_loop_exposure, simulate_depeg_impact, verify_alert, get_asset_history, subscribe_peg_events."
+---
+
+All ten tools are free and need no API key. Call them from any MCP host configured
+against `https://mcp.pegana.xyz` (see [setup](/guides/mcp-setup-claude)). Calls are
+rate-limited to 100 tool calls per minute per client IP, and to 300 JSON-RPC messages
+per minute per client IP counting every message (each batch entry, `initialize`,
+`tools/list`, calls that fail validation); over the limit the reply is HTTP 429 with
+`Retry-After: 60`. A JSON-RPC batch holds at most 10 entries: a larger batch is refused
+whole with one `-32600` "batch too large" error. Example values below were captured
+from the live service on 2026-10-20 and are shown in the server's current output format;
+values change continuously.
+
+Every tool declares an `outputSchema`, and `structuredContent` always matches it exactly
+(no undeclared keys), so strict clients such as the official MCP SDK can validate it.
+Decimals and timestamps use the same formats as the REST API: trailing zeros are
+stripped, `discount` has at most 6 decimal places, and ISO timestamps are UTC with
+milliseconds.
+
+## `ping`
+
+Liveness check. Returns `pong (Ns)` where N is the server uptime in seconds.
+
+```json
+// → ping()
+{ "message": "pong", "uptime_sec": 38296 }
+```
+
+Use this to verify the MCP connection is healthy before relying on other tools.
+
+## `ping_paid`
+
+Legacy alias of `ping`, kept under its old name so existing agents keep working. It is **free**, and returns
+`paid pong` in `structuredContent.message`. It is only a smoke test of the MCP call path;
+use `ping` for plain liveness.
+
+## `get_assets`
+
+Lists every active tracked asset, the same set and `count` as `GET /v1/assets`. Live values come from the MCP server's snapshot cache; an asset with no live snapshot (for example a source is down) is still listed, with `state: "UNKNOWN"`, null `discount`, `intrinsic_usd`, `market_usd`, `ts` and `updated_at`, and `stale: true`, as REST lists it. The leveraged synth xSOL is left out, as in REST (every `/v1/assets` route answers 404 for it), and the per-symbol tools report it as not tracked.
+
+```json
+// → get_assets()
+{
+  "count": 67,
+  "assets": [
+    {
+      "asset": "USDC",
+      "state": "PEGGED",
+      "discount": "0.000175",
+      "intrinsic_usd": "1",
+      "market_usd": "0.99982122",
+      "ts": 1792495242,
+      "updated_at": "2026-10-20T11:20:42.909Z",
+      "stale": false
+    },
+    {
+      "asset": "USDY",
+      "state": "UNKNOWN",
+      "discount": null,
+      "intrinsic_usd": null,
+      "market_usd": null,
+      "ts": null,
+      "updated_at": null,
+      "stale": true
+    }
+  ]
+}
+```
+
+`stale` is `true` when the snapshot is older than 15 minutes (900 s; the engine has not
+recomputed that asset recently) or is stamped more than 60 s in the future. A stale
+entry reports `state: "UNKNOWN"`; treat its discount and prices as last-known.
+
+The live list is also [`GET /v1/assets`](https://api.pegana.xyz/v1/assets); the
+asset registry is
+[`assets.toml`](https://github.com/PeganaHQ/Pegana/blob/main/assets.toml). No
+filtering parameter — filter client-side or in the model's reasoning.
+
+## `get_asset_state`
+
+Current state for one asset.
+
+```json
+// → get_asset_state({ symbol: "USDC" })
+{
+  "asset": "USDC",
+  "state": "PEGGED",
+  "discount": "0.000175",
+  "intrinsic_usd": "1",
+  "market_usd": "0.99982122",
+  "ts": 1792495242,
+  "updated_at": "2026-10-20T11:20:42.909Z"
+}
+```
+
+When there is no fresh snapshot the call returns an MCP error result (`isError: true`).
+The text says which case applies: the snapshot is older than 15 minutes, 900 s (the last-known
+snapshot is included, with `_meta.lastFreshSec`), the asset is tracked but has no live
+snapshot yet (for example `EURC` before its first recompute), the asset is listed but
+inactive, or the symbol is not tracked at all.
+
+## `get_methodology`
+
+Returns how the asset's intrinsic value and market price are sourced and how the
+discount and state are computed. The text is built from the asset's own entry in
+[`assets.toml`](https://github.com/PeganaHQ/Pegana/blob/main/assets.toml), compiled into
+the server at build time, so it names the real sources for that asset rather than a
+generic per-class summary.
+
+```json
+// → get_methodology({ symbol: "USDC" })
+{
+  "symbol": "USDC",
+  "explanation": "Asset 'USDC' (stable_fiat):\n\nFiat-backed stablecoin, redeemable 1:1 for USD with the issuer, so its intrinsic value is $1.\n\nIntrinsic: fixed at $1. Market: the Pyth USDC/USD spot price.\n\nPegana computes discount = 1 - market/intrinsic, smooths it with an EWMA (alpha 0.3) and applies hysteresis: a stricter state must hold for 30s to be entered and 120s to be exited.\n\nFull methodology + state machine: https://pegana.xyz/methodology",
+  "methodology_url": "https://pegana.xyz/methodology"
+}
+```
+
+Two assets of the same class can read differently: jitoSOL's intrinsic comes from its
+SPL stake-pool account, mSOL's from Sanctum, and USDC's market leg is Pyth spot while
+PYUSD's is a Jupiter quote.
+
+## `get_loop_exposure`
+
+Returns anonymous, aggregate cross-protocol leverage exposure for Kamino and
+Jupiter Lend positions collateralized by the given asset. No per-wallet
+information is exposed. The output has the same shape as
+[`GET /v1/assets/{symbol}/loop-exposure`](/guides/rest-api#systemic-impact-loop-intelligence),
+which includes a live example.
+
+The MCP result also carries `stale` and `data_age_sec`, computed from `updated_at`
+(`stale` is `true` past 15 minutes; the rollup refreshes every 5 minutes). `stale`
+covers the exposure rollup only: `updated_at` is the newest of the rollup and the
+health-factor bands, so a fresh rollup can hide bands that stopped updating.
+
+Cascade freshness is reported separately. When `cascade` is present, the result also
+carries `cascade_stale` and `cascade_data_age_sec`, read from the band-only
+`updated_at` of `simulate_depeg_impact` (`cascade_stale` is `true` past 2 hours; the
+bands refresh hourly). Both fields are absent when band freshness could not be read.
+
+Use this when an agent needs to assess whether a peg break on this asset would
+cascade into liquidations across lending protocols.
+
+## `simulate_depeg_impact`
+
+Estimates the cross-protocol liquidation cascade caused by a hypothetical depeg
+shock. `shock_bps` must be one of `100`, `250`, `500`, `1000`, or `2000`.
+
+```json
+// → simulate_depeg_impact({ symbol: "JupSOL", shock_bps: 500 })
+{
+  "asset": "JupSOL",
+  "shock_bps": 500,
+  "loop_exposure_usd": "278071119.92",
+  "liquidatable_usd": "39885555",
+  "positions": ">50",
+  "coverage": "partial",
+  "by_protocol": [
+    { "protocol": "jupiter_lend", "liquidatable_usd": "39885555", "positions": ">50" }
+  ],
+  "advisory_note": "advisory model estimate: not a verifiable receipt; risky bands may be suppressed for privacy, and bad-debt/slippage is not yet modelled"
+}
+```
+
+When `coverage` is `unknown` there are no fresh health-factor bands and the
+liquidatable amount is not known: the output schema accepts `null` for
+`liquidatable_usd` and `positions` (top level and per protocol) so the API can say
+"not known" rather than `"0"` (nothing liquidates).
+
+The MCP result also carries `stale` and `data_age_sec`, computed from `updated_at`.
+The liquidation bands refresh hourly, so `stale: true` (older than 2 hours) means the
+estimate is last-known, not current.
+
+Use this when a user asks how much leveraged collateral may become liquidatable
+under a specific depeg shock.
+
+## `verify_alert`
+
+Fetch the audit receipt for an alert, exactly as Pegana's API serves it. This is a
+proxy of `GET /v1/audit/:alert_id` (the underlying data is already public), not a
+verification: the tool recomputes no hash and does not check the on-chain anchor, so
+its answer is only as trustworthy as the server that served it. When `has_replay_artifact` is `true`, the MCP result adds
+`evidence.replay_bundle_url`, the public download link
+(`https://api.pegana.xyz/v1/audit/{id}/replay-bundle`).
+
+```json
+// → verify_alert({ alert_id: "9c8e7f3a-..." })
+{
+  "result": {
+    "alert": {
+      "id": "9c8e7f3a-...",
+      "asset": "jitoSOL",
+      "class": "lst",
+      "from_state": "PEGGED",
+      "to_state": "DRIFT",
+      "discount": "0.0034",
+      "intrinsic_usd": "213.42",
+      "market_usd": "212.69",
+      "confidence": "high",
+      "detected_at": "2026-05-25T15:20:00Z"
+    },
+    "evidence": {
+      "methodology_version": "0.3.0",
+      "methodology_git_sha": "...",
+      "assets_toml_sha256": "...",
+      "inputs_frozen": { },
+      "computed": { },
+      "has_replay_artifact": true,
+      "replay_bundle_url": "https://api.pegana.xyz/v1/audit/9c8e7f3a-.../replay-bundle",
+      "receipt_sha256": "...",
+      "onchain_tx_sig": "...",
+      "created_at": "2026-05-25T15:20:01Z"
+    },
+    "evidence_status": "ready"
+  }
+}
+```
+
+The response is wrapped in a `result` envelope. `evidence_status` discriminates
+`ready` (full receipt, shown above), `pending`, or `failed_permanent`. The
+`pending` / `failed_permanent` shapes mirror the `/v1/audit/:id` four-state
+contract and omit the `evidence` object.
+
+Use this when a user pastes an alert ID and the model needs the receipt's contents
+(inputs, verdict, `receipt_sha256`, `commit_status`). To verify the receipt
+independently, run the open-source `pegana-replay` CLI on your own machine:
+
+```bash
+cargo install pegana-replay --locked
+pegana-replay --alert-id <alert_id>
+```
+
+It re-hashes the frozen inputs and verdict, compares the result to `receipt_sha256`,
+and checks that the on-chain memo anchor carries that hash and was signed by Pegana's
+pinned ops wallet (`--offline` skips the on-chain check; `--bundle <file>` verifies a
+downloaded replay bundle).
+
+## `get_asset_history`
+
+Bucketed time-series of the intrinsic-vs-market discount for one asset. Inputs:
+`symbol`, `bucket` (`1m`, `5m`, `15m` or `1h`, default `1m`) and `limit` (1 to 5,000,
+default 1000). Rows are most-recent first; the lookback window is at most 7 days and at
+most `limit` buckets. `ts` is the bucket start (ISO-8601 UTC) and `discount` is the mean
+of the 1-minute average discounts in the bucket, rounded to 6 decimal places. The USD
+legs (`intrinsic_usd`, `market_usd`) are the LAST observation in the bucket, not an
+average, and are `null` for a bucket that has no raw observation. An unknown symbol
+returns an `isError` result instead of an empty series; a database timeout returns an
+`isError` asking you to retry.
+
+```json
+// → get_asset_history({ symbol: "USDC", bucket: "1h", limit: 2 })
+{
+  "symbol": "USDC",
+  "bucket": "1h",
+  "count": 2,
+  "rows": [
+    { "ts": "2026-10-20T11:00:00.000Z", "discount": "0.000177", "intrinsic_usd": "1", "market_usd": "0.999822745" },
+    { "ts": "2026-10-20T10:00:00.000Z", "discount": "0.000182", "intrinsic_usd": "1", "market_usd": "0.99981885447761194" }
+  ]
+}
+```
+
+## `subscribe_peg_events`
+
+Pull-based batch of peg state-transition events. Inputs: `symbols` (1 to 20),
+`since_ts` (cursor, unix seconds, pass `0` on the first call), `since_id` (the cursor's
+tie breaker, optional) and optional `threshold_bps`. Symbols are case-sensitive; an
+unknown or mistyped symbol returns an `isError` result naming it (`asset 'X' not
+tracked`), not an empty batch. Returns up to 1000 events ascending by `(ts, id)`.
+
+The cursor is the PAIR `next_cursor` + `next_cursor_id`: pass them back as `since_ts`
+and `since_id` so events that share a timestamp are neither skipped nor repeated.
+`next_cursor_id` is `null` while there is no id yet (an empty first page): send
+`since_id: null` or omit it. A client that only tracks `since_ts` still works: without a
+`since_id` the boundary event is not delivered again.
+
+The result is `{ count, next_cursor, next_cursor_id, events }`. Each event carries `id`, `asset`,
+`from_state`, `to_state`, `discount`, `ts` (unix seconds with a fractional part, so the
+cursor is lossless) and an `evidence_url` pointing at its audit receipt. For example, a
+real USDC transition from the [audit ledger](https://api.pegana.xyz/v1/audit?asset=USDC):
+
+```json
+// one element of events[] from subscribe_peg_events({ symbols: ["USDC"], since_ts: 0 })
+{
+  "id": "70a17253-3ac5-40b0-8f5c-c119386c7695",
+  "asset": "USDC",
+  "from_state": "PEGGED",
+  "to_state": "DRIFT",
+  "discount": "0.000367",
+  "ts": 1780082184.517,
+  "evidence_url": "https://pegana.xyz/audit/70a17253-3ac5-40b0-8f5c-c119386c7695"
+}
+```
+
+`ts` is shown here at millisecond precision (`2026-05-29T19:16:24.517Z`); the live value
+carries microseconds. Pass `next_cursor` and `next_cursor_id` back verbatim; an empty
+batch returns your `since_ts` and `since_id` unchanged.
+
+```js
+// Poll loop: carry both halves of the cursor, tolerate a null id.
+let cursor = { since_ts: 0, since_id: null };
+for (;;) {
+  const r = await client.callTool({
+    name: "subscribe_peg_events",
+    arguments: { symbols: ["USDC", "jitoSOL"], ...cursor },
+  });
+  const { events, next_cursor, next_cursor_id } = r.structuredContent;
+  for (const e of events) handle(e);
+  cursor = { since_ts: next_cursor, since_id: next_cursor_id };
+  await sleep(30_000);
+}
+```
+
+## Typical agent flow
+
+```text
+1. ping() — verify connection
+2. get_assets() — read the tracked set (cache in agent context)
+3. For each user request involving asset X:
+   - get_asset_state({ symbol: X })
+   - if state != "PEGGED" and not user-acknowledged:
+       refuse, return state + explanation
+   - else: proceed
+4. Optionally, get_methodology({ symbol: X }) once at startup,
+   so model can reason about WHY an alert exists
+```
+
+The methodology call is the differentiator — agents that read it before reasoning can
+explain peg state to a user in plain language, including the per-asset threshold
+context ("INF's drift threshold is wide because its 24h p99 is wide").
+
+## Next
+
+<Card title="Set up your MCP host" icon="rocket" href="/guides/mcp-setup-claude">
+  Per-host configuration for Claude, Cursor, Cline and Continue.
+</Card>

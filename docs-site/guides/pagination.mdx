@@ -1,0 +1,131 @@
+---
+title: "Pagination & limits"
+description: "Collections return the full current set; time-series and the audit ledger are windowed by query params."
+---
+
+Pegana's collections are small and current, so most read endpoints return the **full
+active set** in one call — no cursor needed. Time-series and the audit ledger are the
+exception: they're windowed with query parameters.
+
+## Full-set endpoints
+
+`GET /v1/assets`, `GET /v1/calibration`, and `GET /v1/peg/feed` return
+every currently-tracked row (dozens, not millions). Poll them as often as your logic needs,
+within the [rate limit](/guides/rate-limits).
+
+## Windowed endpoints
+
+<ParamField query="from" type="string (RFC3339)">
+Start of the window for `GET /v1/assets/{symbol}/history` (this parameter is `from`, **not**
+`since`). Pair with `to`.
+</ParamField>
+
+<ParamField query="to" type="string (RFC3339)">
+End of the history window.
+</ParamField>
+
+<ParamField query="bucket" type="string">
+History granularity: `raw` (per-sample) or `1m` (1-minute aggregate).
+</ParamField>
+
+<ParamField query="limit" type="integer">
+Max rows returned. History defaults to 500 (clamped 1 to 5000). The audit CSV export
+(`GET /v1/audit.csv`) is capped at 50k rows per ADR-0014.
+</ParamField>
+
+History is returned newest first, so a window holding more rows than `limit` stops short of
+`from`. Raw samples arrive every few seconds, which means the default 24h window does not fit
+in 500 rows. The envelope says so: `truncated` is `true`, `next_to` is the instant just
+before the oldest row returned, and `next_from` is the effective lower bound of the window
+(the `from` you sent, or the default you got). Repeat the request with
+`from=<next_from>&to=<next_to>` (same `bucket` and `limit`) until `truncated` is `false`.
+Always send `from=<next_from>` when paging: the default `from` is now minus 24h, not `to`
+minus 24h, so paging without `from` keeps `from` at now-24h, and once `next_to` is older than
+24h the request returns 400 `invalid_range`. For a 24h chart in one call,
+use `bucket=1m&limit=1440`.
+
+```bash
+base="https://api.pegana.xyz/v1/assets/USDC/history?limit=5000"
+page=$(curl -s "$base")
+echo "$page" | jq -c '.data[]'
+while [ "$(echo "$page" | jq .truncated)" = "true" ]; do
+  page=$(curl -s "$base&from=$(echo "$page" | jq -r .next_from)&to=$(echo "$page" | jq -r .next_to)")
+  echo "$page" | jq -c '.data[]'
+done
+```
+
+## The receipt ledger
+
+`GET /v1/audit` is the public transition ledger. It returns a **bare JSON array** (not the
+`{ ok, generated_at, count, data }` envelope), ordered **newest first** by `detected_at`, then
+by `id` descending. Page through it with a keyset cursor.
+
+<Warning>
+**The ledger has a gap.** No receipts exist from 2026-08-26 01:09 UTC to 2026-10-17 09:20 UTC.
+The production host was rebuilt with a fresh database on 2026-10-17. Receipts from 2026-05-27
+to 2026-08-26 were restored; the ledger holds nothing for the period in between.
+A walk across that window returns no rows for it. That is missing history, not a quiet period.
+</Warning>
+
+<ParamField query="limit" type="integer">
+Page size. Default 50, max 100 (larger values are clamped to 100).
+</ParamField>
+
+<ParamField query="before" type="string (RFC3339)">
+Cursor. Returns only rows strictly older than this `detected_at`. Pass the **last row's**
+`detected_at`, exactly as it was emitted (millisecond precision).
+</ParamField>
+
+<ParamField query="before_id" type="string (UUID)">
+Tie-breaker for `before`. Pass the **last row's** `id` too, so rows that share the cursor
+millisecond are neither skipped nor repeated. Requires `before` (otherwise `400 invalid_cursor`).
+</ParamField>
+
+<ParamField query="since / until" type="string (RFC3339)">
+Time window on `detected_at`: `since` is inclusive, `until` is exclusive. `until` must be after
+`since` (otherwise `400 invalid_range`).
+</ParamField>
+
+<ParamField query="asset" type="string">
+Exact symbol, **case-sensitive** (`USDe`, not `usde`). 1 to 32 characters of
+`[A-Za-z0-9._+*-]` (otherwise `400 invalid_asset`). A non-public asset (the leveraged synthetic
+`xSOL`, class `synth_lev`, which every `/v1/assets` route also excludes) is `404
+unknown_asset`, here and on `/v1/audit.csv`. Its receipts are not listed in the index or the
+CSV, but each one stays reachable by id at `/v1/audit/{alert_id}`: receipts are permanent
+public evidence.
+</ParamField>
+
+<ParamField query="state / exclude_pegged" type="string / boolean">
+`state` filters on the destination state: `PEGGED`, `DRIFT`, `DEPEG`, `CRITICAL`,
+`BLACK_SWAN` or `UNKNOWN` (anything else is `400 invalid_state`).
+`exclude_pegged` defaults to `true`, which hides recoveries back to `PEGGED`; pass
+`exclude_pegged=false` to walk every transition.
+</ParamField>
+
+Walk the full ledger by feeding the last row of each page back as the cursor, and stop when a
+page comes back with fewer rows than `limit`:
+
+```bash
+url="https://api.pegana.xyz/v1/audit?limit=100&exclude_pegged=false"
+page=$(curl -s "$url")
+while [ "$(echo "$page" | jq length)" -gt 0 ]; do
+  echo "$page" | jq -c '.[] | {id, asset, from_state, to_state, detected_at}'
+  [ "$(echo "$page" | jq length)" -lt 100 ] && break
+  before=$(echo "$page" | jq -r '.[-1].detected_at')
+  before_id=$(echo "$page" | jq -r '.[-1].id')
+  page=$(curl -s "$url&before=$before&before_id=$before_id")
+done
+```
+
+`since` only bounds the window; it is not a forward cursor. Because the ledger is
+newest-first, `since` plus `limit` always returns the newest rows inside the window, so use
+`before` / `before_id` to move to older rows.
+
+For bulk export, `GET /v1/audit.csv` takes a required `from` / `to` window (both inclusive,
+at most 90 days, otherwise `400 date_range_too_large`) and an optional `asset`. It is limited
+to 10 requests/min per IP on top of the global limit.
+
+<Note>
+The audit ledger is append-only. History (`/v1/assets/{symbol}/history`) is also returned
+**newest-first**.
+</Note>

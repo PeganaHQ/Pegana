@@ -1,0 +1,88 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/common-verify",
+    "crates/methodology",
+    "crates/pegana-replay-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+authors = ["Pegana contributors"]
+license = "MIT"
+repository = "https://github.com/PeganaHQ/ReplayCLI"
+
+[workspace.dependencies]
+# async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# error handling
+anyhow = "1"
+thiserror = "1"
+
+# serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# data
+rust_decimal = { version = "1", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+# http
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+
+# solana — required by replay-cli for --verify-onchain. Uses solana-rpc-client
+# (not the monolithic solana-client) to match the private workspace and keep the
+# rustls 0.21 / webpki 0.101 / quinn paths out of the graph.
+solana-rpc-client = "2.0"
+solana-sdk = "2.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+# cargo-dist invokes `cargo build --profile dist` regardless of what `release`
+# is configured to. Without this block it errors with "profile dist is not
+# defined" and the entire build matrix fails before producing any artifacts.
+# Inheriting from release keeps the optimisation knobs in one place.
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+# cargo-dist binary release pipeline.
+[workspace.metadata.dist]
+cargo-dist-version    = "0.30.0"
+ci                    = ["github"]
+installers            = ["shell", "powershell"]
+allow-dirty           = ["ci"]
+# v0.1.0 release matrix is limited to the two targets that GitHub Actions
+# runners can build today without bespoke setup:
+#   - x86_64-unknown-linux-gnu (ubuntu-latest)
+#   - aarch64-apple-darwin     (macos-14)
+# Dropped from this release:
+#   - x86_64-pc-windows-msvc   : openssl-sys (via solana-rpc-client) can't find
+#                                OpenSSL on windows-latest. Vendored-openssl
+#                                works but adds 5-10min to every build.
+#   - x86_64-apple-darwin      : the macos-13 (Intel Mac) runner queue is
+#                                effectively dead in 2026 — GitHub
+#                                deprecated x86_64 macOS hosts when M1+ Macs
+#                                became the default for developer tooling.
+#                                Real users on Intel Macs build from source
+#                                via `cargo install --git`.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+]
+hosting               = ["github"]
+install-path          = "~/.pegana/bin"
+publish-jobs          = []
+github-attestations   = true   # Sigstore via GitHub OIDC
+
+[workspace.metadata.dist.publish-binaries]
+"pegana-replay" = ["pegana-replay"]

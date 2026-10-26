@@ -1,0 +1,960 @@
+{
+  "case": "2025-10-10-usde-depeg",
+  "methodology_version": "0.8.0",
+  "inputs_sha256": "250b2623bc48fa4e253796d1b0c4259e99355e8026aadfc1c451f6f27263540e",
+  "assets": {
+    "INF": {
+      "fidelity": "doubly-proxied",
+      "transitions": [
+        {
+          "t": "2025-10-10T21:45:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0149469725533231024558107636",
+          "receipt_sha256": "cd18ca4623fcee601971c73058a71b6fc917d817f06b29b959efbeb770000ddd"
+        },
+        {
+          "t": "2025-10-10T21:49:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0062195452652097897042654869",
+          "receipt_sha256": "dc6a7a54769f0865dcdcdde053e79afc4f6f3c1f1113775e4c2223f4d47e8d68"
+        },
+        {
+          "t": "2025-10-11T02:19:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0144766096483602570708157615",
+          "receipt_sha256": "93b1dacf14d1eef6607bef40a20e5ddffa2577dacaf072cae5ff92e86eb3cf1f"
+        },
+        {
+          "t": "2025-10-11T02:53:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0094552484361823802443285769",
+          "receipt_sha256": "78fcf39655a4ccdde48987989acd064dafc78fe0b949058446cbfdaf56ef8326"
+        },
+        {
+          "t": "2025-10-11T20:21:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0160129064666472535280578252",
+          "receipt_sha256": "db36cdc626cec9d04d797614169f9805924daa2d6c6deaa67a4034335792beff"
+        },
+        {
+          "t": "2025-10-11T20:56:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0096626928733477943339690040",
+          "receipt_sha256": "f3a3b316963f4cda55643ed720b46c15ec3309734072cddc957c28e521b32069"
+        },
+        {
+          "t": "2025-10-11T21:13:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0176955829547678103473347713",
+          "receipt_sha256": "b7825a5e5fec8e137553449ce04269267b51e19d06a4c94638f7b7926155184f"
+        },
+        {
+          "t": "2025-10-11T22:11:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0094131231287006148589606764",
+          "receipt_sha256": "4d9b2e5defea1a800374e6ed997949373af75c5eebc9c249a97ce6f9352da3a4"
+        },
+        {
+          "t": "2025-10-11T22:34:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0149573216416539082682706571",
+          "receipt_sha256": "6ea6605dbc1a587f1d25a7e02e0d7f36963c4ea4c64d5e6165838e57b3b4bbdf"
+        },
+        {
+          "t": "2025-10-11T22:54:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0089328309211094482736580812",
+          "receipt_sha256": "1c99d9fbb0e52406935b6b3897ab59c8eed77cc2e6edbc2f545375ba0778a028"
+        }
+      ],
+      "time_to_first_alert_secs": 164700,
+      "max_state": "DRIFT",
+      "ticks": 4321
+    },
+    "PYUSD": {
+      "fidelity": "market-proxied",
+      "transitions": [
+        {
+          "t": "2025-10-10T21:39:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0019115013505861002100861555",
+          "receipt_sha256": "7b90da7d3caa377d8c651af705c55d2ec4021876ffcbd14d08650e9740bade4e"
+        },
+        {
+          "t": "2025-10-10T21:51:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0071375113735206485826863689",
+          "receipt_sha256": "4adf2facd135deee08d184af0889a442766fc5ffd84187fb40b090f949c55aa1"
+        },
+        {
+          "t": "2025-10-10T22:52:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0033213490275835022706667551",
+          "receipt_sha256": "d352cf4eda64fe74ef260e7eabb58e54024b8d3a4c17a5ae6a76fba9d5e3c04b"
+        },
+        {
+          "t": "2025-10-10T23:55:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0009295196846949472259208198",
+          "receipt_sha256": "6f7918e8f6242913531c4c8248380397ddac2536de625e0ae2d99735e03bbd78"
+        }
+      ],
+      "time_to_first_alert_secs": 164340,
+      "max_state": "DEPEG",
+      "ticks": 4321
+    },
+    "USDC": {
+      "fidelity": "perfect",
+      "transitions": [],
+      "time_to_first_alert_secs": null,
+      "max_state": "PEGGED",
+      "ticks": 4321
+    },
+    "USDS": {
+      "fidelity": "market-proxied",
+      "transitions": [
+        {
+          "t": "2025-10-09T17:37:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0021514014960215760421477991",
+          "receipt_sha256": "fb5a847f77f11c5981098bef38998e7f2c257efebf836297e5c737a838e2cf0b"
+        },
+        {
+          "t": "2025-10-09T17:50:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0014172034676777521100244200",
+          "receipt_sha256": "d31ab30d57e9f1dbed190e4363b3217b6f4ee969e56f02a739828b2da6d1ebac"
+        },
+        {
+          "t": "2025-10-09T18:15:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0022909195483158533779752030",
+          "receipt_sha256": "0ec47f7d44bc2aa4791d4940218a6e6d4e38644aa46f9818b270f32ed1a11511"
+        },
+        {
+          "t": "2025-10-09T18:27:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0013056928319417623424659608",
+          "receipt_sha256": "8a8937f8547c713a5bcad64001e3bacd02361af0475f8869b6ee8776ada2df3f"
+        },
+        {
+          "t": "2025-10-09T21:43:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0023607103866732556519503189",
+          "receipt_sha256": "f5d1f812683650fbeda2de314958e26e4967902be28a9694216fcb66ae335e22"
+        },
+        {
+          "t": "2025-10-09T21:59:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0012415514882740862032532842",
+          "receipt_sha256": "2d92991d22eb3800770b487393be764b1092b109ed49e713f8a6871f2780142f"
+        },
+        {
+          "t": "2025-10-10T21:36:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "-0.0032364868493957309016085268",
+          "receipt_sha256": "1d4717903b30c52f6bee973e1f444b2ec34fcabf6f94aad5d3f31b0003cf9bcf"
+        },
+        {
+          "t": "2025-10-10T22:11:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "-0.0008360223484644688493528301",
+          "receipt_sha256": "edd9b5aebeaa2351975b444a604617ba7113ee9271f11fd39d599ca9f8a9acfe"
+        },
+        {
+          "t": "2025-10-10T22:16:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "-0.0021974452794064232795107302",
+          "receipt_sha256": "d2bd3c5ca2b9f124759b34a1bff5082f11d1351d9ee150979aa4282bc335459b"
+        },
+        {
+          "t": "2025-10-10T22:24:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "-0.0010562210777696742832814674",
+          "receipt_sha256": "959b04f8c6259c05a00c8110a96590f47332cd9dbee71b02088419792c4f8f7d"
+        },
+        {
+          "t": "2025-10-10T22:38:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "-0.0022281748074081411502587301",
+          "receipt_sha256": "00393bf819cf120c05851acda4b6d856240fa8dacffecb86d4a6146690061d2d"
+        },
+        {
+          "t": "2025-10-10T23:00:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "-0.0012177720690801827717726650",
+          "receipt_sha256": "802453274bc4e720c6c23a02df1ac0b22465d715e4c41d29f52ef89e1a0983a5"
+        }
+      ],
+      "time_to_first_alert_secs": 63420,
+      "max_state": "DRIFT",
+      "ticks": 4321
+    },
+    "USDT": {
+      "fidelity": "perfect",
+      "transitions": [
+        {
+          "t": "2025-10-10T21:34:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "-0.0025869074474779832031092942",
+          "receipt_sha256": "457498dcf88ad8f013abdc952685051f1456d78f2507304d24a4002af2e80121"
+        },
+        {
+          "t": "2025-10-10T22:34:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "-0.0053261775699789855954339768",
+          "receipt_sha256": "4238ed2f4fd5ba08215a7f7c82aeb4d54c0ebc43ea4a23cf0a42594c3da467b9"
+        },
+        {
+          "t": "2025-10-10T23:01:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "-0.0034280730822858112656096867",
+          "receipt_sha256": "e9599eef74959e3593dfc5dcc0ef4ac95e9bfddbbe62860c0a7220aa474c4c11"
+        },
+        {
+          "t": "2025-10-11T02:13:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "-0.0010347633439823341206895937",
+          "receipt_sha256": "ef5580c6c49d45a202aae8c9252c88a35a253634785693b94bc9be8cdad0f017"
+        }
+      ],
+      "time_to_first_alert_secs": 164040,
+      "max_state": "DEPEG",
+      "ticks": 4321
+    },
+    "USDe": {
+      "fidelity": "market-proxied",
+      "transitions": [
+        {
+          "t": "2025-10-10T21:23:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0043493598594884687857829725",
+          "receipt_sha256": "73b416bb0b20bb57ca3bfe6a0e2810e7ff0cb681ee648e661cf622e5cb0a6020"
+        },
+        {
+          "t": "2025-10-10T21:28:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0250537616855842269488265442",
+          "receipt_sha256": "bdd7a8311f87a68c871c15f4159295e42814a424f1c0b39eac155f2f89851023"
+        },
+        {
+          "t": "2025-10-10T21:31:00+00:00",
+          "from": "DEPEG",
+          "to": "CRITICAL",
+          "discount_smooth": "0.0311959267981553898434475046",
+          "receipt_sha256": "b553e520be5137af505ba91b89f80789be503d87ca73b8306848d1f6992ee651"
+        },
+        {
+          "t": "2025-10-10T21:38:00+00:00",
+          "from": "CRITICAL",
+          "to": "DEPEG",
+          "discount_smooth": "0.0123127280336943284217842288",
+          "receipt_sha256": "6ae30ceefadddd1c73fdeb9d5fd54ceeafc69a97aa0754bf8d69e65f821da51e"
+        },
+        {
+          "t": "2025-10-10T21:50:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0042456750111589091047307326",
+          "receipt_sha256": "a40aa9162d7fbbc640152a7640e49e13c19650dbb9b621901a11182dd2d99c61"
+        },
+        {
+          "t": "2025-10-10T22:34:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0012108285499365599637398605",
+          "receipt_sha256": "a06aeb391c8c5276e5c4d0ee39454e0f27aabd5c6e4e3d43b5a60223936a0e00"
+        },
+        {
+          "t": "2025-10-10T23:01:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0030203696359401845819491341",
+          "receipt_sha256": "e42c66a64b781d2b17bf4c85c16bb1229cd3711c4f8b9c10fe0226e393e3e747"
+        },
+        {
+          "t": "2025-10-10T23:40:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0012140497185283132867826495",
+          "receipt_sha256": "0cb60b11f0bf356efd125ae34bc4b0635f1616b717bf169b7d312121930f3bcb"
+        }
+      ],
+      "time_to_first_alert_secs": 163380,
+      "max_state": "CRITICAL",
+      "ticks": 4321
+    },
+    "bSOL": {
+      "fidelity": "doubly-proxied",
+      "transitions": [
+        {
+          "t": "2025-10-10T21:32:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0103961854962908255823444419",
+          "receipt_sha256": "712b70af9890ffc89d9983b79267f4838a74f14949ac79fee05ff2d44544044e"
+        },
+        {
+          "t": "2025-10-10T21:40:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "-0.0043367416571983624272964542",
+          "receipt_sha256": "65ce98662fdcde4960ac057a63ecc98eaeccbb7545ccf5357a8db18379c6a0bb"
+        },
+        {
+          "t": "2025-10-10T21:43:00+00:00",
+          "from": "PEGGED",
+          "to": "DEPEG",
+          "discount_smooth": "0.0118305120912688958382638189",
+          "receipt_sha256": "5b5f793fed2e13e4587915bd1a3026373bf2a61a66a6668e07186e7aa46dc109"
+        },
+        {
+          "t": "2025-10-10T22:00:00+00:00",
+          "from": "DEPEG",
+          "to": "PEGGED",
+          "discount_smooth": "0.0008066394849311326209646821",
+          "receipt_sha256": "2382b43775ff299d97cafdd9a9a137cf0ccd1463f84dbbcd2fabf740ce2a9960"
+        },
+        {
+          "t": "2025-10-10T22:34:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0069958120068094219667457313",
+          "receipt_sha256": "c45ac5b066dc3a4b3a790ffbfac27677ee6ba591f0bdcba4be5458aece73c144"
+        },
+        {
+          "t": "2025-10-10T22:55:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "-0.0021954705595352379907611098",
+          "receipt_sha256": "8555c30eb304e014842d0b037e5465cece0aa3ed02068980fee239a27f6f0403"
+        },
+        {
+          "t": "2025-10-10T23:26:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0050959381888798409974608779",
+          "receipt_sha256": "b9228fcce885ea76f2317c878d6521fd0ecf8f71916107854fd12e8f0b4559f7"
+        },
+        {
+          "t": "2025-10-10T23:48:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "-0.0026665953110867118737251675",
+          "receipt_sha256": "b3736f8b17a0c4a202c823081d7f51f78d4fd72145c0d833755329e15129b31d"
+        },
+        {
+          "t": "2025-10-11T00:10:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0046318723740349444132930222",
+          "receipt_sha256": "e314bb5032ce92e827e4af9ef702c77492a556f0de774a77280b5a3f15864b90"
+        },
+        {
+          "t": "2025-10-11T00:14:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0025301747966438104995594545",
+          "receipt_sha256": "b494eb3f96741b122651df64c9758faf7ccc2e779eb1b987f1cdd9444ec593c4"
+        },
+        {
+          "t": "2025-10-11T00:39:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0050730837406668658457707609",
+          "receipt_sha256": "40fc6fe36d9f7431f3672e49ac1c40c913222446d151f387b62170ababbd10a6"
+        },
+        {
+          "t": "2025-10-11T00:55:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0022231453443922731080508458",
+          "receipt_sha256": "fab1abe47908be17a68096c3b17c8afad625d3e4d8616d352f45b7100fb3c972"
+        },
+        {
+          "t": "2025-10-11T02:00:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0054495046679716911644394898",
+          "receipt_sha256": "a10c3bd04d41fe735430d4e421cd619a084fc7847528467c39596303cde1c92d"
+        },
+        {
+          "t": "2025-10-11T03:06:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0013355387769594518627168813",
+          "receipt_sha256": "620abc927c73d28331be3ec520f85fc7c9cc67faa7c27cccc5e4292d347ca492"
+        },
+        {
+          "t": "2025-10-11T03:45:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0051749713694310877369150452",
+          "receipt_sha256": "426030a6b98eb6dc1b08b6b99b98a169cea96d35d4f81675618850bd3a15546b"
+        },
+        {
+          "t": "2025-10-11T05:24:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0029554662590060274640148192",
+          "receipt_sha256": "7c434df5077457b84e6aabd1c5cbcd9b336aa9764a139752b912e0476dbb2a4a"
+        },
+        {
+          "t": "2025-10-11T05:48:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0075885712184099058923641318",
+          "receipt_sha256": "1c6de728bdf08bec6b274ded98456a9a7d8b971abf0139f6302de5581c7f40bf"
+        },
+        {
+          "t": "2025-10-11T06:51:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0021675443623267965576092604",
+          "receipt_sha256": "df8dae1485bbe2013936f23fe69a4022442726b923e34b1ded3fcb175f1ba825"
+        },
+        {
+          "t": "2025-10-11T07:07:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0046629960707434959657198341",
+          "receipt_sha256": "f9da236934521f7308d3520fa705e13cd1c6085a1bf11db195dbefb336324786"
+        },
+        {
+          "t": "2025-10-11T07:31:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0031840154314393584973720148",
+          "receipt_sha256": "d94d6ab8d5d3b5ad613ea3c31654ba7117c764c5f44c55d67f9068c68dc79a21"
+        },
+        {
+          "t": "2025-10-11T07:45:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0046889962008080519532652730",
+          "receipt_sha256": "727d84d783a4717fd7381c2999e0ed91e25f33d97e66e16b46d5656c98ec125d"
+        },
+        {
+          "t": "2025-10-11T09:53:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0026014825164369613132464260",
+          "receipt_sha256": "354517448367b2225576bba80df53f3cefe44003bc421c7037b13968d7490295"
+        },
+        {
+          "t": "2025-10-11T09:59:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0050361863780725921131615333",
+          "receipt_sha256": "b2809fe7f51029970e81db87b417a0017940d76eb67f6896f6a3401c1da06d5d"
+        },
+        {
+          "t": "2025-10-11T11:18:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0026734837595578909928811956",
+          "receipt_sha256": "a320fe44bd16e2cacd251fdaa06c7b891db51d155ff9393a2640905b5fbdb662"
+        },
+        {
+          "t": "2025-10-11T11:23:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0053562028246397884798357636",
+          "receipt_sha256": "9bf60f8c506361e295de2f1eef4d452341171948783496d78013de88c0204b4b"
+        },
+        {
+          "t": "2025-10-11T12:02:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0017406528771673365068560369",
+          "receipt_sha256": "ef8eb00ed6626c5cf9939afc103c22a7a5abe7e3267d162d58ce1e6f94b29505"
+        },
+        {
+          "t": "2025-10-11T12:22:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0053754526927509194423041157",
+          "receipt_sha256": "c5b3e3f13e15f5ac772c9f4193f2aafe7f980c5eba051c796a3e2b435246886a"
+        },
+        {
+          "t": "2025-10-11T12:51:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0022618648637346663371354357",
+          "receipt_sha256": "c16070ae359ee4ad442f9f8b8bbcc4148f0b0ff2ec29dc48e1362825aa35d561"
+        },
+        {
+          "t": "2025-10-11T12:55:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0052843913598354540992079174",
+          "receipt_sha256": "5bb4256e3d249356c4bb9dcac7b24015393814580be934a9c43ab6a65f2d2de4"
+        },
+        {
+          "t": "2025-10-11T13:34:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0028271244494195906252534863",
+          "receipt_sha256": "c386262b2153e664ca17574bde4117f60cadb97265acd12f1980bc8f3dbd01dd"
+        },
+        {
+          "t": "2025-10-11T13:40:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0053482664906657864066719343",
+          "receipt_sha256": "552dd1a9ac00bb3214b51420d96aaad9837bb7f48fe4ac84aa3846a3cda3cfaf"
+        },
+        {
+          "t": "2025-10-11T14:26:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0021263311236880238446102338",
+          "receipt_sha256": "723cfb6bdaf661ce440a627faa7c5cc0b5c16029de19e454fc834fa6a1048b5a"
+        },
+        {
+          "t": "2025-10-11T14:35:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0054905383008085609205691826",
+          "receipt_sha256": "3f82e8a2ceaf5b49a7d38b5e2d73f1bc43b92050fa2e0b56a8a9a4db6a91772a"
+        },
+        {
+          "t": "2025-10-11T16:38:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0021320278872354835252800398",
+          "receipt_sha256": "18a71f0aefc45fe6e33aee1659bc7738d7fce6295696927624ae13a8aef91424"
+        },
+        {
+          "t": "2025-10-11T16:48:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0050447227257523959033640296",
+          "receipt_sha256": "1bcc382ded6f5979a1bd9cdcc06f8d37c2bd69a4248275b2bd063d06be54b715"
+        },
+        {
+          "t": "2025-10-11T17:42:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0031804530558774458403007403",
+          "receipt_sha256": "4950e140606f7328086ce2e9179a3820890194a831f12cfa16d472b6ee2b835d"
+        },
+        {
+          "t": "2025-10-11T17:55:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0047889316914599271991471943",
+          "receipt_sha256": "a182dac8a4b24ffc2f84c90d7c1972b94ab0eca793aa6c40e57259c723ae58a6"
+        },
+        {
+          "t": "2025-10-11T18:09:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0026189646278382845840890613",
+          "receipt_sha256": "b1802994de4e2f01150f0f5636b9c24477d26be76bfd822d46a9efffd9506c48"
+        },
+        {
+          "t": "2025-10-11T18:19:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0046892117251730392801777040",
+          "receipt_sha256": "b9e9e8bc6ca961c0919920bc95b340ca79bfdfa35a955dc6160daa2f864ad15b"
+        },
+        {
+          "t": "2025-10-11T19:05:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0032048636986008140292509453",
+          "receipt_sha256": "10cd55e410c595fc898b67455dd4ca6b0393eef7250427562c7cc6014def1a63"
+        },
+        {
+          "t": "2025-10-11T19:28:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0050785572269525645641713525",
+          "receipt_sha256": "a0a5e220674c4554b561ef9dfa477101e5526b009aa866b70c32707bb27f6fe0"
+        },
+        {
+          "t": "2025-10-11T20:21:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0122682792204505835794495403",
+          "receipt_sha256": "d954c919092e0d8201170d125178d24d4084b4cca74ff35ec37ebb8a65e2e665"
+        },
+        {
+          "t": "2025-10-11T20:57:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0071678844993341190888418096",
+          "receipt_sha256": "e7cbb19c356aacdb3b8cb22cac25a32573776696c0e08692443a89bd0d3c379d"
+        },
+        {
+          "t": "2025-10-11T21:13:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0140698085219097147762679737",
+          "receipt_sha256": "dc957a3b3f4a2a7e4b57e43840bb87053f5eab92b821d59a0ae3ca7441005c1b"
+        },
+        {
+          "t": "2025-10-11T22:18:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0074609958063423336683146855",
+          "receipt_sha256": "80bc8e71a30a27f391bc1bc1341419c326eb7b8083c40658c56f1ca9dd1f3042"
+        },
+        {
+          "t": "2025-10-11T22:33:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0119423808563381381165725540",
+          "receipt_sha256": "09ce9c17ebb57ed280b97ebf2e78b565119ee9dbc0ed85fb1d5e13030b2ee7c9"
+        },
+        {
+          "t": "2025-10-11T23:08:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0072086292289686236787490994",
+          "receipt_sha256": "23b6fd0f363342162ae9a00adb1dc45fc364d5200fde0987528b8a758323bcd7"
+        },
+        {
+          "t": "2025-10-11T23:24:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0112471982752067790794979639",
+          "receipt_sha256": "ca2525cd066a4eb3014fb7246b01fee5df553dc67574dae0fcba472cdfd76d18"
+        }
+      ],
+      "time_to_first_alert_secs": 163920,
+      "max_state": "DEPEG",
+      "ticks": 4321
+    },
+    "jitoSOL": {
+      "fidelity": "doubly-proxied",
+      "transitions": [
+        {
+          "t": "2025-10-10T21:30:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0079721367105459896919658042",
+          "receipt_sha256": "4c9e99d730f67036ad5c14e7c9b734cf776e2ae29f43a64c0b706e811615c1e8"
+        },
+        {
+          "t": "2025-10-10T21:32:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0176021204862917797858742983",
+          "receipt_sha256": "13bf41d03f321bba49da81ec8b4aaf154471eff8b02ad4b84c6450874f4a6655"
+        },
+        {
+          "t": "2025-10-10T21:45:00+00:00",
+          "from": "DEPEG",
+          "to": "CRITICAL",
+          "discount_smooth": "0.0359693060579266539913100956",
+          "receipt_sha256": "6a53b515203bdff0ec9b6b4986cc390d0eaaa8ff53029a2e8d79e0fa586040de"
+        },
+        {
+          "t": "2025-10-10T21:51:00+00:00",
+          "from": "CRITICAL",
+          "to": "DEPEG",
+          "discount_smooth": "0.0123930179724031757687699742",
+          "receipt_sha256": "818429b23a60ff979b206ecc2486671c3cfca68afb21f8403c41caff2bfc1a94"
+        },
+        {
+          "t": "2025-10-10T22:01:00+00:00",
+          "from": "DEPEG",
+          "to": "PEGGED",
+          "discount_smooth": "0.0025761947011367086876404260",
+          "receipt_sha256": "2d073e4136c740542092020c3f34975d1000dba148b48f4f7a8df8c6740c1ea5"
+        },
+        {
+          "t": "2025-10-10T22:33:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0054590977517017051313956531",
+          "receipt_sha256": "d5cdfb9fd9de911b4b6e5ef9b5325bade058172cb7bcabe1dd1359326f8da480"
+        },
+        {
+          "t": "2025-10-10T22:55:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0020357770424450423574213217",
+          "receipt_sha256": "8247f7a707e048cde9e4457c5d7a53507120a8d34de32904e02b8652ca91bc2d"
+        },
+        {
+          "t": "2025-10-10T23:28:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0060154701830248580683957396",
+          "receipt_sha256": "72d14c3282b21caf0910f7427f42a0734015f70c67927acbaed07d450128f499"
+        },
+        {
+          "t": "2025-10-10T23:34:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0020451111906412469822894570",
+          "receipt_sha256": "fb5aa7cc34c9f59d954444763749f7a09f62d80392e535f65d5d1c254a3deb28"
+        },
+        {
+          "t": "2025-10-10T23:43:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0049208357331720582316621036",
+          "receipt_sha256": "dcab86a2efd159300eb1a178d4a087042cbc2243a39811f1865d0ecba210e32a"
+        },
+        {
+          "t": "2025-10-10T23:48:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0016593121952345188603902832",
+          "receipt_sha256": "27c48973cae6ad14f162e825b1bc2e529db87dbc41444be20eac1988cf841115"
+        }
+      ],
+      "time_to_first_alert_secs": 163800,
+      "max_state": "CRITICAL",
+      "ticks": 4321
+    },
+    "mSOL": {
+      "fidelity": "doubly-proxied",
+      "transitions": [
+        {
+          "t": "2025-10-10T21:26:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0047869608058212711101721310",
+          "receipt_sha256": "95d74d59f654777ee1da7d4d5218b0592ff9365e0b9eaff468ffec37ca9f1442"
+        },
+        {
+          "t": "2025-10-10T21:30:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0160653217098346905295815725",
+          "receipt_sha256": "5d7a435541272b246a3dc08f71044cd5d476635a2ba3f15e02775beccfadefee"
+        },
+        {
+          "t": "2025-10-10T21:40:00+00:00",
+          "from": "DEPEG",
+          "to": "PEGGED",
+          "discount_smooth": "0.0004503990925982531077317076",
+          "receipt_sha256": "af614eb6c28bd16c6ecaf10ac25b5e99ad608e10e665ba8f8c2bcee2717fed58"
+        },
+        {
+          "t": "2025-10-10T21:42:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0064046360963308508497910607",
+          "receipt_sha256": "aa9574ab07f553663a237fa4b77950958f3a0de7cf842bc5bb3f4a7fa4223d1e"
+        },
+        {
+          "t": "2025-10-10T21:44:00+00:00",
+          "from": "DRIFT",
+          "to": "CRITICAL",
+          "discount_smooth": "0.0261487850968859134494600845",
+          "receipt_sha256": "8bc2cc6a527f7c11342a2736c2d502bed4fafc88ccec53a5f0d5921c7722a89a"
+        },
+        {
+          "t": "2025-10-10T21:56:00+00:00",
+          "from": "CRITICAL",
+          "to": "DEPEG",
+          "discount_smooth": "0.0128225803171155044887913333",
+          "receipt_sha256": "104bbb93d413925220e9cd9454558c77452f593fb78d8aff5973a705cfd6f392"
+        },
+        {
+          "t": "2025-10-10T22:02:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0042587911656330424278664082",
+          "receipt_sha256": "730d8d4583f6be1c622d30dbab240a1ce3285aad2af6bb8d1c3f2bce260dbf17"
+        },
+        {
+          "t": "2025-10-10T22:31:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0029508070070579768170655009",
+          "receipt_sha256": "359f670677d3e4dd736a0f34825fad6ecee749984559f8a351b41857e1689c8f"
+        },
+        {
+          "t": "2025-10-10T22:35:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0048624352656309422742994628",
+          "receipt_sha256": "710103de0c4e8b7d9fec540b25054b5f58dfd23675350685b6f677b561a34275"
+        },
+        {
+          "t": "2025-10-10T22:55:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0010022238158345188077124798",
+          "receipt_sha256": "7bf343407c5735a1b40da186879370e713eec72f71d5af30fd62189269d00df4"
+        },
+        {
+          "t": "2025-10-10T23:17:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0053351428154178875347262402",
+          "receipt_sha256": "f7961954c739cfba3cde5d8a33a7a472fe817f935a2985dd8bd95e6c5370c8fe"
+        },
+        {
+          "t": "2025-10-10T23:28:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0116135913598499598820259926",
+          "receipt_sha256": "485b3590ba0383b3a258bad760931cdb76e543ac32b1ee6f4c9109f29272a714"
+        },
+        {
+          "t": "2025-10-10T23:51:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0056754730524406491716910696",
+          "receipt_sha256": "44751b6323018e46e567f0632326021c4f0a9c32734856eb21ada59048792ec2"
+        },
+        {
+          "t": "2025-10-10T23:58:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0028657697481259292397490714",
+          "receipt_sha256": "42d380ff191e895e10b2f9598f5215256a5633c90c56e244ffac483d22dcb6c6"
+        },
+        {
+          "t": "2025-10-11T00:05:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0059902063111962899259448413",
+          "receipt_sha256": "4797a27234cce0b297e3c32fc4be972a69e94d8c5b61036664216dd32eff67c0"
+        },
+        {
+          "t": "2025-10-11T00:17:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0012632940096625987368347212",
+          "receipt_sha256": "3aa2bcb15cde8054ad850ff445dfc0bf9cdc13bf6b2e314d526169e64f9817e5"
+        },
+        {
+          "t": "2025-10-11T00:27:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0046840312779096245603511856",
+          "receipt_sha256": "3a29140e95e493d5b6a6300380936418ddb3bf01ae5c0c071ab78bbb34a0b8fe"
+        },
+        {
+          "t": "2025-10-11T00:35:00+00:00",
+          "from": "DRIFT",
+          "to": "PEGGED",
+          "discount_smooth": "0.0029407416618599925299719016",
+          "receipt_sha256": "aa1bd8e959c1b1ae57ec25b5a609f36c12e769874ad56fb29399dbc455574331"
+        },
+        {
+          "t": "2025-10-11T00:38:00+00:00",
+          "from": "PEGGED",
+          "to": "DRIFT",
+          "discount_smooth": "0.0058188793390727986932789434",
+          "receipt_sha256": "4d1ccbde8915833db27e5cf8154d61f94a51d432dce64b4285cb28a98c99b807"
+        },
+        {
+          "t": "2025-10-11T00:43:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0111642088372069010566293560",
+          "receipt_sha256": "da7ae07364a976dde865ca5d143c51c32da9ec7d1eef4111f5f3157fb0aeb76f"
+        },
+        {
+          "t": "2025-10-11T01:03:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0068114255560216314422899670",
+          "receipt_sha256": "02bc8a52cf3a851399560854da7ae7127a39de2ead5c9a187b8bb89b156308e7"
+        },
+        {
+          "t": "2025-10-11T02:02:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0106020449162430694736872585",
+          "receipt_sha256": "b2b47586f086e99bcb8ded392a8af85047560ca495824b785ef4a2aadd3b96b1"
+        },
+        {
+          "t": "2025-10-11T03:05:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0071691766887206726529233801",
+          "receipt_sha256": "18238db31c60ce463cc40e998aac2895fec7dc40415206756503c10750dea1a4"
+        },
+        {
+          "t": "2025-10-11T03:57:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0105535892662138240462036288",
+          "receipt_sha256": "ab635bb6265e26959f333982ed623330304d840ce6c1cdabd880b41df0ed40cf"
+        },
+        {
+          "t": "2025-10-11T05:13:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0073156241618859563222502389",
+          "receipt_sha256": "4b38f5174ab28305afdc3e2a52a2c1acba658a19bbdd53e8ef5a8b33890941a9"
+        },
+        {
+          "t": "2025-10-11T20:20:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0127385463940379988634861026",
+          "receipt_sha256": "443ac8c9718b605a1c40ccec067e373d657337cc3d5c4e39388af68dad34e252"
+        },
+        {
+          "t": "2025-10-11T22:20:00+00:00",
+          "from": "DEPEG",
+          "to": "DRIFT",
+          "discount_smooth": "0.0069555895360309466520219635",
+          "receipt_sha256": "77025944671302d1d4a82d7893475bcdc3d91020e926a01a4def59777fce5d4a"
+        },
+        {
+          "t": "2025-10-11T22:32:00+00:00",
+          "from": "DRIFT",
+          "to": "DEPEG",
+          "discount_smooth": "0.0110362515286445702601017502",
+          "receipt_sha256": "19bc52e35f4cf21955f9e5c0a39153e1012f48e89adb59b608adae028988c852"
+        }
+      ],
+      "time_to_first_alert_secs": 163560,
+      "max_state": "CRITICAL",
+      "ticks": 4321
+    },
+    "sUSDe": {
+      "fidelity": "perfect",
+      "transitions": [],
+      "time_to_first_alert_secs": null,
+      "max_state": "PEGGED",
+      "ticks": 4321
+    }
+  }
+}

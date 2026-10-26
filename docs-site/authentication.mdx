@@ -1,0 +1,45 @@
+---
+title: "Authentication"
+description: "There is none. The Pegana API is public: no API key, no signup, no token. Requests are rate-limited per IP."
+---
+
+## Public API — no auth
+
+Every endpoint is public. Send no `Authorization` header:
+
+```bash
+curl https://api.pegana.xyz/v1/assets/USDC/state
+```
+
+```
+GET /v1/assets
+GET /v1/assets/:symbol
+GET /v1/assets/:symbol/state
+GET /v1/assets/:symbol/history
+GET /v1/audit
+GET /v1/stats
+GET /v1/ws         (WebSocket)
+```
+
+The full list is in the [API reference](/api-reference/introduction).
+
+## Rate limiting
+
+The only control is a per-IP sliding-window limit: currently **240 requests a minute per IP**,
+reported on every response in the `RateLimit-Limit` header. See
+[rate limits](/guides/rate-limits).
+
+```bash
+curl -sI https://api.pegana.xyz/v1/assets | grep -i ratelimit-limit
+# ratelimit-limit: 60
+```
+
+## No API keys, no accounts
+
+There are no API keys, no sign-in and no user accounts. If a use case needs a higher
+limit, contact `rafael@pegana.xyz`.
+
+## MCP
+
+The hosted MCP server at `https://mcp.pegana.xyz` is also unauthenticated and all of
+its tools are free. See [MCP](/guides/mcp).

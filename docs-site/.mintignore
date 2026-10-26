@@ -1,0 +1,7 @@
+# Files in this folder that are operator runbooks, not public docs.
+# Mintlify would otherwise try to parse them as MDX and choke on the
+# command snippets (e.g. `<your-subdomain>` reads like a JSX tag and
+# blocks every deploy — see the 2026-05-29 build that failed on
+# DEPLOY.md with "Unexpected character / (U+002F)").
+DEPLOY.md
+README.md

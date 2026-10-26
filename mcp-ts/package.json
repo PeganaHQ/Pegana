@@ -1,0 +1,76 @@
+{
+  "name": "pegana-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "description": "MCP server exposing Pegana's peg-risk oracle for Solana: real-time peg state, history, and alerts for the tracked asset list. Every tool is free; no API key, no payment.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "solana",
+    "stablecoin",
+    "lst",
+    "liquid-staking",
+    "peg",
+    "depeg",
+    "oracle",
+    "defi",
+    "usdc"
+  ],
+  "homepage": "https://pegana.xyz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PeganaHQ/Pegana.git",
+    "directory": "mcp-ts"
+  },
+  "bugs": {
+    "url": "https://github.com/PeganaHQ/Pegana/issues"
+  },
+  "license": "FSL-1.1-MIT",
+  "author": "Pegana <hello@pegana.xyz> (https://pegana.xyz)",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "test": "vitest run",
+    "test:integration": "vitest run --dir test/integration",
+    "test:devnet": "vitest run --dir test/integration -t devnet",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "build": "bun build src/index.ts --outdir dist --target bun"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@sentry/node": "^10.76.2",
+    "@solana/kit": "^5.5.1",
+    "@x402/core": "^2.28.0",
+    "@x402/extensions": "^2.28.0",
+    "@x402/mcp": "^2.28.0",
+    "@x402/svm": "^2.28.0",
+    "hono": "^4.13.14",
+    "ioredis": "^5.11.1",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/bun": "latest",
+    "@types/pg": "^8.23.1",
+    "eslint": "^9.39.5",
+    "globals": "^16.5.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^4.1.12"
+  },
+  "//overrides": "Deliberate: the zod override ($zod) forces every transitive copy (MCP SDK, @x402/*) onto the direct dependency's zod 4, because zod <4.6.6 has a memory-exhaustion advisory. Re-test x402 payment parsing before enabling any paid tier. proxy-addr, body-parser and ws pin patched transitive releases; drop each once its parent ships the fix.",
+  "overrides": {
+    "@x402/core": "2.28.0",
+    "@modelcontextprotocol/sdk": "$@modelcontextprotocol/sdk",
+    "zod": "$zod",
+    "ws": "^8.21.2",
+    "body-parser": "^2.4.0",
+    "ip-address": "10.7.5",
+    "proxy-addr": "^2.0.8",
+    "qs": "6.16.1"
+  }
+}

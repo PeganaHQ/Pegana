@@ -1,0 +1,56 @@
+---
+title: "Rate limits"
+description: "Soft per-IP limit with RateLimit-* headers on every response, so you see your budget before a 429."
+---
+
+Public read endpoints require no API key but **are** rate-limited per IP:
+
+- **240 requests a minute per IP** globally (see the `RateLimit-Limit` header; always read the header rather than hard-coding it).
+- **10 requests/min** on `GET /v1/audit.csv` (the bulk export, per ADR-0014).
+- `GET /healthz` is exempt; `GET /readyz` has its own 30 req/min per-IP budget
+  (responses are cached for 2 s, so faster polling gains nothing).
+
+Pegana's own web app renders on its servers and is metered on separate, authenticated
+budgets (one for ordinary pages, one reserved for embeddable widgets), so its traffic
+never consumes the public per-IP budget above and public callers cannot opt into them.
+
+The window is a **60-second sliding counter**, so your budget refills continuously as the
+previous window ages out — not in a single step at a fixed reset.
+
+## Headers on every response
+
+You don't have to guess your remaining budget — every response carries it, using the
+IETF standards-track `RateLimit-*` fields (mirrored as `X-RateLimit-*` for older clients):
+
+| Header | Meaning |
+| --- | --- |
+| `RateLimit-Limit` | Your ceiling for the window (currently `60`). |
+| `RateLimit-Remaining` | Requests left before you're throttled. |
+| `RateLimit-Reset` | Seconds until the window rolls. |
+
+```bash
+curl -sS -D - -o /dev/null https://api.pegana.xyz/v1/stats | grep -i ratelimit
+# ratelimit-limit: 60
+# ratelimit-remaining: 57
+# ratelimit-reset: 39
+```
+
+<Note>
+Browser clients can read these cross-origin — they're in the CORS `expose-headers` allowlist
+on the public read surface.
+</Note>
+
+## When you hit the limit
+
+Exceeding the limit returns **`429`** with the JSON [error envelope](/guides/errors)
+(`{"error":"rate_limited"}`) and a **`Retry-After`** header (seconds). Back off for that
+long, then resume.
+
+```json
+{ "error": "rate_limited", "message": "rate limit exceeded; retry after the window resets (see Retry-After)" }
+```
+
+<Warning>
+Don't hammer through 429s — back off on `Retry-After`. Sustained abuse past the limit
+just keeps you throttled.
+</Warning>

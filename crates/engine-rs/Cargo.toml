@@ -1,0 +1,52 @@
+[package]
+name = "engine-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Library target exposing the self-contained background workers (on-chain
+# commit retry + alert_evidence reconcile) so integration tests in `tests/`
+# can drive a single tick / inner step. The binary keeps its own module tree
+# for the recompute pipeline; only the worker modules are shared via the lib.
+[lib]
+name = "engine_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "engine-rs"
+path = "src/main.rs"
+
+[dependencies]
+pegana-common = { path = "../common" }
+pegana-common-verify = { path = "../common-verify" }
+pegana-methodology = { path = "../methodology" }
+
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+sentry = { workspace = true }
+sqlx = { workspace = true }
+redis = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+metrics = { workspace = true }
+dotenvy = { workspace = true }
+envy = "0.4"
+toml = { workspace = true }
+futures = { workspace = true }
+zeroize = "1"
+url = { workspace = true }
+
+# Solana on-chain commit (SPL Memo). Versions match the workspace ecosystem
+# (solana-* 2.0; spl-memo 5 is the version already in the lockfile via
+# spl-token-2022, so we re-use it to keep one transitive copy).
+solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+solana-sdk = { workspace = true }
+solana-transaction-error = "2"
+spl-memo = "5"

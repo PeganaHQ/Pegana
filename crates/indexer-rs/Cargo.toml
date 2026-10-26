@@ -1,0 +1,53 @@
+[package]
+name = "indexer-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "indexer_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "indexer-rs"
+path = "src/main.rs"
+
+[dependencies]
+pegana-common = { path = "../common" }
+pegana-common-verify = { path = "../common-verify" }
+
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+sqlx = { workspace = true }
+redis = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-sdk = { workspace = true }
+spl-token-2022 = { workspace = true }
+borsh = { workspace = true }
+metrics = { workspace = true }
+dotenvy = { workspace = true }
+envy = "0.4"
+
+# Pure-Rust Solana primitives used for Hylo PDA derivation (no anchor deps).
+spl-associated-token-account = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+# Used by source adapters' decode tests to base64-decode captured RPC fixtures
+# (the `getAccountInfo` response format).
+base64 = "0.22"
+# Fuzz the on-chain account decoders (perena / piggybank / spl_stake_pool) —
+# they parse UNTRUSTED bytes, so a no-panic property test locks in the
+# "malformed input → Err, never panic" invariant against future edits.
+proptest = "1"

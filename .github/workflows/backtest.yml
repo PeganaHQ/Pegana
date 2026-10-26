@@ -1,0 +1,44 @@
+name: backtest
+
+# A pull_request run uses the workflow file and the xtask code of the PR head,
+# so a PR can weaken its own gate. The real control is repository-side:
+# .github/CODEOWNERS covers this workflow and the code it runs, and a ruleset
+# on main requires code-owner review plus this job's status check (ideally as a
+# required workflow from a protected ref). That ruleset is an owner step, see
+# docs/ops/2026-10-23-a1-owner-actions.md.
+on:
+  pull_request:
+    paths:
+      - "crates/methodology/**"
+      - "crates/pegana-replay-cli/**"
+      - "crates/xtask/**"
+      - "docs/backtests/**"
+      - ".github/workflows/backtest.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@0a0b1db3a4e40d68af9ce1f11281259916528f39 # 1.90
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          shared-key: "ci-rust"
+      - name: Backtest drift gate (committed fixture, no network)
+        run: cargo run -p xtask -- backtest --case 2025-10-10-usde-depeg --check
+      - name: Directional sanity tests
+        if: hashFiles('crates/xtask/tests/backtest_runner.rs') != ''
+        run: cargo test -p xtask --test backtest_runner golden_
+      - name: Public CLI receipt acceptance
+        run: |
+          cargo run -p pegana-replay -- --bundle docs/backtests/2025-10-10-usde-depeg/receipts/USDe-001.json | tee replay-output.txt
+          grep -q "PASS" replay-output.txt
